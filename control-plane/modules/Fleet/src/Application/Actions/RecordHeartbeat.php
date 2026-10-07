@@ -8,6 +8,7 @@ use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Events\AgentCameOnline;
+use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\AgentVersionChanged;
@@ -90,6 +91,18 @@ final class RecordHeartbeat
 
         if ($missing !== [] && $agent->server_id !== null) {
             AgentSecretsMissing::dispatch($agent->id, $agent->organization_id, $agent->server_id, $missing);
+        }
+
+        // Database containers (state, health, lost password files): only when the agent sent the key.
+        if (array_key_exists('databases', $heartbeat) && $agent->server_id !== null) {
+            $instances = array_values(array_map(fn (array $instance) => [
+                'id' => strtolower((string) $instance['id']),
+                'state' => (string) $instance['state'],
+                'health' => (string) ($instance['health'] ?? 'none'),
+                'secrets_missing' => (bool) ($instance['secrets_missing'] ?? false),
+            ], array_filter((array) $heartbeat['databases'], 'is_array')));
+
+            AgentDatabasesReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $instances);
         }
 
         if ($facts !== null) {

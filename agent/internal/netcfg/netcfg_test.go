@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,70 +61,6 @@ func TestRenderRuleset(t *testing.T) {
 	}
 	for _, bad := range []Rule{{ID: "x", Ports: []string{"70000"}}, {ID: "x", Ports: []string{"9-3"}}, {ID: "x", Sources: []string{"nope"}}, {ID: "x;y"}, {ID: "x", Interface: `eth0" accept`}} {
 		if _, err := RenderRuleset(FirewallPayload{Rules: []Rule{bad}}); !commands.IsPayloadError(err) {
-			t.Fatalf("accepted %+v", bad)
-		}
-	}
-}
-
-// Container access opens a port to the Docker bridges only, ahead of the user's rules (a deny rule can't cut it).
-func TestRenderRulesetContainerPorts(t *testing.T) {
-	p := payload()
-	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-falak"}}, p.Rules...)
-	p.ContainerPorts = []ContainerPorts{{ID: "postgresql", Protocol: "tcp", Ports: []string{"5432"}, Sources: []string{"172.16.0.0/12", "192.168.0.0/16"}, Comment: "PostgreSQL for containers"}}
-	rs, err := RenderRuleset(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	docker0 := `iifname "docker0" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "falak:containers-postgresql PostgreSQL for containers"`
-	bridges := `iifname "br-*" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "falak:containers-postgresql PostgreSQL for containers"`
-	drop := `tcp dport 5432 drop comment "falak:containers-postgresql-only only containers"`
-	for _, w := range []string{docker0, bridges, drop} {
-		if !strings.Contains(rs, w) {
-			t.Fatalf("missing %q in\n%s", w, rs)
-		}
-	}
-	// Only loopback (accepted first) and containers: the drop precedes the private network and the user's rules
-	// (rule "pg" would otherwise open 5432 to 10.0.0.0/8).
-	if !(strings.Index(rs, bridges) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"falak:wg-net-interface"`) && strings.Index(rs, drop) < strings.Index(rs, `"falak:pg"`)) {
-		t.Fatalf("order:\n%s", rs)
-	}
-	for _, bad := range []ContainerPorts{{ID: "x", Sources: []string{"172.16.0.0/12"}}, {ID: "x;y", Ports: []string{"5432"}, Sources: []string{"172.16.0.0/12"}}, {ID: "x", Ports: []string{"0"}, Sources: []string{"172.16.0.0/12"}}, {ID: "x", Ports: []string{"5432"}}, {ID: "x", Ports: []string{"5432"}, Sources: []string{"nope"}}} {
-		if _, err := RenderRuleset(FirewallPayload{ContainerPorts: []ContainerPorts{bad}}); !commands.IsPayloadError(err) {
-			t.Fatalf("accepted %+v", bad)
-		}
-	}
-}
-
-// A Redis instance used over a private network: its consumers' addresses are accepted (any interface) besides the
-// containers, then the port is dropped for everyone else — the private network's accept-all rule included.
-func TestRenderRulesetContainerPortsWithPeers(t *testing.T) {
-	p := payload()
-	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-falak"}}, p.Rules...)
-	p.ContainerPorts = []ContainerPorts{
-		{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"}, Sources: []string{"172.16.0.0/12"}, Peers: []string{"10.90.0.2", "10.0.1.7"}, Comment: "Redis cache"},
-		// Only peers (container access off: no Docker ranges configured).
-		{ID: "redis-jobs", Protocol: "tcp", Ports: []string{"6381"}, Peers: []string{"10.90.0.4"}, Comment: "Redis jobs"},
-	}
-	rs, err := RenderRuleset(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bridge := `iifname "br-*" ip saddr 172.16.0.0/12 tcp dport 6380 accept comment "falak:containers-redis-cache Redis cache"`
-	peers := `ip saddr { 10.90.0.2, 10.0.1.7 } tcp dport 6380 accept comment "falak:containers-redis-cache-peers Redis cache"`
-	drop := `tcp dport 6380 drop comment "falak:containers-redis-cache-only only containers"`
-	for _, w := range []string{bridge, peers, drop, `ip saddr 10.90.0.4 tcp dport 6381 accept`, `tcp dport 6381 drop`} {
-		if !strings.Contains(rs, w) {
-			t.Fatalf("missing %q in\n%s", w, rs)
-		}
-	}
-	if strings.Contains(rs, `tcp dport 6381 accept comment "falak:containers-redis-jobs Redis jobs"`) {
-		t.Fatalf("bridge rule without sources:\n%s", rs)
-	}
-	if !(strings.Index(rs, peers) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"falak:wg-net-interface"`)) {
-		t.Fatalf("order:\n%s", rs)
-	}
-	for _, bad := range []ContainerPorts{{ID: "x", Ports: []string{"6380"}, Peers: []string{"nope"}}, {ID: "x", Ports: []string{"6380"}, Peers: []string{}}} {
-		if _, err := RenderRuleset(FirewallPayload{ContainerPorts: []ContainerPorts{bad}}); !commands.IsPayloadError(err) {
 			t.Fatalf("accepted %+v", bad)
 		}
 	}
@@ -352,63 +287,6 @@ func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
 			t.Errorf("%s left behind", p)
 		}
-	}
-}
-
-// Peers are accepted on the interface they arrive on: the one the control plane names (a Falak WireGuard network's,
-// whether or not its config exists yet), a Falak WireGuard network's range from its config, or the provider NIC whose
-// subnet holds them; else on any interface. The route is never asked: a private address without a specific route goes
-// through the default route (eth0), which would pin a WireGuard peer to the public NIC.
-func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
-	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, "etc/wireguard"), 0o700)
-	os.WriteFile(filepath.Join(root, "etc/wireguard/wg-a1b2c3d4.conf"), []byte("# Managed by Falak (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = x\nAddress = 10.90.0.1/24\nListenPort = 51820\n"), 0o600)
-	os.WriteFile(filepath.Join(root, "etc/wireguard/wg0.conf"), []byte("[Interface]\nAddress = 10.91.0.1/24\n"), 0o600)
-	old := localNets
-	localNets = func() ([]localNet, error) {
-		parse := func(iface, cidr string) localNet {
-			ip, n, _ := net.ParseCIDR(cidr)
-			n.IP = ip
-			return localNet{iface: iface, net: n}
-		}
-		return []localNet{parse("lo", "127.0.0.1/8"), parse("eth0", "203.0.113.5/24"), parse("eth1", "10.114.0.2/20"), parse("docker0", "172.17.0.1/16")}, nil
-	}
-	t.Cleanup(func() { localNets = old })
-	f := &runnertest.Fake{}
-	// What a real host answers for any private address: the default route.
-	f.On("ip -o route get", runner.Result{Stdout: []byte("10.92.0.2 via 203.0.113.1 dev eth0 src 203.0.113.5 uid 0 \\    cache \n")})
-	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
-	p := payload()
-	p.ContainerPorts = []ContainerPorts{{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"},
-		// 10.92.0.2: a WireGuard network whose config hasn't arrived on this server yet; the control plane names it.
-		Peers:          []string{"10.90.0.2", "10.114.0.3", "10.92.0.2", "10.91.0.2", "172.17.0.9", "10.90.0.5", "10.0.1.7"},
-		PeerInterfaces: map[string]string{"10.92.0.2": "wg-e5f6a7b8"},
-		Comment:        "Redis cache"}}
-	if _, err := n.FirewallApply(context.Background(), p, st); err != nil {
-		t.Fatal(err)
-	}
-	rs, _ := os.ReadFile(filepath.Join(root, RulesetPath))
-	for _, w := range []string{
-		`iifname "wg-a1b2c3d4" ip saddr { 10.90.0.2, 10.90.0.5 } tcp dport 6380 accept comment "falak:containers-redis-cache-peers Redis cache"`,
-		`iifname "wg-e5f6a7b8" ip saddr 10.92.0.2 tcp dport 6380 accept`,
-		`iifname "eth1" ip saddr 10.114.0.3 tcp dport 6380 accept`,
-		// Not Falak's WireGuard, no local subnet, or a container bridge: any interface, as before.
-		"\t\tip saddr { 10.91.0.2, 172.17.0.9, 10.0.1.7 } tcp dport 6380 accept",
-	} {
-		if !strings.Contains(string(rs), w) {
-			t.Fatalf("missing %q in\n%s", w, rs)
-		}
-	}
-	if strings.Contains(string(rs), `iifname "eth0"`) || f.Ran("ip -o route get 10.92.0.2") {
-		t.Fatalf("a peer pinned to the default route's interface:\n%s", rs)
-	}
-	if strings.Index(string(rs), `falak:containers-redis-cache-peers`) > strings.Index(string(rs), `falak:containers-redis-cache-only`) {
-		t.Fatalf("peers after the drop:\n%s", rs)
-	}
-	// A bad interface name from the payload is refused.
-	p.ContainerPorts[0].PeerInterfaces = map[string]string{"10.92.0.2": "wg x"}
-	if _, err := n.FirewallApply(context.Background(), p, st); !commands.IsPayloadError(err) {
-		t.Fatal(err)
 	}
 }
 

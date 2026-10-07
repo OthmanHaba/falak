@@ -15,6 +15,9 @@ use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Deployments\Events\DeploymentFailed;
 use Falak\Deployments\Events\DeploymentRolledBack;
 use Falak\Fleet\Domain\Models\Agent;
+use Falak\Projects\Contracts\Data\ServiceData;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\Data\ComposeRewrites;
@@ -130,6 +133,31 @@ it('deploys inline compose files without a build and skips the leader step when 
         ->and($world->agents->last('docker.compose.up')['payload'])->not->toHaveKey('registry_auth')
         ->and(Release::query()->find($deployment->release_id)->compose['version'])->toBe(1);
 });
+
+it('joins the stack to its environment network when the environment has a database container', function (bool $withDatabase) {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n", 'created_at' => now()]);
+    $environment = strtolower((string) Str::ulid());
+    $projects = Mockery::mock(ProjectDirectory::class)->shouldIgnoreMissing();
+    $projects->shouldReceive('projectOf')->andReturnUsing(fn ($kind, $id) => $id === $world->site->id ? new ServiceData('s1', $world->organization->id, 'p1', $environment, ServiceKind::Site, $id, 'shop', 0, 0) : null);
+    $projects->shouldReceive('servicesIn')->with($environment)->andReturn($withDatabase ? [new ServiceData('s2', $world->organization->id, 'p1', $environment, ServiceKind::Database, strtolower((string) Str::ulid()), 'db', 0, 0)] : []);
+    app()->instance(ProjectDirectory::class, $projects);
+    app()->forgetInstance(StepPayloads::class);
+
+    compose_deploy($world);
+    deploy_run_all($world->agents);
+    $up = $world->agents->last('docker.compose.up');
+
+    expect($up['payload']['join_networks'] ?? null)->toBe($withDatabase ? ["falak-env-{$environment}"] : null)
+        ->and(array_column($up['payload']['files'], 'name'))->toBe($withDatabase ? ['compose.yaml', 'compose.falak.yaml', '.env'] : ['compose.yaml', '.env']);
+
+    if ($withDatabase) {
+        // The services start on it (their first healthchecks reach the databases), keeping their default network.
+        $override = Yaml::parse($up['payload']['files'][1]['content']);
+        expect($override['networks'])->toBe(["falak-env-{$environment}" => ['external' => true]])
+            ->and(array_keys($override['services']['app']['networks']))->toBe(['default', "falak-env-{$environment}"]);
+    }
+})->with([true, false]);
 
 it('rolls a failed compose release back with the previous release files', function () {
     Event::fake([DeploymentFailed::class, DeploymentRolledBack::class]);

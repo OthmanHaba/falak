@@ -58,9 +58,8 @@ for (const theme of ['dark', 'light'] as const) {
         await expect(panel.getByText('Nothing was installed')).toBeVisible();
 
         const rows = panel.locator('#machine-check-rows > li');
-        await expect(rows.first()).toHaveAttribute('data-testid', /machine-check-(database|edge)/);
-        await expect(panel.getByTestId('machine-check-database')).toContainText('MariaDB 11.8.2 is installed, but this server is set up for MySQL.');
-        await expect(panel.getByTestId('machine-check-database')).toContainText('Blocked');
+        await expect(rows.first()).toHaveAttribute('data-testid', 'machine-check-edge');
+        await expect(panel.getByTestId('machine-check-database')).toHaveCount(0);
         await expect(panel.getByTestId('machine-check-edge')).toContainText("Port 80 is in use by nginx, which Falak's edge needs.");
         await expect(panel.getByTestId('machine-check-edge')).toContainText('systemctl disable --now nginx.service');
         await expect(panel.getByTestId('machine-check-docker')).toContainText('Use existing');

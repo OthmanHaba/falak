@@ -190,6 +190,24 @@ type NetworkJoin struct {
 	// agent creates it with Compose's own labels, so the project's first `docker compose up` adopts it instead of
 	// failing. A service split out of a stack at creation can then deploy before the stack.
 	Compose *ComposeNetwork `json:"compose,omitempty"`
+	// Environment marks a Falak environment network (falak-env-<id>, where the environment's databases answer by
+	// name): created when missing instead of waited for.
+	Environment bool `json:"environment,omitempty"`
+}
+
+// EnvironmentNetworkRe is the name of a Falak environment network.
+var EnvironmentNetworkRe = regexp.MustCompile(`^falak-env-[0-9a-z]{26}$`)
+
+// ensureEnvironmentNetwork creates an environment network when missing (labels falak.managed, falak.network).
+func (s *Service) ensureEnvironmentNetwork(ctx context.Context, name string) error {
+	if !EnvironmentNetworkRe.MatchString(name) {
+		return &commands.PayloadError{Err: fmt.Errorf("invalid environment network %q", name)}
+	}
+	ok, err := s.c.NetworkExists(ctx, name)
+	if err != nil || ok {
+		return err
+	}
+	return s.c.NetworkCreate(ctx, name, map[string]string{LabelManaged: "true", "falak.network": "environment"})
 }
 
 // ComposeNetwork is the compose project and network key that own a network.
@@ -358,6 +376,12 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 // someone else and is only waited for.
 func (s *Service) awaitNetworks(ctx context.Context, joins []NetworkJoin, st commands.Stream) error {
 	for _, n := range joins {
+		if n.Environment {
+			if err := s.ensureEnvironmentNetwork(ctx, n.Name); err != nil {
+				return err
+			}
+			continue
+		}
 		deadline := time.Now().Add(networkWait)
 		for said := false; ; said = true {
 			ok, err := s.c.NetworkExists(ctx, n.Name)

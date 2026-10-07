@@ -1,19 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.user.apply.schema.json",
-  "title": "db.user.apply — converge a database user and its grants",
+  "title": "db.user.apply — converge a user of an instance and its grants (full desired set: grants not listed are revoked); the spec goes to falak-db user apply as a file in the instance's secrets directory",
   "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "instance",
     "engine",
     "username"
   ],
   "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
     "engine": {
       "enum": [
+        "postgres",
         "mysql",
-        "postgres"
+        "mariadb"
       ]
     },
     "username": {
@@ -28,7 +34,7 @@
     "host": {
       "type": "string",
       "default": "%",
-      "description": "mysql only"
+      "description": "mysql / mariadb only"
     },
     "grants": {
       "type": "array",
@@ -63,20 +69,6 @@
         "absent"
       ],
       "default": "present"
-    },
-    "remote": {
-      "type": "boolean",
-      "default": false,
-      "description": "the user connects from other servers (dedicated database server): the engine listens on every interface and, for postgres, a scram-sha-256 host rule is kept for the user; the firewall still decides who reaches the port"
-    },
-    "containers": {
-      "type": "array",
-      "maxItems": 16,
-      "items": {
-        "type": "string",
-        "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
-      },
-      "description": "feature db.containers: Docker address ranges (IPv4 CIDRs) the user also connects from — containers on this server reaching the engine on the host address. The engine listens on every interface; postgres gets a scram-sha-256 host rule per range, mysql an extra account per range (user@'ip/netmask', same password and grants). net.firewall.apply container_ports lets only the Docker bridges in"
     }
   },
   "$defs": {
@@ -89,7 +81,7 @@
       "properties": {
         "changed": {
           "type": "boolean",
-          "description": "true when the host state was modified"
+          "description": "true when the instance's state was modified"
         }
       }
     }

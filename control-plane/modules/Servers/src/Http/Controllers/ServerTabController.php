@@ -113,22 +113,6 @@ final class ServerTabController extends Controller
                 'provider_server_id' => $server->provider_server_id,
                 'install_command' => $canManageAgents ? $server->install_command : null,
             ],
-            // A database engine can be added later to server types that may hold one (app servers).
-            'database' => [
-                'engine' => $server->stack->database,
-                'installing' => $server->installing('database'),
-                'allowed' => in_array('database', $server->type->allowedComponents(), true),
-                'options' => collect((array) config('servers.databases'))->map(fn (array $db, string $key) => ['value' => $key, 'label' => $db['label']])->values()->all(),
-            ],
-            // Redis / Valkey (Falak instances run next to it, on their own ports); only what the server's OS has.
-            'cache' => [
-                'engine' => $server->stack->cache,
-                'installing' => $server->installing('cache'),
-                'allowed' => in_array('cache', $server->type->allowedComponents(), true),
-                'options' => collect((array) config('servers.caches'))->only($server->installableCaches())
-                    ->map(fn (array $cache, string $key) => ['value' => $key, 'label' => $cache['label']])->values()->all(),
-            ],
-            'busy' => $server->engine_command_id !== null,
             'can' => [
                 'update' => $request->user()?->can('update', $server) ?? false,
                 'delete' => $request->user()?->can('delete', $server) ?? false,

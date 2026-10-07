@@ -29,14 +29,14 @@ export function DatabaseUsersTab({ ctx }: ServiceTabProps) {
 
     if (!data) return error ? <p className="text-danger text-sm">{error}</p> : <SkeletonRows rows={6} />;
 
-    const { database, server, can } = data;
+    const { database, instance, can } = data;
 
     const addUser = async (event: FormEvent) => {
         event.preventDefault();
         setSaving(true);
         setErrors({});
         try {
-            await requestJson(`/databases/servers/${server.id}/users`, 'POST', {
+            await requestJson(`/databases/instances/${instance.id}/users`, 'POST', {
                 username: form.username,
                 password: form.password || null,
                 host: form.host || null,
@@ -63,7 +63,7 @@ export function DatabaseUsersTab({ ctx }: ServiceTabProps) {
                             { label: 'Charset', value: database.charset ?? 'default', mono: true },
                             { label: 'Collation', value: database.collation ?? 'default', mono: true },
                             { label: 'Status', value: <StatusBadge status={resourceStatus(database.status)} /> },
-                            { label: 'Engine server', value: `${server.server_name} · ${server.engine_label}` },
+                            { label: 'Database server', value: `${instance.name} · ${instance.engine_label} ${instance.version}` },
                             { label: 'Created', value: <RelativeTime value={database.created_at} /> },
                         ]}
                     />

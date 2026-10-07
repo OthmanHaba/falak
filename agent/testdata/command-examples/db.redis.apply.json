@@ -1,1 +1,0 @@
-{"engine": "redis", "name": "cache", "port": 6380, "password": "Xk3pQ9vR2mT7wL4nB8cF6hJ1", "bind": ["127.0.0.1", "10.90.0.3"], "containers": true, "maxmemory_mb": 128, "eviction": "noeviction", "persistence": "rdb"}

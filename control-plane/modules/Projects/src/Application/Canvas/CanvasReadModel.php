@@ -196,16 +196,18 @@ final class CanvasReadModel
             'status' => $status,
             'status_label' => $label,
             'url' => null,
-            // Redis / Valkey: "Redis 7.0 · 128 MB · app-1".
+            // "PostgreSQL 17 · 512 MB · app-1".
             'subtitle' => implode(' · ', array_filter([
                 trim(self::engineLabel($database->engine).' '.($database->engineVersion ?? '')),
-                $database->maxMemoryMb !== null ? "{$database->maxMemoryMb} MB" : null,
+                $database->memoryMb !== null ? "{$database->memoryMb} MB" : null,
                 $servers[$database->serverId]->name ?? null,
             ])),
             'servers' => [$this->server($database->serverId, false, $servers, $agents)],
-            'badges' => [],
-            // The engine's data directory on its server.
-            'volumes' => [['id' => null, 'name' => $database->engine.'-data', 'detail' => $servers[$database->serverId]->name ?? null, 'used_bytes' => null, 'limit_bytes' => null, 'url' => null]],
+            'badges' => in_array($database->health, ['unhealthy', 'stopped', 'missing'], true) ? [ucfirst((string) $database->health)] : [],
+            // The container's data volume.
+            'volumes' => ($volume = $database->volumeId !== null ? $this->volumes->find($database->volumeId) : null) !== null
+                ? [self::chip($volume, $volume->name, 'data')]
+                : [],
             'compose' => null,
             'last_deployment' => null,
         ];

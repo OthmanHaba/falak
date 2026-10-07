@@ -12,7 +12,6 @@ use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Network\Application\Listeners\ForgetDeletedServer;
 use Falak\Network\Application\Listeners\HandleCommandOutcome;
 use Falak\Network\Application\Listeners\SeedFirewallOnProvisioning;
-use Falak\Network\Contracts\ContainerHostPorts;
 use Falak\Network\Contracts\Firewalls;
 use Falak\Network\Contracts\PrivateNetwork as PrivateNetworkContract;
 use Falak\Network\Contracts\WebOriginPolicy;
@@ -23,7 +22,6 @@ use Falak\Network\Domain\Policies\PrivateNetworkPolicy;
 use Falak\Network\Events\FirewallApplied;
 use Falak\Network\Events\FirewallApplyFailed;
 use Falak\Network\Infrastructure\EloquentPrivateNetwork;
-use Falak\Network\Infrastructure\NoContainerHostPorts;
 use Falak\Network\Infrastructure\NoWebOriginPolicy;
 use Falak\Network\Infrastructure\QueuedFirewalls;
 use Falak\Servers\Events\ServerDeleted;
@@ -48,8 +46,6 @@ class NetworkServiceProvider extends ModuleServiceProvider
         $this->mergeConfigFrom($this->modulePath().'/config/network.php', 'network');
         // Edge replaces this for servers behind Cloudflare (origin lock-down).
         $this->app->singletonIf(WebOriginPolicy::class, NoWebOriginPolicy::class);
-        // Databases replaces this (engines that containers on the server reach).
-        $this->app->singletonIf(ContainerHostPorts::class, NoContainerHostPorts::class);
     }
 
     protected function bootModule(): void

@@ -10,10 +10,10 @@ import { router, useForm } from '@inertiajs/react';
 import { formatDistanceToNow } from 'date-fns';
 import { Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { type DatabaseRow, type DatabaseServer, type ScheduleRow, type StorageOption } from '../types';
+import { type DatabaseInstance, type DatabaseRow, type ScheduleRow, type StorageOption } from '../types';
 
 interface Props {
-    server: DatabaseServer;
+    instance: DatabaseInstance;
     schedules: ScheduleRow[];
     databases: DatabaseRow[];
     storageProviders: StorageOption[];
@@ -38,7 +38,7 @@ interface ScheduleForm {
     enabled: boolean;
 }
 
-export function SchedulesCard({ server, schedules, databases, storageProviders, canManage }: Props) {
+export function SchedulesCard({ instance, schedules, databases, storageProviders, canManage }: Props) {
     const [editing, setEditing] = useState<ScheduleRow | 'new' | null>(null);
     const [deleting, setDeleting] = useState<ScheduleRow | null>(null);
     const form = useForm<ScheduleForm>({
@@ -92,7 +92,7 @@ export function SchedulesCard({ server, schedules, databases, storageProviders, 
         const options = { preserveScroll: true, onSuccess: () => setEditing(null) };
 
         if (editing === 'new') {
-            form.post(`/databases/servers/${server.id}/schedules`, options);
+            form.post(`/databases/instances/${instance.id}/schedules`, options);
         } else if (editing) {
             form.put(`/databases/schedules/${editing.id}`, options);
         }

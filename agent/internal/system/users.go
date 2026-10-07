@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,9 +76,19 @@ func groupExists(ctx context.Context, r runner.Runner, g string) (bool, error) {
 // users in package db): useradd, usermod and userdel lock /etc/passwd and fail when two run at once.
 var AccountsMu sync.Mutex
 
+// PrivilegedGroups are equivalent to root (the Docker socket starts privileged containers and reads every database
+// container's secrets): the users the agent manages (site users, the falak user) never join them, and leave them
+// when an earlier build put them there. Only the agent, as root, drives Docker.
+var PrivilegedGroups = []string{"docker"}
+
 func EnsureUser(ctx context.Context, r runner.Runner, fs hostfs.FS, p UserSpec, st commands.Stream) (UserResult, error) {
 	if p.Name == "" {
 		return UserResult{}, &commands.PayloadError{Err: errFmt("name is required")}
+	}
+	for _, g := range p.Groups {
+		if slices.Contains(PrivilegedGroups, g) {
+			return UserResult{}, &commands.PayloadError{Err: fmt.Errorf("group %s gives root on the server: users the agent manages never join it", g)}
+		}
 	}
 	AccountsMu.Lock()
 	defer AccountsMu.Unlock()
@@ -137,15 +148,24 @@ func EnsureUser(ctx context.Context, r runner.Runner, fs hostfs.FS, p UserSpec, 
 			}
 			changed = true
 		}
+		res, err := runner.Check(ctx, r, runner.Cmd{Name: "id", Args: []string{"-nG", p.Name}})
+		if err != nil {
+			return UserResult{}, err
+		}
+		have := map[string]bool{}
+		for _, g := range strings.Fields(string(res.Stdout)) {
+			have[g] = true
+		}
+		// Servers provisioned by earlier builds put the site user in docker: taken out again.
+		for _, g := range PrivilegedGroups {
+			if have[g] {
+				if err := run("gpasswd", "--delete", p.Name, g); err != nil {
+					return UserResult{}, err
+				}
+				changed = true
+			}
+		}
 		if len(p.Groups) > 0 {
-			res, err := runner.Check(ctx, r, runner.Cmd{Name: "id", Args: []string{"-nG", p.Name}})
-			if err != nil {
-				return UserResult{}, err
-			}
-			have := map[string]bool{}
-			for _, g := range strings.Fields(string(res.Stdout)) {
-				have[g] = true
-			}
 			var add []string
 			for _, g := range p.Groups {
 				if !have[g] {

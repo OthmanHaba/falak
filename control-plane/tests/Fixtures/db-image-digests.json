@@ -1,0 +1,24 @@
+{
+  "_comment": "Test digests only (phpunit FALAK_DB_IMAGE_DIGESTS): never real images.",
+  "postgresql": {
+    "17": "sha256:8fd7d9a0d08ad223950ed5e3f81fb4df6b8db23e686fa20fa967559d5df04506",
+    "18": "sha256:ad69684a676661a5c8341842f96796c4268f68f4f7d16ff0292a5fb9a1499a30",
+    "16": "sha256:1bfff558c2b4027e34a0f6ee1076252c27c91b0ea2681f992a492d8627b74068",
+    "15": "sha256:3fb3d860979596b996832dc7b07e78618ceb6c604d31304b9ba7e3741508a078"
+  },
+  "mysql": {
+    "8.4": "sha256:4a974c47019a995e8e3623313162b3c862300633c8e6d6a5a03bc0a46dd5abaa",
+    "8.0": "sha256:275805faa1eea3c3537bdbd62dedbd4477896f1d197731afb11f88a10274e677"
+  },
+  "mariadb": {
+    "11.4": "sha256:6b3d9d2481c6150c6c902a8c2b96efc28a1f6f6147c8749e06d68c1b3a79273d",
+    "10.11": "sha256:d16ca87ae903cd9b341253500f5c5c8354a80d620aa2ed85e07314e9e397902a"
+  },
+  "redis": {
+    "8": "sha256:50a18654a6876111f20c9e8ce62bf57c079cf66ba555458b155638cb05ce1a0a",
+    "7.4": "sha256:1be04f7150217de11057c19faaef6c7c10086229f1c62bdccb7bbfdd885f9c81"
+  },
+  "valkey": {
+    "8.1": "sha256:57c693df015b3a0f85ebe74d3aeedaae446aa0c9d6db60e10c97ca6f11575a90"
+  }
+}

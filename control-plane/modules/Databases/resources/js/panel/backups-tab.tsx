@@ -33,10 +33,10 @@ function RestoreDialog({
     onClose: () => void;
     reload: () => Promise<void>;
 }) {
-    const keyValue = isKeyValue(data.server.engine);
-    const [target, setTarget] = useState(data.server.id);
+    const keyValue = isKeyValue(data.instance.engine);
+    const [target, setTarget] = useState(data.instance.id);
     const [name, setName] = useState(data.database.name);
-    const instances = data.restore_targets.find((item) => item.id === target)?.instances ?? null;
+    const databases = data.restore_targets.find((item) => item.id === target)?.databases ?? [];
     const [confirm, setConfirm] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
@@ -46,7 +46,7 @@ function RestoreDialog({
         if (!backup) return;
         setRunning(true);
         try {
-            await requestJson(`/databases/backups/${backup.id}/restore`, 'POST', { database_server_id: target, database: name, confirm });
+            await requestJson(`/databases/backups/${backup.id}/restore`, 'POST', { database_instance_id: target, database: name, confirm });
             await reload();
             onClose();
         } catch (e) {
@@ -80,33 +80,32 @@ function RestoreDialog({
             }
         >
             <form id="restore-backup" onSubmit={submit} className="grid gap-4">
-                <Field label={keyValue ? 'Target server' : 'Target engine server'}>
+                <Field label="Target database server">
                     <Select
                         value={target}
                         onValueChange={(value) => {
                             setTarget(value);
-                            if (keyValue) setName('');
+                            setName('');
+                            setConfirm('');
                         }}
                         options={data.restore_targets.map((item) => ({ value: item.id, label: item.label }))}
                     />
                 </Field>
-                {keyValue ? (
-                    <Field
-                        label="Target instance"
-                        hint="Redis and Valkey snapshots load into an existing instance; Valkey can't load Redis 7.4+ snapshots."
-                    >
-                        <Select
-                            value={name || undefined}
-                            onValueChange={setName}
-                            placeholder="Choose an instance"
-                            options={(instances ?? []).map((instance) => ({ value: instance, label: instance }))}
-                        />
-                    </Field>
-                ) : (
-                    <Field label="Target database" hint="Created when it does not exist.">
-                        <Input value={name} onChange={(event) => setName(event.target.value)} mono />
-                    </Field>
-                )}
+                <Field
+                    label="Target database"
+                    hint={
+                        keyValue
+                            ? "The container stops while the snapshot loads; Valkey can't load Redis 7.4+ snapshots."
+                            : 'An existing database of the target; create it first to restore into a new one.'
+                    }
+                >
+                    <Select
+                        value={name || undefined}
+                        onValueChange={setName}
+                        placeholder="Choose a database"
+                        options={databases.map((item) => ({ value: item, label: item }))}
+                    />
+                </Field>
                 <Field
                     label={
                         <>
@@ -136,7 +135,7 @@ function ScheduleForm({ data, onDone, reload }: { data: DatabasePanelData; onDon
         event.preventDefault();
         setSaving(true);
         try {
-            await requestJson(`/databases/servers/${data.server.id}/schedules`, 'POST', {
+            await requestJson(`/databases/instances/${data.instance.id}/schedules`, 'POST', {
                 ...form,
                 retention_count: form.retention_count ? Number(form.retention_count) : null,
                 database_ids: [data.database.id],
@@ -169,7 +168,7 @@ function ScheduleForm({ data, onDone, reload }: { data: DatabasePanelData; onDon
             </Field>
             <Field
                 label="Keep last"
-                hint={`Backups kept per ${isKeyValue(data.server.engine) ? 'instance' : 'database'}`}
+                hint={`Backups kept per ${isKeyValue(data.instance.engine) ? 'instance' : 'database'}`}
                 error={errors.retention_count}
             >
                 <Input
@@ -202,7 +201,7 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
     if (!data) return error ? <p className="text-danger text-sm">{error}</p> : <SkeletonRows rows={6} />;
 
     const { can } = data;
-    const noun = isKeyValue(data.server.engine) ? 'instance' : 'database';
+    const noun = isKeyValue(data.instance.engine) ? 'instance' : 'database';
     const provider = storage ?? data.storage_providers[0]?.id ?? null;
 
     if (data.storage_providers.length === 0 && data.backups.length === 0) {

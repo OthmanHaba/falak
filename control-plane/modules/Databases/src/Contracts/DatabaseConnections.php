@@ -37,15 +37,12 @@ interface DatabaseConnections
     public function hostKeysFor(string $engine): array;
 
     /**
-     * Host for the consumer (check {@see unreachable()} for it), never a public address. PostgreSQL / MySQL / MariaDB:
-     * 127.0.0.1 for native sites on the engine's server; the Docker bridge address (docker0) for containers (Docker,
-     * compose, function) there; for other servers, only when the engine runs on a dedicated database server, its
-     * address on a private network they all share with it (WireGuard first, then the provider private network).
-     * Credentials are those of the oldest user granted access. Redis / Valkey instances: {@see REDIS_KEYS}; host
-     * 127.0.0.1 for native sites on its server, the Docker bridge address (docker0) for containers there, and for
-     * other servers the instance server's private address on a network they share (WireGuard first, then the
-     * provider private network) — never a public one ({@see unreachable()} explains a consumer it can't serve).
-     * An unresolved host is 127.0.0.1.
+     * Host and port for the consumer (check {@see unreachable()} for it), never a public address: containers on the
+     * database container's server (Docker sites, compose stacks) get its DNS name on the environment's Docker network
+     * (falak-db-<id>) and the engine's port; native sites there 127.0.0.1 and the container's host port; other servers
+     * its server's address on a private network they all share with it (WireGuard first, then the provider private
+     * network) and the host port. SQL credentials are those of the oldest user granted access; Redis / Valkey
+     * ({@see REDIS_KEYS}) authenticate as `default`. An unresolved host is 127.0.0.1 with the host port.
      *
      * @param  ?DatabaseConsumer  $consumer  who connects (null: a native consumer)
      * @return array<string, string> empty when the database does not exist
@@ -53,12 +50,9 @@ interface DatabaseConnections
     public function variables(string $databaseId, ?DatabaseConsumer $consumer = null): array;
 
     /**
-     * Why the consumer cannot connect to the host in {@see HOST_KEYS}, or null when it can. An engine on an app/worker
-     * server is reachable from that server only: by native sites, and by containers once the server's agent supports
-     * container access (feature db.containers) — not from other servers. A dedicated database server is reachable from
-     * other servers only over a private network all of them share with it. A Redis / Valkey instance (agents with
-     * db.redis.network): containers on its server once it listens on the Docker bridge, other servers only over a
-     * private network both share and once it listens there.
+     * Why the consumer cannot connect to the host in {@see HOST_KEYS}, or null when it can: containers need the database
+     * in a project environment (its network), other servers a private network all of them share with its server and
+     * the port published there (Falak publishes it once such a consumer exists).
      */
     public function unreachable(string $databaseId, DatabaseConsumer $consumer): ?string;
 }

@@ -172,8 +172,6 @@ it('validates runtime compatibility with the servers', function () {
     $this->post('/sites', sites_input([$fpm->id], ['runtime' => 'php-fpm', 'php_version' => '8.2']))->assertSessionHasErrors('server_ids');
     expect(session('errors')->first('server_ids'))->toContain('PHP 8.2 is not installed');
     $this->post('/sites', sites_input([$lb->id]))->assertSessionHasErrors('server_ids');
-    $this->post('/sites', sites_input([$plain->id], ['framework' => 'docker', 'runtime' => 'docker', 'php_version' => null]))->assertSessionHasErrors('server_ids');
-    expect(session('errors')->first('server_ids'))->toContain('Docker is not installed');
     $this->post('/sites', sites_input([$plain->id], ['runtime' => 'node']))->assertSessionHasErrors('runtime');
     $this->post('/sites', sites_input([$plain->id], ['build_mode' => 'docker']))->assertSessionHasErrors('build_mode');
     $this->post('/sites', sites_input([$plain->id], ['leader_server_id' => $fpm->id]))->assertSessionHasErrors('leader_server_id');

@@ -124,7 +124,8 @@ func Build(d Deps) *Components {
 	dock.Register(reg) // docker.* + deploy.container.swap
 	sup.Register(reg)
 	sched.Register(reg)
-	dbs := db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir})
+	dbs := db.New(db.Deps{Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), FS: d.FS, Logger: log.With("component", "db"), HTTP: d.HTTP,
+		VolumesRoot: filepath.Join(cfg.StateDir, "volumes"), SecretsDir: filepath.Join(cfg.RunDir, "secrets"), EtcDir: cfg.EtcDir})
 	dbs.Register(reg)
 	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	fns := functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
@@ -247,8 +248,14 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Client: client, Interval: cfg.Heartbeat, Running: disp.Running, Log: log.With("component", "heartbeat"),
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
-			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
+			hb := transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
 				MissingSecrets: missingSecrets(comps.Deployer.MissingSecrets(runCtx), comps.Supervisor.WaitingSites(), comps.Cron.WaitingSites())}
+			dctx, cancel := context.WithTimeout(runCtx, 5*time.Second)
+			defer cancel()
+			if dbs := comps.DB.Report(dctx); len(dbs) > 0 {
+				hb.Databases = dbs
+			}
+			return hb
 		},
 		Facts: func(ctx context.Context) (any, error) {
 			f, err := facts.Collect(ctx, r, fs, version.Version)
@@ -266,8 +273,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	var polling, loops sync.WaitGroup
 	polling.Add(1)
 	go func() { defer polling.Done(); poller.Run(pollCtx) }()
-	// RedisWatch: Redis / Valkey instances listen on docker0 / WireGuard addresses that may appear after they started.
-	for _, fn := range []func(context.Context){hb.Run, renewer.Run, comps.DB.RedisWatch} {
+	for _, fn := range []func(context.Context){hb.Run, renewer.Run} {
 		loops.Add(1)
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}

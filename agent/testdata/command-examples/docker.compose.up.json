@@ -23,5 +23,6 @@
   },
   "mask": [
     "DB_PASSWORD"
-  ]
+  ],
+  "join_networks": ["falak-env-01hzyenv000000000000000001"]
 }

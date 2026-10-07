@@ -12,6 +12,8 @@ use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
@@ -24,6 +26,8 @@ use Falak\Volumes\Contracts\Data\Mount;
 use Falak\Volumes\Contracts\ServiceVolumes;
 use Falak\Volumes\Contracts\VolumeMounts;
 use RuntimeException;
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Agent command payloads for deployment steps. ULIDs are uppercased here — the agent boundary —
@@ -43,6 +47,7 @@ final class StepPayloads
         private readonly SecretVariables $secrets,
         private readonly VolumeMounts $mounts,
         private readonly ServiceVolumes $volumes,
+        private readonly ProjectDirectory $projects,
     ) {}
 
     /** @var array<string, list<string>> site id => variables the last resolve filled from the secret store */
@@ -231,15 +236,73 @@ final class StepPayloads
         // The stack's named volumes become (or stay) volumes of this server, attached to the services mounting them.
         $this->volumes->composeDeployed($site->organizationId, $site->id, $serverId, $site->slug, (string) $release['yaml']);
 
+        $files = $this->composeFiles($site, $release, $releaseId, $serverId, $deployment);
+        $network = $this->environmentNetwork($site->id);
+
+        if ($network !== null && ($override = self::environmentOverride((string) $release['yaml'], $network)) !== null) {
+            // After compose.yaml (files are passed with -f in order): the services start on the environment's network.
+            array_splice($files['files'], 1, 0, [['name' => 'compose.falak.yaml', 'content' => $override]]);
+        }
+
         return [
-            ...$this->composeFiles($site, $release, $releaseId, $serverId, $deployment),
+            ...$files,
             'pull' => 'missing',
             // A bootstrap pass starts a subset (and waits for its health); it removes nothing.
             'remove_orphans' => $bootstrap === [],
             'wait' => true,
             'wait_timeout_s' => max(1, min(3600, (int) config('deployments.compose.wait_timeout', 300))),
             ...($bootstrap !== [] ? ['services' => $bootstrap] : []),
+            // The stack's containers join the environment's network, where its database containers are.
+            ...(($network = $this->environmentNetwork($site->id)) !== null ? ['join_networks' => [$network]] : []),
         ];
+    }
+
+    /**
+     * compose.falak.yaml: the environment's network as an external network of every service (but those with a
+     * network_mode), so containers start on it and reach the environment's databases by name from their first
+     * healthcheck. Compose merges a service's networks with the file's: a service on its implicit `default` network
+     * keeps it.
+     */
+    public static function environmentOverride(string $yaml, string $network): ?string
+    {
+        try {
+            $doc = Yaml::parse($yaml);
+        } catch (ParseException) {
+            return null;
+        }
+
+        $services = [];
+
+        foreach ((array) (is_array($doc) ? ($doc['services'] ?? []) : []) as $name => $service) {
+            if (! is_array($service) || isset($service['network_mode'])) {
+                continue;
+            }
+
+            $services[(string) $name] = ['networks' => [...(empty($service['networks']) ? ['default' => (object) []] : []), $network => (object) []]];
+        }
+
+        return $services === [] ? null : Yaml::dump(['services' => $services, 'networks' => [$network => ['external' => true]]], 4, 2, Yaml::DUMP_OBJECT_AS_MAP);
+    }
+
+    /**
+     * The Docker network of the site's environment (falak-env-<id>) when that environment has databases: their
+     * containers are on it, and the site's containers reach them by name there.
+     */
+    private function environmentNetwork(string $siteId): ?string
+    {
+        $placed = $this->projects->projectOf(ServiceKind::Site, $siteId);
+
+        if ($placed === null) {
+            return null;
+        }
+
+        foreach ($this->projects->servicesIn($placed->environmentId) as $service) {
+            if ($service->kind === ServiceKind::Database) {
+                return 'falak-env-'.strtolower($placed->environmentId);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -825,8 +888,12 @@ final class StepPayloads
             ],
             // Sites with no domain have no edge route (a split-out compose service only its stack reaches).
             'edge_route_id' => $site->testDomain !== null || $this->edge->domainsFor($site->id) !== [] ? $this->edge->routeId($site->id) : null,
-            // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
-            'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
+            // A compose service run as its own site keeps reaching the stack's services (and they it) by name; a site of
+            // an environment with databases joins its network, where the database containers are.
+            'networks' => [
+                ...$this->compose->stackNetworks($site->id, $serverId),
+                ...(($network = $this->environmentNetwork($site->id)) !== null ? [['name' => $network, 'environment' => true]] : []),
+            ] ?: null,
             // Volumes attached to the site on this server: Docker volumes by name, sized ones at their mountpoint.
             'volumes' => array_map(fn (Mount $mount) => $mount->toPayload(), $this->mounts->forSite($site->id, $serverId)) ?: null,
             'labels' => (object) array_filter([

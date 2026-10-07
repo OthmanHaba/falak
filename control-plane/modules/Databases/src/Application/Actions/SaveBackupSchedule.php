@@ -3,10 +3,9 @@
 namespace Falak\Databases\Application\Actions;
 
 use Cron\CronExpression;
-use Falak\Databases\Application\KeyValue\KeyValueBackups;
 use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Models\BackupSchedule;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Support\Carbon;
@@ -17,39 +16,36 @@ final class SaveBackupSchedule
 {
     public function __construct(
         private readonly AuditLog $audit,
-        private readonly KeyValueBackups $keyValue,
     ) {}
 
     /**
      * @param  array{name: string, storage_provider_id: string, database_ids: list<string>, cron: string, retention_count?: ?int, retention_days?: ?int, compression?: ?string, enabled?: ?bool}  $data
      */
-    public function __invoke(DatabaseServer $server, array $data, ?BackupSchedule $schedule = null, ?string $actorId = null): BackupSchedule
+    public function __invoke(DatabaseInstance $instance, array $data, ?BackupSchedule $schedule = null, ?string $actorId = null): BackupSchedule
     {
-        $this->keyValue->assertSupported($server, 'database_ids');
-
         $cron = trim(preg_replace('/\s+/', ' ', $data['cron']) ?? '');
 
         if (! CronExpression::isValidExpression($cron) || count(explode(' ', $cron)) !== 5) {
             throw ValidationException::withMessages(['cron' => 'Enter a 5-field cron expression, e.g. "0 3 * * *".']);
         }
 
-        $providerExists = StorageProvider::query()->where('organization_id', $server->organization_id)->whereKey($data['storage_provider_id'])->exists();
+        $providerExists = StorageProvider::query()->where('organization_id', $instance->organization_id)->whereKey($data['storage_provider_id'])->exists();
 
         if (! $providerExists) {
             throw ValidationException::withMessages(['storage_provider_id' => 'Choose a storage provider of this organization.']);
         }
 
         $databaseIds = array_values(array_unique($data['database_ids']));
-        $valid = $server->databases()->whereIn('id', $databaseIds)->pluck('id')->all();
+        $valid = $instance->databases()->whereIn('id', $databaseIds)->pluck('id')->all();
 
         if ($databaseIds === [] || count($valid) !== count($databaseIds)) {
-            throw ValidationException::withMessages(['database_ids' => ($server->engine->isKeyValue() ? 'Choose one or more instances on this server.' : 'Choose one or more databases on this server.')]);
+            throw ValidationException::withMessages(['database_ids' => 'Choose one or more databases of this database server.']);
         }
 
         $enabled = $data['enabled'] ?? true;
 
-        $schedule = DB::transaction(function () use ($server, $data, $schedule, $cron, $valid, $enabled, $actorId) {
-            $schedule ??= new BackupSchedule(['organization_id' => $server->organization_id, 'database_server_id' => $server->id, 'created_by' => $actorId]);
+        $schedule = DB::transaction(function () use ($instance, $data, $schedule, $cron, $valid, $enabled, $actorId) {
+            $schedule ??= new BackupSchedule(['organization_id' => $instance->organization_id, 'database_instance_id' => $instance->id, 'created_by' => $actorId]);
             $schedule->fill([
                 'name' => $data['name'],
                 'storage_provider_id' => $data['storage_provider_id'],
@@ -71,7 +67,7 @@ final class SaveBackupSchedule
             'cron' => $cron,
             'databases' => count($valid),
             'enabled' => $enabled,
-        ], $server->organization_id);
+        ], $instance->organization_id);
 
         return $schedule;
     }

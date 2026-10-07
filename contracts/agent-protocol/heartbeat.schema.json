@@ -18,6 +18,22 @@
       "maxItems": 500,
       "description": "Site slugs whose env file (/run/falak/env) or container secret files (/run/falak/secrets) are gone, usually because a reboot emptied the tmpfs. The control plane answers with site.env.write. Sent with every heartbeat until restored; omitted when empty."
     },
+    "databases": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "state", "health", "secrets_missing"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[0-9a-z]{26}$" },
+          "state": { "enum": ["running", "exited", "created", "restarting", "paused", "dead", "missing"] },
+          "health": { "enum": ["healthy", "unhealthy", "starting", "none"] },
+          "secrets_missing": { "type": "boolean" }
+        }
+      },
+      "description": "Database containers on the server (label falak.db.instance), every heartbeat; omitted when there are none. secrets_missing: the instance's password file is gone (a reboot emptied /run/falak/secrets) and its container cannot start; the control plane answers with db.instance.secrets."
+    },
     "facts": { "$ref": "facts.schema.json", "description": "Only sent when changed since last heartbeat" }
   }
 }

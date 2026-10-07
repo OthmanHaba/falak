@@ -1,75 +1,95 @@
 <?php
 
-use Falak\Databases\Application\ContainerNetworks;
+$versions = [
+    'postgresql' => ['17', '18', '16', '15'],
+    'mysql' => ['8.4', '8.0'],
+    'mariadb' => ['11.4', '10.11'],
+    'redis' => ['8', '7.4'],
+    'valkey' => ['8.1'],
+];
 
-$dockerNetworks = ContainerNetworks::parse(env('FALAK_DOCKER_NETWORKS', implode(',', ContainerNetworks::DEFAULT)));
+// Database images run pinned by digest, never a tag as pulled: the digests of the images CI published and signed
+// (db-image-digests.json, {"postgresql": {"17": "sha256:…"}}, written by tools/db-image-digests.sh in release.yml before the
+// control-plane image is built; docs/DB_IMAGES.md "Trust"), overridable per major with FALAK_DB_IMAGE_DIGEST_<ENGINE>_<MAJOR>
+// (dots as underscores). A major without a digest can't be created or upgraded to.
+$manifest = (string) env('FALAK_DB_IMAGE_DIGESTS', __DIR__.'/db-image-digests.json');
+$manifest = str_starts_with($manifest, '/') ? $manifest : base_path($manifest);
+$digests = is_file($manifest) ? (array) json_decode((string) file_get_contents($manifest), true) : [];
+
+foreach ($versions as $engine => $majors) {
+    foreach ($majors as $major) {
+        $digest = env('FALAK_DB_IMAGE_DIGEST_'.strtoupper($engine).'_'.str_replace('.', '_', $major));
+
+        if (is_string($digest) && $digest !== '') {
+            $digests[$engine][$major] = $digest;
+        }
+    }
+}
 
 return [
-    // Supported engine versions (shown in the UI; detected versions outside this list are kept but flagged).
-    'versions' => [
-        'mysql' => ['8.0', '8.4'],
-        'mariadb' => ['10.11', '11.4', '11.8'],
-        'postgresql' => ['16', '17', '18'],
-        'redis' => ['6.0', '7.0', '7.2', '7.4', '8.0'],
-        'valkey' => ['7.2', '8.0', '8.1', '9.0'],
+    // Every managed database is a container of a Falak database image (docs/DB_IMAGES.md): ghcr.io/othmanhaba/
+    // falak-<engine>:<major>, always run by the pinned digest above (the agent refuses anything else). The first version
+    // of each engine is the default of a new instance; a new digest for a major is a minor upgrade.
+    'registry' => rtrim((string) env('FALAK_DB_IMAGE_REGISTRY', 'ghcr.io/othmanhaba'), '/'),
+    'tag_suffix' => (string) env('FALAK_DB_IMAGE_TAG_SUFFIX', ''),
+    'versions' => $versions,
+    'digests' => $digests,
+
+    // Memory limit of a new instance (bytes), and the smallest one accepted. The engine's config is tuned to it.
+    'memory' => [
+        'default' => ['postgresql' => 512 * 1024 ** 2, 'mysql' => 512 * 1024 ** 2, 'mariadb' => 512 * 1024 ** 2, 'redis' => 128 * 1024 ** 2, 'valkey' => 128 * 1024 ** 2],
+        'min' => ['postgresql' => 256 * 1024 ** 2, 'mysql' => 384 * 1024 ** 2, 'mariadb' => 256 * 1024 ** 2, 'redis' => 32 * 1024 ** 2, 'valkey' => 32 * 1024 ** 2],
+        'max' => 256 * 1024 ** 3,
     ],
 
-    // Version installed by the distro packages provisioning uses, when the agent does not report one
-    // (facts.runtimes.<engine>). Keyed by "<os id> <os version>"; an engine missing for a release falls back to
-    // Ubuntu 24.04's. Valkey (servers.caches_by_os): noble-updates 7.2, resolute 9.0, trixie 8.1; resolute (26.04):
-    // PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0 (packages.ubuntu.com, packages.debian.org, 2026-10).
-    'distro_versions' => [
-        'ubuntu 24.04' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '16', 'redis' => '7.0', 'valkey' => '7.2'],
-        'ubuntu 22.04' => ['mysql' => '8.0', 'mariadb' => '10.6', 'postgresql' => '14', 'redis' => '6.0'],
-        'ubuntu 26.04' => ['mysql' => '8.4', 'mariadb' => '11.8', 'postgresql' => '18', 'redis' => '8.0', 'valkey' => '9.0'],
-        'debian 12' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '15', 'redis' => '7.0'],
-        'debian 13' => ['redis' => '8.0', 'valkey' => '8.1'],
+    // Size of a new instance's data volume (a sized volume: a hard limit, grown online from Volumes).
+    'disk' => [
+        'default' => ['postgresql' => 10 * 1024 ** 3, 'mysql' => 10 * 1024 ** 3, 'mariadb' => 10 * 1024 ** 3, 'redis' => 2 * 1024 ** 3, 'valkey' => 2 * 1024 ** 3],
+        'min' => 1024 ** 3,
+        'max' => 16 * 1024 ** 4,
     ],
 
-    // Redis / Valkey instances (one process each, redis-server@falak-<name>): ports Falak allocates (the stock
-    // instance keeps 6379), and the defaults of a new instance.
-    'key_value' => [
-        'ports' => [6380, 6479],
-        'maxmemory_mb' => 128,
-        'eviction' => 'noeviction',
-        'persistence' => 'rdb',
-        'evictions' => ['noeviction', 'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru', 'volatile-lfu', 'volatile-random', 'volatile-ttl'],
-        'persistences' => ['rdb', 'aof', 'none'],
-        // Providers whose servers of one account and region share a private network by default, used when no Falak
-        // private network connects an instance's (or a dedicated SQL database server's) server with a site's:
-        // DigitalOcean (each region's default VPC) and Lightsail (instances of a region reach each other's private IP).
-        // Not Hetzner, Vultr, Linode: their private networks are opt-in and can differ per server, so a private IPv4
-        // says nothing about who shares it. Servers must be created by Falak with the same provider credential, in the
-        // same region.
-        'provider_private_networks' => ['digitalocean', 'lightsail'],
-        // Custom servers (Redis / Valkey and dedicated SQL database servers alike): their private IPv4s are taken as
-        // one network (never in production — they may be NATed or in different networks). The sim's fleet network
-        // uses it.
-        'custom_private_network' => (bool) env('FALAK_REDIS_CUSTOM_PRIVATE_NETWORK', false),
-    ],
+    // Host ports Falak publishes instances on (127.0.0.1, plus private addresses for other servers); one per instance
+    // and server.
+    'host_ports' => [20000, 29999],
+
+    // TLS certificates of instances (issued by the Falak CA).
+    'tls_days' => 397,
+    // Certificates are renewed (and the engine restarted with them) this many days before they expire.
+    'tls_renew_days' => 30,
+
+    // Redis / Valkey password rotations: the previous password stays valid this many hours, while apps are redeployed
+    // with the new one, then the agent drops it.
+    'password_overlap_hours' => (int) env('FALAK_DB_PASSWORD_OVERLAP_HOURS', 24),
+
+    // A major upgrade's old instance: its container is removed this many hours after the upgrade, once the new one is
+    // healthy. Its data volume stays until someone deletes it.
+    'retire_hours' => 24,
+
+    // Restoring lost password files (heartbeat `databases[].secrets_missing`, after a reboot): at most once per
+    // instance in this many seconds.
+    'secrets_restore_throttle' => 300,
+
+    // Providers whose servers of one account and region share a private network by default, used when no Falak private
+    // network connects an instance's server with a consumer's: DigitalOcean (each region's default VPC) and Lightsail.
+    // Not Hetzner, Vultr, Linode: their private networks are opt-in and can differ per server, so a private IPv4 says
+    // nothing about who shares it. Servers must be created by Falak with the same provider credential, in the same
+    // region.
+    'provider_private_networks' => ['digitalocean', 'lightsail'],
+    // Custom servers: their private IPv4s are taken as one network (never in production — they may be NATed or in
+    // different networks). The sim's fleet network uses it.
+    'custom_private_network' => (bool) env('FALAK_DB_CUSTOM_PRIVATE_NETWORK', false),
 
     'password_length' => 32,
-
-    // Docker address ranges containers connect from (Docker's default address pools). Engines on app/worker servers
-    // accept these ranges, on the Docker bridges only (firewall), so compose stacks, Docker sites and functions on
-    // the same server reach them on the host address. Change them if the Docker daemon uses other pools. IPv4 CIDRs,
-    // /8–/30; invalid entries are dropped (and logged), Docker's defaults apply when none is valid.
-    'container_networks' => $dockerNetworks['networks'],
-    'container_networks_invalid' => $dockerNetworks['invalid'],
-
-    // The Docker default bridge's address (docker0) that containers on a server use to reach its PostgreSQL / MySQL /
-    // MariaDB engines, when no Redis / Valkey instance there has reported the real one. Docker's default; change it
-    // when the daemon sets another `bip`.
-    'docker_bridge_host' => env('FALAK_DOCKER_BRIDGE_HOST', '172.17.0.1'),
 
     // Agent command timeouts (seconds).
     'timeouts' => [
         'ddl' => 300,
-        // db.redis.apply: longer than the agent's own waits (a start loading a big dataset up to 20 min, an AOF
-        // rewrite up to 15 min); the agent ends its waits before this deadline.
-        'redis_apply' => (int) env('FALAK_REDIS_APPLY_TIMEOUT', 3600),
+        // db.instance.create pulls the image and waits for the first start (up to 300 s on the agent).
+        'instance' => 1800,
         'backup' => 3600,
         'restore' => 3600,
+        'upgrade' => 4 * 3600,
     ],
 
     // Presigned URL lifetimes (seconds). The upload URL must outlive queueing + the dump itself.

@@ -34,9 +34,9 @@ dataset('partial_reports', [
 
 it('decides on a partial report without failing', function (array $report) {
     $stacks = [
-        new Stack('frankenphp', ['8.4'], '8.4', '22', 'postgresql', 'redis', true),
-        new Stack('fpm', ['8.4'], '8.4', '22', 'mysql', 'valkey', false),
-        new Stack(database: 'mariadb'),
+        new Stack('frankenphp', ['8.4'], '8.4', '22'),
+        new Stack('fpm', ['8.4'], '8.4', '22'),
+        new Stack,
     ];
 
     foreach ($stacks as $stack) {

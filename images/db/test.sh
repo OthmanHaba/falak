@@ -219,6 +219,28 @@ docker exec -i "$c" falak-db restore logical --database app_copy --in - <"$work/
 expect "restored rows" "$(sql "$c" app_copy 'SELECT count(*) FROM items')" 1000
 
 if [ "$engine" = postgres ]; then
+	step "restore owned by the app user, swapped in: its migrations can alter what was restored"
+	printf '%s' '{"username":"app_user","password":"app-user-pw-123","grants":[{"database":"app_copy","privileges":["ALL PRIVILEGES"]}],"state":"present"}' |
+		docker exec -i "$c" sh -c 'cat >/tmp/user.json && falak-db user apply --spec /tmp/user.json && rm /tmp/user.json' | jq -e .changed >/dev/null
+	sql "$c" app_copy 'CREATE SCHEMA billing; CREATE TABLE billing.invoices (id int)' >/dev/null
+	docker exec -i "$c" falak-db restore logical --database app_copy --in - --swap --owner app_user <"$work/app.dump" | jq -e '.swapped and .owner == "app_user"' >/dev/null
+	expect "rows after the swap" "$(sql "$c" app_copy 'SELECT count(*) FROM items')" 1000
+	expect "table owner" "$(sql "$c" app_copy "SELECT tableowner FROM pg_tables WHERE tablename = 'items'")" app_user
+	docker exec -e PGPASSWORD=app-user-pw-123 "$c" psql -h 127.0.0.1 -U app_user -d app_copy -v ON_ERROR_STOP=1 -c 'ALTER TABLE items ADD COLUMN migrated boolean' >/dev/null ||
+		fail "ALTER TABLE as the app user after a restore"
+	expect "the previous database is gone" "$(sql "$c" postgres "SELECT count(*) FROM pg_database WHERE datname LIKE 'app_copy__falak_%'")" 0
+	echo "ok: restored objects belong to app_user"
+
+	step "read-only mode and row counts"
+	docker exec "$c" falak-db readonly on | jq -e '.read_only' >/dev/null
+	if docker exec -e PGPASSWORD=app-user-pw-123 "$c" psql -h 127.0.0.1 -U app_user -d app_copy -v ON_ERROR_STOP=1 -c 'INSERT INTO items (id) VALUES (5000)' >/dev/null 2>&1; then
+		fail "write accepted in read-only mode"
+	fi
+	docker exec "$c" falak-db readonly off | jq -e '.read_only == false' >/dev/null
+	expect "row counts" "$(docker exec "$c" falak-db table-counts --database app_copy | jq -r '.tables["public.items"]')" 1000
+fi
+
+if [ "$engine" = postgres ]; then
 	step "WAL archiving into the spool"
 	seg=$(sql "$c" postgres 'SELECT pg_walfile_name(pg_switch_wal())')
 	for _ in $(seq 1 30); do

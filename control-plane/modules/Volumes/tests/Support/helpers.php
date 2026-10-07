@@ -26,7 +26,7 @@ function volumes_server(string $organizationId, string $name = 'app-1'): Server
         'organization_id' => $organizationId,
         'name' => $name,
         'type' => ServerType::App,
-        'stack' => new Stack(null, [], null, '22', null, null, true),
+        'stack' => new Stack(null, [], null, '22'),
     ]);
 }
 

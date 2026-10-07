@@ -60,8 +60,11 @@ final class ServiceController extends Controller
                 'engine' => ['required', 'string', Rule::in(['postgresql', 'mysql', 'mariadb', 'redis', 'valkey'])],
                 'server_id' => ['required', 'string', 'size:26'],
                 'name' => ['required', 'string', 'max:63'],
-                // Redis / Valkey (the picker's Advanced section)
-                'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
+                // The container (the picker's Advanced section): major version, memory limit, data volume size.
+                'version' => ['nullable', 'string', 'max:16'],
+                'memory_mb' => ['nullable', 'integer', 'min:16', 'max:262144'],
+                'disk_gb' => ['nullable', 'integer', 'min:1', 'max:16384'],
+                // Redis / Valkey
                 'eviction' => ['nullable', 'string', 'max:32'],
                 'persistence' => ['nullable', 'string', 'max:8'],
             ]);

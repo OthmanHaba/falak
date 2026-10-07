@@ -3,15 +3,18 @@
 namespace Falak\Databases\Application\Listeners;
 
 use Falak\Databases\Application\Actions\ApplyDatabaseUser;
+use Falak\Databases\Application\Actions\ApplyInstance;
+use Falak\Databases\Application\Actions\CreateDatabase;
+use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Application\Jobs\PruneScheduleBackups;
-use Falak\Databases\Application\KeyValue\ApplyKeyValueInstance;
-use Falak\Databases\Application\KeyValue\KeyValuePorts;
 use Falak\Databases\Domain\Enums\BackupStatus;
+use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Enums\RestoreStatus;
 use Falak\Databases\Domain\Models\Backup;
+use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Domain\Models\Grant;
 use Falak\Databases\Domain\Models\Restore;
@@ -20,34 +23,39 @@ use Falak\Databases\Events\BackupSucceeded;
 use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\DatabaseDeleted;
 use Falak\Databases\Events\RestoreFinished;
+use Falak\Databases\Infrastructure\CommandPayloads;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Volumes\Contracts\AttachableType;
+use Falak\Volumes\Contracts\ServiceVolumes;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 /**
- * Settles databases, users, backups and restores when the db.* commands Databases dispatched finish.
+ * Settles instances, databases, users, backups and restores when the db.* commands Databases dispatched finish.
+ * db.instance.* commands name their instance in the idempotency key (`<type>:<instance id>:…`), so concurrent commands
+ * of one instance (a restart during a password rotation) each settle their own part.
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', 'db.redis.apply', 'db.redis.remove'];
+    private const INSTANCE_TYPES = ['db.instance.create', 'db.instance.update', 'db.instance.restart', 'db.instance.delete', 'db.instance.password', 'db.instance.secrets', 'db.instance.upgrade'];
 
-    /** A new instance whose port turned out taken gets another one this many times before it fails. */
-    private const PORT_RETRIES = 3;
+    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', ...self::INSTANCE_TYPES];
 
     public function __construct(
         private readonly ApplyDatabaseUser $applyUser,
+        private readonly ApplyInstance $applyInstance,
+        private readonly CreateDatabase $createDatabase,
+        private readonly ServiceVolumes $volumes,
+        private readonly AgentCommands $commands,
         private readonly AuditLog $audit,
-        private readonly KeyValuePorts $ports,
-        private readonly ApplyKeyValueInstance $applyInstance,
     ) {}
 
     public function handleFinished(CommandFinished $event): void
     {
         if (in_array($event->type, self::TYPES, true)) {
-            $this->settle($event->type, $event->commandId, true, null, $event->result);
+            $this->settle($event->type, $event->commandId, $event->idempotencyKey, true, null, $event->result);
         }
     }
 
@@ -55,27 +63,277 @@ final class HandleCommandOutcome implements ShouldQueue
     {
         if (in_array($event->type, self::TYPES, true)) {
             $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
-            $this->settle($event->type, $event->commandId, false, mb_substr($reason, 0, 1000), $event->result);
+            $this->settle($event->type, $event->commandId, $event->idempotencyKey, false, mb_substr($reason, 0, 1000), $event->result);
         }
     }
 
     /**
      * @param  array<string, mixed>|null  $result
      */
-    private function settle(string $type, string $commandId, bool $succeeded, ?string $error, ?array $result): void
+    private function settle(string $type, string $commandId, string $key, bool $succeeded, ?string $error, ?array $result): void
     {
+        if (in_array($type, self::INSTANCE_TYPES, true)) {
+            $instance = DatabaseInstance::query()->find(explode(':', $key)[1] ?? '');
+
+            if ($instance !== null) {
+                $this->instance($type, $instance, $commandId, $succeeded, $error, $result ?? []);
+            }
+
+            return;
+        }
+
         match ($type) {
-            'db.create', 'db.drop', 'db.redis.remove' => $this->database($commandId, $succeeded, $error),
-            'db.redis.apply' => $this->instance($commandId, $succeeded, $error, $result ?? []),
+            'db.create', 'db.drop' => $this->database($commandId, $succeeded, $error),
             'db.user.apply' => $this->user($commandId, $succeeded, $error),
             'db.backup' => $this->backup($commandId, $succeeded, $error, $result ?? []),
             'db.restore' => $this->restore($commandId, $succeeded, $error, $result ?? []),
         };
     }
 
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function instance(string $type, DatabaseInstance $instance, string $commandId, bool $succeeded, ?string $error, array $result): void
+    {
+        $observed = array_filter([
+            'image_digest' => is_string($result['image_digest'] ?? null) && preg_match('/^sha256:[a-f0-9]{64}$/', $result['image_digest']) === 1 ? $result['image_digest'] : null,
+            'health' => is_string($result['health'] ?? null) ? $result['health'] : null,
+            'health_at' => is_string($result['health'] ?? null) ? now() : null,
+        ], fn ($value) => $value !== null);
+
+        match ($type) {
+            'db.instance.create' => $this->created($instance, $succeeded, $error, $observed),
+            'db.instance.update' => $this->updated($instance, $commandId, $succeeded, $error, $observed),
+            'db.instance.restart' => $instance->forceFill([...($succeeded ? $observed : []), 'status_message' => $succeeded ? null : "Restart failed: {$error}"])->save(),
+            'db.instance.delete' => $this->deleted($instance, $succeeded, $error),
+            'db.instance.password' => $this->passwordRotated($instance, $succeeded, $error, $result),
+            'db.instance.secrets' => $succeeded ? null : $instance->forceFill(['status_message' => "Restoring its password file failed: {$error}"])->save(),
+            'db.instance.upgrade' => $this->upgraded($instance, $succeeded, $error),
+        };
+    }
+
+    /**
+     * The container runs: SQL instances get their databases (db.create) and then users; Redis / Valkey instances are
+     * ready. The target of a major upgrade gets the data instead (db.instance.upgrade).
+     *
+     * @param  array<string, mixed>  $observed
+     */
+    private function created(DatabaseInstance $instance, bool $succeeded, ?string $error, array $observed): void
+    {
+        if ($instance->status !== InstanceStatus::Pending) {
+            return;
+        }
+
+        $source = $instance->upgrade_of !== null ? DatabaseInstance::query()->find($instance->upgrade_of) : null;
+
+        if (! $succeeded) {
+            $instance->forceFill(['status' => InstanceStatus::Failed, 'status_message' => $error])->save();
+            $instance->databases()->where('status', ResourceStatus::Pending)->update(['status' => ResourceStatus::Failed, 'status_message' => 'The database server did not start.']);
+            $instance->users()->where('status', ResourceStatus::Pending)->update(['status' => ResourceStatus::Failed, 'status_message' => 'The database server did not start.']);
+            $source?->forceFill(['status' => InstanceStatus::Active, 'status_message' => "The upgrade failed: the new server did not start ({$error})."])->save();
+
+            return;
+        }
+
+        if ($source !== null) {
+            $handle = $this->commands->tryDispatch($instance->server_id, 'db.instance.upgrade', CommandPayloads::upgrade($source, $instance), (int) config('databases.timeouts.upgrade', 14400), "db.instance.upgrade:{$instance->id}");
+            $instance->forceFill([...$observed, 'command_id' => $handle?->id, 'status_message' => $handle === null ? AgentCommands::NOT_CONNECTED : null, 'status' => $handle === null ? InstanceStatus::Failed : InstanceStatus::Pending])->save();
+
+            if ($handle === null) {
+                $source->forceFill(['status' => InstanceStatus::Active, 'status_message' => 'The upgrade failed: '.AgentCommands::NOT_CONNECTED])->save();
+            }
+
+            return;
+        }
+
+        $instance->forceFill([...$observed, 'status' => InstanceStatus::Active, 'status_message' => null])->save();
+
+        if ($instance->engine->isKeyValue()) {
+            $instance->users()->update(['status' => ResourceStatus::Active, 'status_message' => null]);
+
+            foreach ($instance->databases()->where('status', ResourceStatus::Pending)->get() as $database) {
+                $database->forceFill(['status' => ResourceStatus::Active, 'status_message' => null])->save();
+                DatabaseCreated::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $instance->engine->value, $database->site_id);
+            }
+
+            return;
+        }
+
+        foreach ($instance->databases()->where('status', ResourceStatus::Pending)->get() as $database) {
+            $this->createDatabase->dispatch($database);
+        }
+
+        // Users without grants on pending databases apply now; the others when their database exists.
+        $instance->users()->where('status', ResourceStatus::Pending)->get()
+            ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
+    }
+
+    private function deleted(DatabaseInstance $instance, bool $succeeded, ?string $error): void
+    {
+        if ($instance->status !== InstanceStatus::Deleting && $instance->status !== InstanceStatus::Retired) {
+            return;
+        }
+
+        if (! $succeeded) {
+            if ($instance->status === InstanceStatus::Deleting) {
+                $instance->forceFill(['status' => $instance->replaced_by !== null ? InstanceStatus::Retired : InstanceStatus::Active, 'status_message' => "Delete failed: {$error}"])->save();
+                $instance->databases()->where('status', ResourceStatus::Deleting)->update(['status' => ResourceStatus::Active]);
+            } else {
+                $instance->forceFill(['status_message' => "Removing the retired container failed: {$error}"])->save();
+            }
+
+            return;
+        }
+
+        // A retired instance's container went on schedule: the row and its data volume stay until someone deletes them.
+        if ($instance->status === InstanceStatus::Retired) {
+            $instance->forceFill(['retire_at' => null, 'status_message' => 'Retired by a major upgrade: its container was removed, its data volume is kept. Delete it once you verified the upgraded database.'])->save();
+
+            return;
+        }
+
+        $databases = $instance->databases()->get();
+
+        foreach ($databases as $database) {
+            $this->volumes->releaseDatabase($database->id);
+        }
+
+        if ($instance->delete_volume && $instance->volume_id !== null) {
+            $this->volumes->deleteDatabaseVolume($instance->volume_id);
+        }
+
+        $instance->delete();
+        $this->audit->record('databases.instance_deleted', 'database_instance', $instance->id, ['name' => $instance->name, 'server_id' => $instance->server_id, 'volume_deleted' => $instance->delete_volume], $instance->organization_id);
+
+        foreach ($databases as $database) {
+            DatabaseDeleted::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->site_id);
+        }
+    }
+
+    /**
+     * db.instance.update: what the agent runs is recorded; published addresses being applied become the instance's.
+     *
+     * @param  array<string, mixed>  $observed
+     */
+    private function updated(DatabaseInstance $instance, string $commandId, bool $succeeded, ?string $error, array $observed): void
+    {
+        $network = $instance->network_command_id === $commandId;
+
+        $instance->forceFill([
+            ...($succeeded ? $observed : []),
+            'status_message' => $succeeded ? null : "Update failed: {$error}",
+            ...($network && $succeeded ? ['published_addresses' => $instance->pending_published_addresses ?: null, 'pending_published_addresses' => null] : []),
+            ...($network ? ['network_command_id' => null] : []),
+        ])->save();
+    }
+
+    /**
+     * db.instance.password: the new password replaces the stored one once the agent set it. A Redis / Valkey rotation
+     * (mode add) keeps the previous one valid until password_overlap_until (MaintainInstances retires it); a retire ends
+     * the overlap.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function passwordRotated(DatabaseInstance $instance, bool $succeeded, ?string $error, array $result = []): void
+    {
+        if ($instance->next_root_password === null) {
+            // A retire (the only password command without a new password) ended the overlap.
+            if ($succeeded && $instance->previous_password !== null) {
+                $instance->forceFill(['previous_password' => null, 'password_overlap_until' => null])->save();
+            }
+
+            return;
+        }
+
+        if (! $succeeded) {
+            // The agent may have set it already (only the file swap failed): the same password is sent again on retry.
+            $instance->forceFill(['status_message' => "Password rotation failed: {$error} Rotate again to finish it."])->save();
+
+            return;
+        }
+
+        DB::transaction(function () use ($instance) {
+            $password = (string) $instance->next_root_password;
+            $instance->forceFill([
+                'root_password' => $password,
+                'next_root_password' => null,
+                'status_message' => null,
+                ...($instance->engine->isKeyValue() ? [
+                    'previous_password' => $instance->root_password,
+                    'password_overlap_until' => now()->addHours((int) config('databases.password_overlap_hours', 24)),
+                ] : []),
+            ])->save();
+
+            if ($instance->engine->isKeyValue()) {
+                $instance->users()->get()->each(fn (DatabaseUser $user) => $user->forceFill(['password' => $password])->save());
+            }
+        });
+    }
+
+    /**
+     * A major upgrade copied the data: the new instance takes over the old one's databases, users, schedules, DNS name
+     * and host port; the old one is retired: read-only and stopped by the agent, its container removed at retire_at once
+     * the new one is healthy, its data volume kept until someone deletes it.
+     */
+    private function upgraded(DatabaseInstance $target, bool $succeeded, ?string $error): void
+    {
+        $source = $target->upgrade_of !== null ? DatabaseInstance::query()->find($target->upgrade_of) : null;
+
+        if ($source === null || $target->status !== InstanceStatus::Pending) {
+            return;
+        }
+
+        if (! $succeeded) {
+            $target->forceFill(['status' => InstanceStatus::Failed, 'status_message' => "Copying the data failed: {$error}"])->save();
+            $source->forceFill(['status' => InstanceStatus::Active, 'status_message' => "The upgrade to {$target->label()} failed: {$error}"])->save();
+
+            return;
+        }
+
+        DB::transaction(function () use ($source, $target) {
+            $hostPort = $source->host_port;
+            $hostname = $source->hostname;
+
+            $source->forceFill([
+                'status' => InstanceStatus::Retired,
+                'status_message' => "Replaced by {$target->label()}: read-only and stopped, its data volume kept. Delete it once you verified the upgraded database.",
+                'replaced_by' => $target->id,
+                'host_port' => null,
+                'hostname' => "falak-db-{$source->id}",
+                'retire_at' => now()->addHours((int) config('databases.retire_hours', 24)),
+            ])->save();
+
+            Database::query()->where('database_instance_id', $source->id)->update(['database_instance_id' => $target->id, 'status' => ResourceStatus::Active]);
+            DatabaseUser::query()->where('database_instance_id', $source->id)->update(['database_instance_id' => $target->id, 'status' => ResourceStatus::Active]);
+            BackupSchedule::query()->where('database_instance_id', $source->id)->update(['database_instance_id' => $target->id]);
+
+            $target->forceFill([
+                'status' => InstanceStatus::Active,
+                'status_message' => null,
+                'hostname' => $hostname,
+                'host_port' => $hostPort,
+                'published_addresses' => $source->published_addresses,
+                'upgrade_of' => null,
+            ])->save();
+
+            foreach ($target->databases()->get() as $database) {
+                $this->volumes->releaseDatabase($database->id);
+            }
+
+            if (($primary = $target->databases()->reorder()->orderBy('created_at')->first()) !== null && $target->volume_id !== null) {
+                $this->volumes->attach($target->volume_id, AttachableType::Database, $primary->id, '/var/lib/falak/db');
+            }
+
+            // Publish on the old host port, keep the DNS name across recreations, and a certificate valid for that name.
+            ($this->applyInstance)($target, background: true, renewCertificate: true);
+        });
+
+        $this->audit->record('databases.instance_upgrade_finished', 'database_instance', $target->id, ['name' => $target->name, 'version' => $target->version, 'replaced' => $source->id], $target->organization_id);
+    }
+
     private function database(string $commandId, bool $succeeded, ?string $error): void
     {
-        $database = Database::query()->with('databaseServer')->where('command_id', $commandId)->first();
+        $database = Database::query()->with('instance')->where('command_id', $commandId)->first();
 
         if (! $database) {
             return;
@@ -89,16 +347,12 @@ final class HandleCommandOutcome implements ShouldQueue
             }
 
             $userIds = $database->grants()->pluck('user_id')->all();
-            $keyValue = $database->databaseServer->engine->isKeyValue();
             $database->delete();
-            $this->audit->record('databases.database_deleted', 'database', $database->id, ['name' => $database->name, 'server_id' => $database->server_id], $database->organization_id);
+            $this->audit->record('databases.database_deleted', 'database', $database->id, ['name' => $database->name, 'instance_id' => $database->database_instance_id], $database->organization_id);
             DatabaseDeleted::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->site_id);
 
-            // An instance's `default` user existed for it only; SQL users lose the grant.
-            $keyValue
-                ? DatabaseUser::query()->whereIn('id', $userIds)->get()->each->delete()
-                : DatabaseUser::query()->whereIn('id', $userIds)->where('status', '!=', ResourceStatus::Deleting)->get()
-                    ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
+            DatabaseUser::query()->whereIn('id', $userIds)->where('status', '!=', ResourceStatus::Deleting)->get()
+                ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
 
             return;
         }
@@ -112,94 +366,13 @@ final class HandleCommandOutcome implements ShouldQueue
             return;
         }
 
-        DatabaseCreated::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->databaseServer->engine->value, $database->site_id);
+        DatabaseCreated::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->instance->engine->value, $database->site_id);
 
         // Grants on this database could not be applied before it existed.
         Grant::query()->where('database_id', $database->id)->with('user')->get()
             ->map(fn (Grant $grant) => $grant->user)
             ->filter(fn (?DatabaseUser $user) => $user !== null && $user->status !== ResourceStatus::Deleting)
             ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
-    }
-
-    /**
-     * db.redis.apply settles the instance (pending → active + DatabaseCreated, or failed) and its `default` user
-     * (a password rotation). A failed re-apply of an active instance keeps it active with the reason.
-     */
-    private function instance(string $commandId, bool $succeeded, ?string $error, array $result = []): void
-    {
-        $this->user($commandId, $succeeded, $error);
-
-        $database = Database::query()->with('databaseServer')->where('command_id', $commandId)->first();
-
-        if (! $database || $database->status === ResourceStatus::Deleting) {
-            return;
-        }
-
-        // What the instance listens on (db.redis.network agents report it): container_host is what containers on the
-        // server connect to, bind what references from other servers need.
-        if ($succeeded && is_array($result['bind'] ?? null)) {
-            $database->forceFill(['network' => [
-                ...(array) $database->network,
-                'bind' => array_values(array_map('strval', $result['bind'])),
-                'container_host' => is_string($result['container_host'] ?? null) && $result['container_host'] !== '' ? $result['container_host'] : null,
-                'skipped' => array_values(array_map('strval', (array) ($result['skipped'] ?? []))),
-                // The apply this answers (ConvergeKeyValueNetwork: one is in flight while the instance's command differs).
-                'applied_command' => $commandId,
-            ]])->save();
-        }
-
-        if ($database->status === ResourceStatus::Active) {
-            $database->forceFill(['status' => ResourceStatus::Active, 'status_message' => $succeeded ? null : "Apply failed: {$error}"])->save();
-
-            return;
-        }
-
-        if (! $succeeded && $this->movePort($database, (string) $error)) {
-            return;
-        }
-
-        $database->forceFill([
-            'status' => $succeeded ? ResourceStatus::Active : ResourceStatus::Failed,
-            'status_message' => $succeeded ? null : $error,
-        ])->save();
-
-        if ($succeeded) {
-            DatabaseCreated::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->databaseServer->engine->value, $database->site_id);
-        }
-    }
-
-    /**
-     * The agent found the new instance's port taken (something the machine check did not see): pick another port and
-     * apply again, a few times.
-     */
-    private function movePort(Database $database, string $error): bool
-    {
-        if ($database->status !== ResourceStatus::Pending || preg_match('/port (\d+) is in use/', $error, $m) !== 1) {
-            return false;
-        }
-
-        $avoid = array_values(array_unique([...array_map('intval', (array) ($database->settings['avoid_ports'] ?? [])), (int) $m[1]]));
-
-        if (count($avoid) > self::PORT_RETRIES) {
-            return false;
-        }
-
-        try {
-            DB::transaction(function () use ($database, $avoid, $error) {
-                DatabaseServer::query()->where('server_id', $database->server_id)->lockForUpdate()->get();
-                $database->forceFill([
-                    'port' => $this->ports->allocate($database->server_id, $avoid),
-                    'settings' => [...(array) $database->settings, 'avoid_ports' => $avoid],
-                    'status_message' => $error,
-                ])->save();
-            });
-        } catch (ValidationException) {
-            return false;
-        }
-
-        ($this->applyInstance)($database, background: true);
-
-        return true;
     }
 
     private function user(string $commandId, bool $succeeded, ?string $error): void
@@ -213,7 +386,7 @@ final class HandleCommandOutcome implements ShouldQueue
         if ($user->status === ResourceStatus::Deleting) {
             if ($succeeded) {
                 $user->delete();
-                $this->audit->record('databases.user_deleted', 'database_user', $user->id, ['username' => $user->username, 'server_id' => $user->server_id], $user->organization_id);
+                $this->audit->record('databases.user_deleted', 'database_user', $user->id, ['username' => $user->username, 'instance_id' => $user->database_instance_id], $user->organization_id);
             } else {
                 $user->forceFill(['status' => ResourceStatus::Failed, 'status_message' => "Delete failed: {$error}"])->save();
             }
@@ -274,9 +447,6 @@ final class HandleCommandOutcome implements ShouldQueue
     }
 
     /**
-     * A Redis / Valkey restore with warnings (e.g. its config file could not be put back) queues an apply of the
-     * instance, which converges the agent's files with what runs.
-     *
      * @param  array<string, mixed>  $result  db.restore $defs/result: bytes, duration_ms, warnings
      */
     private function restore(string $commandId, bool $succeeded, ?string $error, array $result): void
@@ -301,26 +471,14 @@ final class HandleCommandOutcome implements ShouldQueue
             'finished_at' => now(),
         ])->save();
 
-        $keyValue = DatabaseServer::query()->find($restore->database_server_id)?->engine->isKeyValue() ?? false;
+        // A PostgreSQL restore swaps a new database in: its users' grants on it are applied again.
+        $database = $succeeded ? Database::query()->where('database_instance_id', $restore->database_instance_id)->where('name', $restore->database_name)->first() : null;
 
-        if ($keyValue && $warnings !== []) {
-            $instance = Database::query()->where('database_server_id', $restore->database_server_id)->where('name', $restore->database_name)->first();
-
-            if ($instance !== null && $instance->status === ResourceStatus::Active) {
-                ($this->applyInstance)($instance, background: true);
-            }
-        }
-
-        if ($succeeded && ! $keyValue) {
-            // The agent creates the database when missing; track it like any other (instances are never created).
-            $database = Database::query()->firstOrCreate(
-                ['database_server_id' => $restore->database_server_id, 'name' => $restore->database_name],
-                ['organization_id' => $restore->organization_id, 'server_id' => $restore->server_id, 'status' => ResourceStatus::Active, 'created_by' => $restore->requested_by],
-            );
-
-            if ($database->status === ResourceStatus::Failed) {
-                $database->forceFill(['status' => ResourceStatus::Active, 'status_message' => null])->save();
-            }
+        if ($database !== null) {
+            Grant::query()->where('database_id', $database->id)->with('user')->get()
+                ->map(fn (Grant $grant) => $grant->user)
+                ->filter(fn (?DatabaseUser $user) => $user !== null && $user->status !== ResourceStatus::Deleting)
+                ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
         }
 
         $this->audit->record($succeeded ? 'databases.restore_succeeded' : 'databases.restore_failed', 'backup', $restore->backup_id, ['restore_id' => $restore->id, 'database' => $restore->database_name], $restore->organization_id);

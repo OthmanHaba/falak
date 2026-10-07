@@ -50,6 +50,8 @@ interface ServiceVolumes
      */
     public function releaseSite(string $siteId, array $deleteVolumeIds = [], ?string $actorId = null): void;
 
+    public function find(string $volumeId): ?VolumeData;
+
     /**
      * Create a sized volume (an ext4 image with a hard limit) on a server, e.g. a database container's data.
      *
@@ -65,4 +67,16 @@ interface ServiceVolumes
      * @throws ValidationException
      */
     public function attach(string $volumeId, AttachableType $type, string $attachableId, string $mountPath, bool $readOnly = false, ?string $service = null): void;
+
+    /**
+     * A database container is gone or moved to another volume: every volume attached to the database ($databaseId, the
+     * canvas service's database) loses that attachment. The data stays in the (now unattached) volume.
+     */
+    public function releaseDatabase(string $databaseId): void;
+
+    /**
+     * Delete a database container's volume once the container is gone (protection, which Databases sets, is lifted
+     * first; remaining attachments go with it). Unknown ids are ignored.
+     */
+    public function deleteDatabaseVolume(string $volumeId, ?string $actorId = null): void;
 }

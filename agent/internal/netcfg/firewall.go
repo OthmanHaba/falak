@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,35 +63,7 @@ type FirewallPayload struct {
 	SSHPort     int    `json:"ssh_port"`
 	AllowICMP   *bool  `json:"allow_icmp"`
 	Rules       []Rule `json:"rules"`
-	// ContainerPorts are host ports the server's containers may reach (Docker bridges: docker0 and br-*), e.g. a
-	// database engine used by compose stacks and functions on the same server. Accepted before the rules.
-	ContainerPorts []ContainerPorts `json:"container_ports,omitempty"`
-	// PeerInterfaces (filled in by the agent, not sent): the interface each peer address not named by the control plane
-	// arrives on.
-	PeerInterfaces map[string]string `json:"-"`
 }
-
-// ContainerPorts opens ports to the Docker bridge interfaces only (feature db.containers): accepted from Sources (the
-// Docker address ranges) on the bridges, then dropped from everywhere else — ahead of private-network and user rules,
-// so only loopback and containers reach the port. Peers (feature db.redis.network) are addresses of other servers
-// also accepted (a Redis instance used by the project's servers over a private network), on the interface they arrive
-// on: PeerInterfaces when the control plane names it (WireGuard), else the agent's guess (see peerInterfaces), else any
-// interface.
-type ContainerPorts struct {
-	ID       string   `json:"id"`
-	Protocol string   `json:"protocol"`
-	Ports    []string `json:"ports"`
-	Sources  []string `json:"sources"`
-	Peers    []string `json:"peers,omitempty"`
-	// PeerInterfaces: the interface a peer arrives on, by address (the control plane knows a Falak WireGuard
-	// network's, also before the interface exists here). Peers not listed: see peerInterfaces.
-	PeerInterfaces map[string]string `json:"peer_interfaces,omitempty"`
-	Comment        string            `json:"comment"`
-}
-
-// dockerBridges are the interfaces container traffic to the host arrives on: the default bridge and the bridges of
-// user-defined networks (compose projects, falak-fn). nft matches the trailing * as a wildcard.
-var dockerBridges = []string{"docker0", "br-*"}
 
 // FirewallResult is its result.
 type FirewallResult struct {
@@ -145,60 +116,6 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 	}
 	fmt.Fprintf(&b, "\t\ttcp dport %d accept comment \"falak:ssh\"\n", ssh)
 	seen := map[string]bool{}
-	for _, c := range p.ContainerPorts {
-		if !idRe.MatchString(c.ID) {
-			return "", perr("invalid container ports id %q", c.ID)
-		}
-		if len(c.Ports) == 0 {
-			return "", perr("container ports %s: no ports", c.ID)
-		}
-		if len(c.Sources) == 0 && len(c.Peers) == 0 {
-			return "", perr("container ports %s: no sources", c.ID)
-		}
-		if len(c.Sources) > 0 {
-			lines, err := renderRule(Rule{ID: "containers-" + c.ID, Protocol: c.Protocol, Ports: c.Ports, Sources: c.Sources, Comment: c.Comment})
-			if err != nil {
-				return "", err
-			}
-			for _, iface := range dockerBridges {
-				for _, l := range lines {
-					b.WriteString("\t\tiifname \"" + iface + "\" " + l + "\n")
-				}
-			}
-		}
-		if len(c.Peers) > 0 {
-			// One rule per interface the peers arrive on ("" = unknown: any interface), interfaces in name order.
-			byIface := map[string][]string{}
-			for _, peer := range c.Peers {
-				iface, ok := c.PeerInterfaces[peer]
-				if !ok {
-					iface = p.PeerInterfaces[peer]
-				}
-				byIface[iface] = append(byIface[iface], peer)
-			}
-			ifaces := make([]string, 0, len(byIface))
-			for iface := range byIface {
-				ifaces = append(ifaces, iface)
-			}
-			sort.Strings(ifaces)
-			for _, iface := range ifaces {
-				lines, err := renderRule(Rule{ID: "containers-" + c.ID + "-peers", Protocol: c.Protocol, Ports: c.Ports, Sources: byIface[iface], Interface: iface, Comment: c.Comment})
-				if err != nil {
-					return "", err
-				}
-				for _, l := range lines {
-					b.WriteString("\t\t" + l + "\n")
-				}
-			}
-		}
-		drop, err := renderRule(Rule{ID: "containers-" + c.ID + "-only", Action: "drop", Protocol: c.Protocol, Ports: c.Ports, Comment: "only containers"})
-		if err != nil {
-			return "", err
-		}
-		for _, l := range drop {
-			b.WriteString("\t\t" + l + "\n")
-		}
-	}
 	for _, r := range p.Rules {
 		if !idRe.MatchString(r.ID) {
 			return "", perr("invalid rule id %q", r.ID)
@@ -340,7 +257,6 @@ WantedBy=sysinit.target
 
 // FirewallApply validates, persists and atomically applies the ruleset.
 func (n *Net) FirewallApply(ctx context.Context, p FirewallPayload, st commands.Stream) (any, error) {
-	p.PeerInterfaces = n.peerInterfaces(p.ContainerPorts)
 	rs, err := RenderRuleset(p)
 	if err != nil {
 		return nil, err

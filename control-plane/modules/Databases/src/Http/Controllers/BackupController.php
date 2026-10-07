@@ -6,7 +6,7 @@ use Falak\Databases\Application\Actions\DeleteBackup;
 use Falak\Databases\Application\Actions\RestoreBackup;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Models\Backup;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Policies\DatabasesPolicy;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
 use Falak\Identity\Contracts\AuditLog;
@@ -64,12 +64,12 @@ final class BackupController extends Controller
         $this->authorize('restore', $backup);
 
         $data = $request->validate([
-            'database_server_id' => ['required', 'string'],
+            'database_instance_id' => ['required', 'string'],
             'database' => ['required', 'string', 'max:63'],
             'confirm' => ['required', 'string', 'same:database'],
         ], ['confirm.same' => 'Type the target database name to confirm.']);
 
-        $target = DatabaseServer::query()->where('organization_id', $backup->organization_id)->findOrFail($data['database_server_id']);
+        $target = DatabaseInstance::query()->where('organization_id', $backup->organization_id)->findOrFail($data['database_instance_id']);
 
         $restore($backup, $target, $data['database'], $request->user()?->getAuthIdentifier());
 

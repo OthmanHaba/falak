@@ -55,6 +55,29 @@ cosign verify-attestation --type spdxjson "ghcr.io/othmanhaba/falak-postgres@$di
   --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp "$id"
 ```
 
+### Trust: the control plane ships the digests
+
+Servers run a database image only by the digest the control plane sends (`db.instance.create|update` refuse an
+`instance.digest`-less spec; the agent checks the pulled image's RepoDigests against it). The control plane only sends
+digests from `control-plane/modules/Databases/config/db-image-digests.json` (`{"postgresql": {"17": "sha256:…"}}`), and
+refuses to create or upgrade to a major missing there. That file is written in CI:
+
+- `release.yml` (tags `vX.Y.Z`, `vX.Y.Z-rc.N`): its `db-digests` job runs `tools/db-image-digests.sh -<tag>`, which
+  resolves the multi-arch index digest of `ghcr.io/othmanhaba/falak-<engine>:<version>-<tag>` for every entry of
+  `images/db/versions.json`. The db-images run of the same tag pushes those tags only after building, testing, scanning
+  and signing them, so the job waits for them (up to 2 h, `--wait`); any image still missing fails the release. The
+  control-plane image is then built with the file.
+- The committed file is `{}`: a control plane built from a checkout (development, the sim) creates no database until
+  you run the script, with `-rc` (release/** branches), `""` (main: `<version>`) or `-vX.Y.Z`, after `docker login
+  ghcr.io` if the packages are private.
+
+So the chain is: db-images (GitHub OIDC) builds and signs → the release job pins exactly those digests into the
+control-plane image, which is itself built by CI from the same tag → the agent runs nothing else. A digest is
+content-addressed: a registry or mirror cannot substitute other bytes for it. Verifying cosign signatures on every
+server would add a Sigstore client, network access to Rekor/Fulcio and a trust root to keep current on each server,
+to check a fact CI already established when it chose the digest. The signatures stay useful to anyone auditing an
+image (above) or a control plane built outside CI.
+
 ## Running an image
 
 The container starts as root, like the base image; the official entrypoint drops to the engine's user (`postgres`,
@@ -82,6 +105,8 @@ get a 0600 file in a private directory on the container's tmpfs (`/dev/shm`), re
 |---|---|---|
 | `FALAK_DB_ENGINE` | set by the image | |
 | `FALAK_DB_SETTINGS` | `{}` | settings JSON, below; not secret |
+| `FALAK_DB_SETTINGS_FILE` | unset | a file holding the settings JSON, read at every start instead of `FALAK_DB_SETTINGS` (the agent rewrites it, so a change is a restart, not a new container) |
+| `FALAK_DB_PREVIOUS_PASSWORD_FILE` | unset | redis/valkey: a previous password that stays valid next to the current one (a rotation's overlap) |
 | `FALAK_DB_MEMORY_BYTES` | the cgroup limit (v2, then v1), else the host's RAM | what the config is tuned to |
 | `FALAK_DB_TLS_DIR` | `/run/falak/db/tls` | `server.crt`, `server.key`, optional `ca.crt` (read-only mount) |
 | `FALAK_DB_SPOOL` | `/var/lib/falak/db/spool` | mount the instance volume's spool directory here |
@@ -131,6 +156,8 @@ The MySQL/MariaDB slow log is `/var/log/falak-db/slow.log` in the container (mys
 falak-db <command> [flags]      (--engine overrides FALAK_DB_ENGINE on every command)
 ```
 
+SQL and passwords never travel in arguments: `psql` and `mysql` read their statements on stdin.
+
 **Output.** A command prints one JSON object on stdout. Commands whose stdout is a data stream (`backup ...`) print
 their JSON result as the last stderr line, prefixed with `falak-db-result: `. Errors go to stderr as
 `falak-db: <message>`; secrets never appear in arguments, output or errors.
@@ -145,7 +172,7 @@ their JSON result as the last stderr line, prefixed with `falak-db-result: `. Er
 | `config render [--memory-bytes N] [--settings JSON]` | any | writes the config (applied on the next start); `{"engine","memory_bytes","files","tuning"}` |
 | `health` | running | `pg_isready` / `mysqladmin ping` / `PING` over TCP or the private socket; `{"engine","status":"healthy"}`, exit 1 when not. TCP, so the socket-only server the official entrypoints run during first-time initialisation does not count as ready. |
 | `backup logical --database DB --out -` | running | postgres `pg_dump -Fc`; mysql `mysqldump --single-transaction --routines --triggers --events --hex-blob --set-gtid-purged=OFF`; mariadb `mariadb-dump` (same flags); redis/valkey `BGSAVE` (waits for a new `rdb_saves`), then the RDB (no `--database`). Result: `{"kind":"logical","format","database","bytes","sha256","started_at","finished_at"}` |
-| `restore logical --database DB --in - [--clean]` | running (redis/valkey: **stopped**) | `pg_restore --no-owner --no-acl --exit-on-error` (`--clean --if-exists` with `--clean`) into an existing database; `mysql --binary-mode --system-command=OFF DB` (MySQL clients older than 8.0.40 / 8.4.3 are refused), `mariadb --binary-mode --sandbox DB`, so client commands in a dump (`\!`, `system`, `source`) can't reach the container; redis/valkey: replaces `dump.rdb` and moves an AOF directory aside (`appendonlydir.before-restore-<time>`) |
+| `restore logical --database DB --in - [--clean \| --swap] [--owner ROLE]` | running (redis/valkey: **stopped**) | `pg_restore --no-owner --no-acl --exit-on-error` (`--clean --if-exists` with `--clean`) into an existing database; `mysql --binary-mode --system-command=OFF DB` (MySQL clients older than 8.0.40 / 8.4.3 are refused), `mariadb --binary-mode --sandbox DB`, so client commands in a dump (`\!`, `system`, `source`) can't reach the container; postgres `--swap`: into a scratch database (`<db>__falak_restore`), renamed into place only when complete (the old one moved aside, then dropped); `--owner`: every object handed to ROLE (`reassign`); redis/valkey: replaces `dump.rdb` and moves an AOF directory aside (`appendonlydir.before-restore-<time>`) |
 | `backup physical --out -` | running | postgres: `pg_basebackup -D - -Ft -X none --checkpoint=fast` (one tar, no WAL); result adds `start_wal`, `stop_wal`, `label`. mysql: `xtrabackup --backup --stream=xbstream`; mariadb: `mariadb-backup --backup --stream=xbstream` |
 | `restore physical --in -` | **stopped**, empty data dir | postgres: unpacks the tar (files and directories only; links, devices, absolute paths and `..` are refused); mysql/mariadb: `xbstream`/`mbstream -x`, then `--prepare`. Then chowns to the engine's user. `{"data_dir","files","bytes","start_wal"|"prepared"}` |
 | `recover --wal-dir DIR [--target-time T [--action promote\|pause\|shutdown]]` | postgres, **stopped**, after `restore physical` | writes `recovery.signal` and `falak-recovery.conf` (`restore_command = 'falak-db wal-fetch %f %p --from DIR'`, `recovery_target_time`, `recovery_target_action`); recovery happens on the next start. `DIR` must be `/replay`, the spool, or under one of them; only the directory and the WAL files directly in it are handed to postgres. `--action` needs `--target-time`. Once postgres has promoted (no `recovery.signal` left), the next `init` removes `falak-recovery.conf`. `{"mode":"on-start",...}` |
@@ -154,6 +181,13 @@ their JSON result as the last stderr line, prefixed with `falak-db-result: `. Er
 | `wal-push PATH` | postgres (its `archive_command`) | spools the segment; silent on success |
 | `wal-fetch NAME DEST --from DIR` | postgres (its `restore_command`) | copies `DIR/NAME` to `DEST`; exit 5 when absent (the end of the archive for postgres) |
 | `binlog-rotate [--no-flush] [--restart]` | mysql/mariadb, running | `FLUSH BINARY LOGS`, then spools every closed binlog not spooled yet, oldest first. `{"flushed","current","spooled":[{"name","path","bytes","sha256","existed"}],"gaps":[{"kind","from","to","detail"}]}`. A break in the chain prints the result and **exits 4**: `missing` (binlogs purged before they were spooled; what remains is spooled, reported once) or `reset` (the numbering went backwards; nothing is spooled until `--restart`, after a new base backup). Either way PITR cannot cross the gap: alert and take a new base backup. |
+| `database create --name N [--charset C] [--collation X] [--owner O]` | running, SQL engines | creates the database when missing (postgres: `ENCODING 'UTF8' TEMPLATE template0`, converges the owner; mysql/mariadb: `utf8mb4` unless given). `{"changed"}` |
+| `database drop --name N` | running, SQL engines | drops it when present (postgres `WITH (FORCE)`). `{"changed"}` |
+| `user apply --spec FILE` | running, SQL engines | the user's full desired state from a JSON file the agent puts in the secrets directory (`{"username","password","host","grants":[{"database","privileges"}],"state":"present"\|"absent"}`): creates or alters the user and its password, grants the listed databases and revokes the others. The engine's own accounts are refused. `{"changed"}` |
+| `password set --file FILE [--keep-current]` | running | the superuser's (postgres), root's (every `root@host`, mysql/mariadb) or the default user's (redis/valkey: `ACL SETUSER default resetpass #<sha256>`, and the ACL file rewritten) new password, read from FILE. falak-db connects with the current password file (mysql/mariadb: with the new one when the engine already has it, so a retry finishes); the agent replaces that file afterwards. redis/valkey `--keep-current`: the new password is added, the current one stays valid. `{"changed": true}` |
+| `readonly on\|off` | running, SQL engines | postgres: `default_transaction_read_only` on every database, and the open client sessions are ended; mysql: `super_read_only`; mariadb: `read_only`. `{"read_only"}` |
+| `table-counts --database DB` | running, SQL engines | the exact row count of every table: `{"database","tables":{"schema.table":n}}` (a copy is checked against its source) |
+| `reassign --database DB --owner ROLE` | running, postgres | the database, its schemas and every object in them (tables, views, sequences, functions, types; not extensions') owned by ROLE |
 | `version` | any | `{"version","engine"}` |
 
 `T` is RFC 3339 (`2026-10-07T12:00:00Z`). Postgres keeps fractional seconds; MySQL/MariaDB round T down to the

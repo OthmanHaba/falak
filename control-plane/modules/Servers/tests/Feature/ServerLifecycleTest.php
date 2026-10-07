@@ -42,7 +42,7 @@ it('creates a custom server, enrolls its agent, provisions it and syncs SSH keys
         'name' => 'app-1',
         'type' => 'app',
         'provider' => 'custom',
-        'stack' => ['php' => ['runtime' => 'fpm', 'versions' => ['8.3', '8.4'], 'default' => '8.4'], 'node' => '22', 'database' => 'mysql', 'cache' => 'redis', 'docker' => false],
+        'stack' => ['php' => ['runtime' => 'fpm', 'versions' => ['8.3', '8.4'], 'default' => '8.4'], 'node' => '22'],
         'ssh_key_ids' => [$key->id],
     ])->assertSessionHasNoErrors()->assertRedirect();
 
@@ -77,7 +77,8 @@ it('creates a custom server, enrolls its agent, provisions it and syncs SSH keys
         ->and($envelopes[0]['idempotency_key'])->toBe("provision:{$server->id}:1")
         ->and(app(ProtocolSchemas::class)->validateCommand('provision.apply', ProtocolSchemas::toJson($envelopes[0]['payload'])))->toBe([])
         ->and($envelopes[0]['payload']['runtimes']['php'])->toMatchArray(['versions' => ['8.3', '8.4'], 'default' => '8.4', 'fpm' => true])
-        ->and($envelopes[0]['payload']['apt']['packages'])->toContain('mysql-server', 'redis-server');
+        ->and($envelopes[0]['payload']['docker'])->toBe(['live_restore' => true, 'min_version' => '28'])
+        ->and($envelopes[0]['payload']['apt']['packages'])->not->toContain('mysql-server', 'redis-server', 'docker.io');
 
     // Agent reports success → active, provisioned, keys synced.
     servers_finish($agent['headers'], $server->provision_command_id);
@@ -163,7 +164,7 @@ it('validates server creation input', function (array $input, string $field) {
 })->with([
     'bad name' => [['name' => '../etc'], 'name'],
     'bad type' => [['type' => 'mainframe'], 'type'],
-    'db on cache server' => [['type' => 'cache', 'stack' => ['cache' => 'redis', 'database' => 'mysql']], 'stack.database'],
+    'node on a cache server' => [['type' => 'cache', 'stack' => ['node' => '22']], 'stack.node'],
     'unsupported php' => [['stack' => ['php' => ['runtime' => 'fpm', 'versions' => ['5.6'], 'default' => '5.6']]], 'stack.php.versions'],
     'provider without credential' => [['provider' => 'hetzner'], 'credential_id'],
     'foreign ssh key' => [['ssh_key_ids' => ['01JXXXXXXXXXXXXXXXXXXXXXXX']], 'ssh_key_ids'],

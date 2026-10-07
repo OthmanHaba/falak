@@ -14,6 +14,7 @@ use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\AgentUpgrades;
 use Falak\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Contracts\ServerCertificates;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentRevoked;
 use Falak\Fleet\Events\AgentUpgradeFailed;
@@ -22,6 +23,7 @@ use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Http\Channels\CommandChannel;
 use Falak\Fleet\Infrastructure\AgentBinaries;
+use Falak\Fleet\Infrastructure\CaServerCertificates;
 use Falak\Fleet\Infrastructure\EloquentAgentDirectory;
 use Falak\Fleet\Infrastructure\EloquentAgentUpgrades;
 use Falak\Fleet\Infrastructure\FleetAgentGateway;
@@ -55,6 +57,7 @@ class FleetServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         AgentGateway::class => FleetAgentGateway::class,
         AgentDirectory::class => EloquentAgentDirectory::class,
+        ServerCertificates::class => CaServerCertificates::class,
     ];
 
     public function register(): void

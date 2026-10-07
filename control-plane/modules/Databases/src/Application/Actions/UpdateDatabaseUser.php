@@ -26,21 +26,21 @@ final class UpdateDatabaseUser
      */
     public function __invoke(DatabaseUser $user, array $data): void
     {
-        $server = $user->databaseServer;
+        $instance = $user->instance;
 
-        if ($server->engine->isKeyValue()) {
-            throw ValidationException::withMessages(['grants' => "{$server->engine->label()} instances have a single user (default); rotate its password instead."]);
+        if ($instance->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['grants' => "{$instance->engine->label()} instances have a single user (default); rotate its password instead."]);
         }
 
-        $newHost = $server->engine->isMysqlFamily() && ! empty($data['host']) ? $data['host'] : $user->host;
+        $newHost = $instance->engine->isMysqlFamily() && ! empty($data['host']) ? $data['host'] : $user->host;
 
-        DB::transaction(function () use ($user, $data, $server, $newHost) {
+        DB::transaction(function () use ($user, $data, $instance, $newHost) {
             // MySQL accounts are user@host: a host change drops the old account first.
             if ($newHost !== $user->host) {
                 $this->commands->dispatch(
                     $user->server_id,
                     'db.user.apply',
-                    CommandPayloads::userAbsent($server, $user),
+                    CommandPayloads::userAbsent($instance, $user),
                     (int) config('databases.timeouts.ddl', 300),
                     "db.user.absent:{$user->id}:{$user->host}:".($user->revision + 1),
                     'host',

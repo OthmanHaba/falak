@@ -15,8 +15,9 @@ use Illuminate\Support\Str;
  * Builds the full desired state for `provision.apply`
  * (contracts/agent-protocol/commands/provision.apply.schema.json) from a server's type and stack.
  *
- * The schema has no first-class database / cache / Docker sections, so those are expressed as apt
- * packages plus systemd service state; engine-level configuration belongs to the Databases module.
+ * Every server gets Docker Engine (servers.docker.min_version or newer, from Docker's apt repository: the agent's
+ * docker step, not `apt`) and its service, with `live-restore` on, so restarting or upgrading the daemon leaves
+ * database containers running. Databases are containers (the Databases module), never packages.
  *
  * With a machine check (agents with provision.v2) the plan follows its decisions: adopted and blocked components
  * install nothing (an adopted engine keeps its service entry), completed ones install only their missing packages, an
@@ -43,16 +44,17 @@ final class ProvisioningPlanBuilder
         $phpVersions = array_values(array_filter($phpVersions, fn (string $v) => in_array($v, $server->installablePhpVersions(), true) || in_array($v, $installed, true)));
         $defaultPhp = $server->phpVersions()->where('is_default', true)->value('version') ?? $stack->phpDefault;
 
-        [$packages, $services] = $this->packagesAndServices($stack, $check);
+        [$packages, $services] = $this->packagesAndServices($check);
 
         $plan = [
             'hostname' => $this->hostname($server->name),
             'timezone' => $server->timezone ?: 'UTC',
             'swap_mb' => $this->swapMb($server->memory_bytes),
             'apt' => ['packages' => $packages],
-            'users' => [$this->unixUser($stack)],
+            'users' => [$this->unixUser()],
             'runtimes' => $this->runtimes($type, $stack, $phpVersions, $defaultPhp),
             'services' => $services,
+            'docker' => $this->docker($check),
             'unattended_upgrades' => ['enabled' => true, 'auto_reboot' => false, 'reboot_time' => '04:00'],
             'ssh' => ['port' => $server->ssh_port, 'permit_root_login' => 'prohibit-password', 'password_authentication' => false],
         ];
@@ -109,38 +111,38 @@ final class ProvisioningPlanBuilder
     /**
      * @return array{0: list<string>, 1: list<array{name: string, enabled: bool, state: string}>}
      */
-    private function packagesAndServices(Stack $stack, ?MachineCheck $check): array
+    private function packagesAndServices(?MachineCheck $check): array
     {
         $packages = (array) ($this->config['base_packages'] ?? []);
         $services = [['name' => 'fail2ban', 'enabled' => true, 'state' => 'started']];
 
-        foreach ([['databases', $stack->database, 'database'], ['caches', $stack->cache, 'cache']] as [$group, $engine, $component]) {
-            if ($engine === null) {
-                continue;
-            }
+        // Docker's packages come from its own repository (the agent's docker step); apt only completes a kept family.
+        [$install, $service] = $this->decidedPackages($check?->for('docker'), [], $this->config['docker']['service']);
+        $packages = [...$packages, ...$install];
 
-            $definition = $this->config[$group][$engine];
-            [$install, $service] = $this->decidedPackages($check?->for($component), $definition['packages'], $definition['service']);
-            $packages = [...$packages, ...$install];
-
-            if ($service !== null) {
-                $services[] = ['name' => $service, 'enabled' => true, 'state' => 'started'];
-            }
-        }
-
-        if ($stack->docker) {
-            [$install, $service] = $this->decidedPackages($check?->for('docker'), $this->config['docker']['packages'], $this->config['docker']['service']);
-            $packages = [...$packages, ...$install];
-
-            if ($service !== null) {
-                $services[] = ['name' => $service, 'enabled' => true, 'state' => 'started'];
-            }
+        if ($service !== null) {
+            $services[] = ['name' => $service, 'enabled' => true, 'state' => 'started'];
         }
 
         $packages = array_values(array_unique($packages));
         sort($packages);
 
         return [$packages, $services];
+    }
+
+    /**
+     * provision.apply `docker`: live-restore, and the Docker Engine version to reach (none when the machine check
+     * adopted or blocked the machine's Docker).
+     *
+     * @return array{live_restore: bool, min_version?: string}
+     */
+    private function docker(?MachineCheck $check): array
+    {
+        $decision = $check?->for('docker')?->decision;
+
+        return in_array($decision, [Decision::Adopt, Decision::Block, Decision::Skip], true)
+            ? ['live_restore' => true]
+            : ['live_restore' => true, 'min_version' => (string) ($this->config['docker']['min_version'] ?? '28')];
     }
 
     /**
@@ -199,14 +201,12 @@ final class ProvisioningPlanBuilder
     /**
      * @return array<string, mixed>
      */
-    private function unixUser(Stack $stack): array
+    private function unixUser(): array
     {
         $user = (string) ($this->config['unix_user'] ?? 'falak');
+        // Never docker: membership is root on the server (the socket reaches every container and its secrets). Only the
+        // agent, as root, drives Docker; the agent also takes the user out of docker where an earlier build put it.
         $groups = ['www-data'];
-
-        if ($stack->docker) {
-            $groups[] = 'docker';
-        }
 
         return [
             'name' => $user,

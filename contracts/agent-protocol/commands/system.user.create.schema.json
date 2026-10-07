@@ -28,10 +28,13 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
+        "not": {
+          "enum": ["docker"]
+        }
       },
       "uniqueItems": true,
-      "description": "Supplementary groups (created if missing)"
+      "description": "Supplementary groups (created if missing). Never docker: its socket is root on the server; the agent takes users out of it."
     },
     "system": {
       "type": "boolean",

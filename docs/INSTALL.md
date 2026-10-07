@@ -28,7 +28,10 @@ Releases are published from [github.com/OthmanHaba/falak](https://github.com/Oth
 
 This host runs only Falak. The servers Falak manages are separate machines: Ubuntu 22.04, 24.04 or 26.04 (the agent
 installer warns on other apt-based systems). On 26.04 PHP comes from Ubuntu's archive (PHP 8.5 only) until `ppa:ondrej/php`
-publishes packages for it; databases are the release's own (PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0, Valkey 9.0).
+publishes packages for it. Every server runs Docker Engine 28 or newer from Docker's apt repository (`docker-ce`, key fingerprint
+`9DC8 5822 9FC7 DD38 854A  E2D8 8D81 803C 0EBF CD88` checked): provisioning replaces an older Docker (containers, images and
+volumes stay); where Docker's repository has no packages for the release yet, the release's `docker.io` is used if it is
+28 or newer, else provisioning stops with that reason. Databases run as containers of Falak's images (`docs/DB_IMAGES.md`).
 
 **Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 
@@ -257,15 +260,6 @@ an HTTPS mirror with the same path layout. Set these in `/opt/falak/custom.env`,
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
 
-### Docker address ranges (optional)
-
-Containers on an app or worker server (compose stacks, Docker sites, functions) reach that server's databases
-through the Docker bridge (agent 0.4.5+). The engines accept connections from Docker's default address pools,
-`172.16.0.0/12,192.168.0.0/16`; the firewall only lets them in on the Docker bridges. If the Docker daemon on your
-servers uses other `default-address-pools`, set `FALAK_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs, /8–/30) in
-`/opt/falak/custom.env` and run `falak-ctl up`; it applies to database users created or updated afterwards. Entries
-that are not such ranges are ignored with a warning in the logs (Docker's defaults apply when none is left).
-
 ### Extra sites on the control-plane host (optional)
 
 The edge (Caddy, ports 80/443) also loads every `/opt/falak/edge/*.caddyfile`. The folder is mounted read-only at
@@ -435,6 +429,21 @@ before v0.10.0 hold `APP_KEY` ciphertexts and restore as before: the migration c
 If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
 `FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
+
+### Upgrading to v0.10.0: databases in containers
+
+v0.10.0 runs every managed database in a container and no longer manages the PostgreSQL, MySQL, MariaDB, Redis and
+Valkey engines earlier versions installed on servers. They keep running, but Falak forgets them: no backups, no
+references. The update's migration refuses to run while those databases are registered, and nothing changes:
+
+```
+Falak v0.10 runs every database in a container and no longer manages the host databases of earlier versions …
+```
+
+1. Back up every database you need (a dump of each, kept outside Falak).
+2. Set `FALAK_DROP_LEGACY_DATABASES=1` in `/opt/falak/custom.env` and run `falak-ctl update` again. The old rows, their
+   backup history and their canvas services go (references to them fail until they point at new services).
+3. Create database containers (canvas → Create → Database) and restore your dumps into them, then remove the flag.
 
 ### Upgrading the server agents
 

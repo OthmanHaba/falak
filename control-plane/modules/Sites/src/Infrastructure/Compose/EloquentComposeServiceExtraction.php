@@ -6,7 +6,6 @@ use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Contracts\DatabaseProvisioner;
 use Falak\Projects\Contracts\ProjectDirectory;
-use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Application\Actions\SaveEnvironment;
 use Falak\Sites\Application\Compose\ComposeInterpolation;
 use Falak\Sites\Application\Compose\ComposeNetworks;
@@ -71,7 +70,6 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         private readonly SiteDomains $domains,
         private readonly ComposeSites $composeSites,
         private readonly SourceControlGateway $sourceControl,
-        private readonly ServerDirectory $servers,
     ) {}
 
     public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData
@@ -122,16 +120,15 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw ValidationException::withMessages(['service' => 'The stack has no server to create the database on.']);
         }
 
-        if ($existing === null && $keyValue) {
-            $this->assertRunsCache((string) $leader, $engine, $service);
-        }
-
         $this->claim($stack, $service);
 
         try {
-            $database = $existing ?? ($keyValue
-                ? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->instanceName($stack, $service, (string) $leader), Auth::id(), RedisCommand::settings($definition['command'] ?? null))
-                : $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->databaseName($stack, $service, $engine, $definition, (string) $leader), Auth::id()));
+            $database = $existing ?? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->instanceName($stack, $service, (string) $leader), Auth::id(), [
+                'image_tag' => self::tag($image),
+                // The stack's containers reach it by name on the environment's network.
+                'environment_id' => $this->projects->projectOf('site', $stack->id)?->environmentId,
+                ...($keyValue ? self::keyValueOptions(RedisCommand::settings($definition['command'] ?? null)) : ['database' => $this->databaseName($service, $engine, $definition)]),
+            ]);
         } catch (Throwable $e) {
             $this->release($stack, $service);
 
@@ -504,38 +501,51 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         return array_map('strval', (array) ($stack->environmentVersions()->orderByDesc('version')->first()?->variables ?? []));
     }
 
-    /** @param  array<string, mixed>  $definition */
-    private function databaseName(Site $stack, string $service, string $engine, array $definition, string $serverId): string
+    /**
+     * The default database of the new container: the name the stack used (POSTGRES_DB…), else the service's. The
+     * container is the stack's own, so nothing else holds the name.
+     *
+     * @param  array<string, mixed>  $definition
+     */
+    private function databaseName(string $service, string $engine, array $definition): string
     {
         $environment = ServiceReferences::environment($definition['environment'] ?? []);
-        $wanted = null;
 
         foreach (self::NAME_KEYS[$engine] as $key) {
             if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,62}$/', $environment[$key] ?? '') === 1) {
-                $wanted = strtolower($environment[$key]);
-                break;
+                return strtolower($environment[$key]);
             }
         }
 
-        $normalize = fn (string $name) => substr(trim((string) preg_replace('/[^a-z0-9_]+/', '_', Str::lower($name)), '_'), 0, 63);
-        // The name the stack used, then one prefixed with the stack (another stack's database may hold it: the
-        // rewrites point at the new database, so the app reads its name from DATABASE_URL / DB_DATABASE), then _2, _3…
-        $base = $normalize($wanted !== null ? "{$stack->slug}_{$wanted}" : "{$stack->slug}_{$service}");
-        $taken = array_map(fn (DatabaseData $d) => strtolower($d->name), $this->databaseDirectory->forServer($serverId));
+        $name = substr(trim((string) preg_replace('/[^a-z0-9_]+/', '_', Str::lower($service)), '_'), 0, 58);
 
-        foreach (array_values(array_unique(array_filter([$wanted, $base]))) as $candidate) {
-            if (! in_array($candidate, $taken, true)) {
-                return $candidate;
-            }
-        }
+        return preg_match('/^[a-z_]/', $name) === 1 ? $name : "db_{$name}";
+    }
 
-        for ($i = 2; ; $i++) {
-            $candidate = substr($base, 0, 63 - strlen("_{$i}"))."_{$i}";
+    /**
+     * Redis / Valkey container options from the service's flags: the engine uses 80% of the container's memory limit,
+     * so `--maxmemory 256mb` asks for a 320 MB container.
+     *
+     * @param  array{maxmemory_mb?: int, eviction?: string, persistence?: string}  $settings
+     * @return array{memory_mb?: int, eviction?: string, persistence?: string}
+     */
+    private static function keyValueOptions(array $settings): array
+    {
+        return array_filter([
+            'memory_mb' => isset($settings['maxmemory_mb']) ? (int) ceil($settings['maxmemory_mb'] / 0.8) : null,
+            'eviction' => $settings['eviction'] ?? null,
+            'persistence' => $settings['persistence'] ?? null,
+        ], fn ($value) => $value !== null);
+    }
 
-            if (! in_array($candidate, $taken, true)) {
-                return $candidate;
-            }
-        }
+    /** "docker.io/library/postgres:16-alpine@sha256:…" → "16-alpine" (null without a tag). */
+    private static function tag(string $image): ?string
+    {
+        $image = (string) preg_replace('/@.*$/', '', $image);
+        $slash = strrpos($image, '/');
+        $colon = strrpos($image, ':');
+
+        return $colon !== false && ($slash === false || $colon > $slash) ? substr($image, $colon + 1) : null;
     }
 
     /**
@@ -646,34 +656,6 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         }
 
         return (string) preg_replace('#^(docker\.io/)?(library/)?#', '', $name);
-    }
-
-    /**
-     * The stack's server must run the engine (one cache engine per server): a clear error when it runs the other one,
-     * none (install it first), or can't run Valkey at all (servers.caches_by_os).
-     *
-     * @throws ValidationException
-     */
-    private function assertRunsCache(string $serverId, string $engine, string $service): void
-    {
-        $server = $this->servers->find($serverId);
-        $label = self::label($engine);
-        $name = $server?->name ?? 'the stack\'s server';
-        $running = $server?->cacheEngine;
-
-        if ($running === $engine) {
-            return;
-        }
-
-        if ($running !== null) {
-            throw ValidationException::withMessages(['engine' => "{$service} runs {$label}, but {$name} runs ".self::label($running)." (one cache engine per server). Keep {$service} in the stack, or switch its image to ".($running === 'redis' ? 'redis' : 'valkey/valkey').'.']);
-        }
-
-        if (! in_array($engine, $this->servers->installableCaches($serverId), true)) {
-            throw ValidationException::withMessages(['engine' => "{$label} isn't available for {$name}'s operating system (Falak offers Valkey on Ubuntu 24.04, 26.04 and Debian 13). Keep {$service} in the stack, or switch its image to redis."]);
-        }
-
-        throw ValidationException::withMessages(['engine' => "{$name} doesn't run {$label} yet: install it first (Servers → {$name} → Settings), then pick Falak database for {$service} again."]);
     }
 
     /**

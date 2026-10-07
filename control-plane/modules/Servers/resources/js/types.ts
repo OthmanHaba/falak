@@ -1,13 +1,10 @@
 export type ServerStatus = 'creating' | 'provisioning' | 'needs_attention' | 'active' | 'error' | 'deleting';
 export type ServerTypeValue = 'app' | 'web' | 'db' | 'cache' | 'worker' | 'lb' | 'builder';
-export type StackComponent = 'php' | 'node' | 'database' | 'cache' | 'docker';
+export type StackComponent = 'php' | 'node';
 
 export interface StackConfig {
     php: { runtime: string; versions: string[]; default: string | null } | null;
     node: string | null;
-    database: string | null;
-    cache: string | null;
-    docker: boolean;
 }
 
 export interface ServerSummary {

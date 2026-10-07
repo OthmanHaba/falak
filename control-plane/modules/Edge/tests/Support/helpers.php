@@ -67,9 +67,7 @@ function edge_server(FakeServerDirectory $servers, string $organizationId, array
         'defaultPhpVersion' => '8.4',
         'phpRuntime' => 'frankenphp',
         'nodeVersion' => null,
-        'databaseEngine' => null,
-        'cacheEngine' => null,
-        'docker' => false,
+        'docker' => true,
         'unixUser' => 'falak',
     ], $overrides);
 

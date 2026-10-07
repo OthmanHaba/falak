@@ -28,14 +28,17 @@ interface RepositoryItem {
     private: boolean;
 }
 
-/** Databases' GET /databases JSON (engine servers). */
-interface EngineServer {
-    id: string;
-    server_id: string;
-    server_name: string;
-    engine: string;
-    engine_label: string;
-    version: string | null;
+/** Databases' GET /databases JSON `options`: engines with their versions and defaults, and the servers. */
+interface DatabaseCreateOptions {
+    engines: {
+        value: string;
+        versions: string[];
+        default_version: string;
+        default_memory_mb: number;
+        min_memory_mb: number;
+        default_disk_gb: number;
+    }[];
+    servers: { id: string; name: string }[];
 }
 
 type BuiltinStep = 'root' | 'git' | 'docker' | 'empty' | 'database';
@@ -219,7 +222,7 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
     const ref = useRef<HTMLDivElement>(null);
     const needsSites = step === 'git' || step === 'docker' || step === 'empty';
     const sites = useJson<SiteOptions>(needsSites && can.create_sites ? '/sites/create' : null);
-    const engines = useJson<EngineServer[]>(step === 'database' && can.create_databases ? '/databases' : null);
+    const engines = useJson<{ options: DatabaseCreateOptions }>(step === 'database' && can.create_databases ? '/databases' : null, { unwrap: false });
     const [submitting, setSubmitting] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -355,7 +358,7 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
                 )}
                 {step === 'database' && (
                     <DatabaseStep
-                        servers={engines.data}
+                        options={engines.data?.options ?? null}
                         loadError={engines.error}
                         submitting={submitting}
                         errors={errors}
@@ -842,13 +845,13 @@ function EmptyStep({ options, submitting, errors, onSubmit }: StepProps) {
 }
 
 function DatabaseStep({
-    servers,
+    options,
     loadError,
     submitting,
     errors,
     onSubmit,
 }: {
-    servers: EngineServer[] | null;
+    options: DatabaseCreateOptions | null;
     loadError: string | null;
     submitting: boolean;
     errors: Record<string, string>;
@@ -858,16 +861,22 @@ function DatabaseStep({
     const [picked, setServerId] = useState('');
     const [name, setName] = useState('app');
     const [advanced, setAdvanced] = useState(false);
-    const [memory, setMemory] = useState('128');
+    const [version, setVersion] = useState('');
+    const [memory, setMemory] = useState('');
+    const [disk, setDisk] = useState('');
     const [eviction, setEviction] = useState('noeviction');
-    const candidates = (servers ?? []).filter((server) => server.engine === engine);
-    const serverId = candidates.some((server) => server.server_id === picked) ? picked : (candidates[0]?.server_id ?? '');
+    const servers = options?.servers ?? [];
+    const serverId = servers.some((server) => server.id === picked) ? picked : (servers[0]?.id ?? '');
+    const choice = options?.engines.find((item) => item.value === engine) ?? null;
     const keyValue = engine !== null && KEY_VALUE_ENGINES.includes(engine);
     const label = ENGINES.find((item) => item.value === engine)?.label;
 
     const pick = (value: string) => {
         setEngine(value);
-        // Instance names are lower-case (they name a systemd unit); keep the user's name unless it is a default.
+        const next = options?.engines.find((item) => item.value === value);
+        setVersion(next?.default_version ?? '');
+        setMemory(next ? String(next.default_memory_mb) : '');
+        setDisk(next ? String(next.default_disk_gb) : '');
         if (name === 'app' || name === 'cache') setName(KEY_VALUE_ENGINES.includes(value) ? 'cache' : 'app');
     };
 
@@ -876,119 +885,125 @@ function DatabaseStep({
             className="grid gap-4 p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                onSubmit(
-                    keyValue
-                        ? { kind: 'database', engine, server_id: serverId, name, maxmemory_mb: Number(memory) || undefined, eviction }
-                        : { kind: 'database', engine, server_id: serverId, name },
-                );
+                onSubmit({
+                    kind: 'database',
+                    engine,
+                    server_id: serverId,
+                    name,
+                    version: version || undefined,
+                    memory_mb: Number(memory) || undefined,
+                    disk_gb: Number(disk) || undefined,
+                    ...(keyValue ? { eviction } : {}),
+                });
             }}
         >
             <div className="grid gap-1.5">
                 <span className="text-fg text-xs font-medium">Engine</span>
                 <div className="grid grid-cols-2 gap-2">
-                    {ENGINES.map((item) => {
-                        const available = (servers ?? []).some((server) => server.engine === item.value);
-
-                        return (
-                            <button
-                                key={item.value}
-                                type="button"
-                                aria-pressed={engine === item.value}
-                                onClick={() => pick(item.value)}
-                                className={cn(
-                                    'border-border hover:border-border-strong flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50',
-                                    engine === item.value && 'border-primary bg-primary-soft',
-                                )}
-                            >
-                                <ServiceIcon name={item.value} size={16} />
-                                <span className="grid min-w-0">
-                                    <span className="text-fg text-sm">{item.label}</span>
-                                    <span className="text-fg-faint text-2xs">
-                                        {servers === null ? '…' : available ? 'Installed' : 'Not installed'}
-                                    </span>
+                    {ENGINES.map((item) => (
+                        <button
+                            key={item.value}
+                            type="button"
+                            aria-pressed={engine === item.value}
+                            onClick={() => pick(item.value)}
+                            className={cn(
+                                'border-border hover:border-border-strong flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50',
+                                engine === item.value && 'border-primary bg-primary-soft',
+                            )}
+                        >
+                            <ServiceIcon name={item.value} size={16} />
+                            <span className="grid min-w-0">
+                                <span className="text-fg text-sm">{item.label}</span>
+                                <span className="text-fg-faint text-2xs">
+                                    {options === null
+                                        ? '…'
+                                        : (options.engines.find((option) => option.value === item.value)?.versions.join(', ') ?? '')}
                                 </span>
-                            </button>
-                        );
-                    })}
+                            </span>
+                        </button>
+                    ))}
                 </div>
             </div>
             {loadError && <Errors errors={[loadError]} />}
             {engine && (
                 <>
-                    <Field label="Server" error={errors.server_id}>
-                        {candidates.length > 0 ? (
+                    <Field label="Server" hint="The database runs there as a container, on its own data volume." error={errors.server_id}>
+                        {servers.length > 0 ? (
                             <Select
                                 value={serverId}
                                 onValueChange={setServerId}
-                                options={candidates.map((server) => ({
-                                    value: server.server_id,
-                                    label: `${server.server_name} · ${server.engine_label}${server.version ? ` ${server.version}` : ''}`,
-                                }))}
+                                options={servers.map((server) => ({ value: server.id, label: server.name }))}
                             />
                         ) : (
                             <p className="text-fg-muted text-xs">
-                                None of your servers runs {label}.{' '}
-                                {keyValue ? (
-                                    <>
-                                        Install it from a server's Settings → Database engine
-                                        {engine === 'valkey' ? ' (Valkey needs Ubuntu 26.04 or Debian 13)' : ''}, or{' '}
-                                        <Link href="/servers/create" className="text-primary hover:underline">
-                                            provision a cache server
-                                        </Link>
-                                        .
-                                    </>
-                                ) : (
-                                    <Link href="/servers/create" className="text-primary hover:underline">
-                                        Provision a database server
-                                    </Link>
-                                )}
+                                No active server yet.{' '}
+                                <Link href="/servers/create" className="text-primary hover:underline">
+                                    Provision a server
+                                </Link>
                             </p>
                         )}
                     </Field>
-                    {keyValue ? (
-                        <Field
-                            label="Instance name"
-                            hint={`Its own ${label} process, port and password (user default). Lower-case letters, digits, - and _.`}
-                            error={errors.name}
+                    <Field
+                        label="Name"
+                        hint={
+                            keyValue
+                                ? `Its own ${label} container with a password (user default). Lower-case letters, digits, - and _.`
+                                : 'A database and a user with this name and a generated password are created in it.'
+                        }
+                        error={errors.name}
+                    >
+                        <Input value={name} onChange={(event) => setName(event.target.value)} mono />
+                    </Field>
+                    <div className="grid gap-3">
+                        <button
+                            type="button"
+                            aria-expanded={advanced}
+                            onClick={() => setAdvanced(!advanced)}
+                            className="text-fg-muted hover:text-fg flex items-center gap-1 text-xs font-medium"
                         >
-                            <Input value={name} onChange={(event) => setName(event.target.value)} mono />
-                        </Field>
-                    ) : (
-                        <Field label="Database name" hint="A user with the same name and a generated password is created too." error={errors.name}>
-                            <Input value={name} onChange={(event) => setName(event.target.value)} mono />
-                        </Field>
-                    )}
-                    {keyValue && (
-                        <div className="grid gap-3">
-                            <button
-                                type="button"
-                                aria-expanded={advanced}
-                                onClick={() => setAdvanced(!advanced)}
-                                className="text-fg-muted hover:text-fg flex items-center gap-1 text-xs font-medium"
-                            >
-                                <ChevronRight size={12} className={cn('transition-transform duration-150', advanced && 'rotate-90')} />
-                                Advanced
-                            </button>
-                            {advanced && (
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Field label="Memory limit (MB)" error={errors.maxmemory_mb}>
-                                        <Input
-                                            value={memory}
-                                            onChange={(event) => setMemory(event.target.value.replace(/\D/g, ''))}
-                                            inputMode="numeric"
-                                            mono
-                                        />
-                                    </Field>
-                                    <Field label="Eviction" error={errors.eviction}>
+                            <ChevronRight size={12} className={cn('transition-transform duration-150', advanced && 'rotate-90')} />
+                            Advanced
+                        </button>
+                        {advanced && (
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Version" error={errors.version}>
+                                    <Select
+                                        value={version}
+                                        onValueChange={setVersion}
+                                        options={(choice?.versions ?? []).map((item) => ({ value: item, label: item }))}
+                                    />
+                                </Field>
+                                <Field
+                                    label="Memory limit (MB)"
+                                    hint={choice ? `At least ${choice.min_memory_mb} MB.` : undefined}
+                                    error={errors.memory_mb}
+                                >
+                                    <Input
+                                        value={memory}
+                                        onChange={(event) => setMemory(event.target.value.replace(/\D/g, ''))}
+                                        inputMode="numeric"
+                                        mono
+                                    />
+                                </Field>
+                                <Field label="Disk (GB)" error={errors.disk_gb}>
+                                    <Input
+                                        value={disk}
+                                        onChange={(event) => setDisk(event.target.value.replace(/\D/g, ''))}
+                                        inputMode="numeric"
+                                        mono
+                                    />
+                                </Field>
+                                {keyValue && (
+                                    <Field label="Eviction" error={errors['settings.eviction'] ?? errors.eviction}>
                                         <Select value={eviction} onValueChange={setEviction} options={EVICTIONS} />
                                     </Field>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    <Errors errors={otherErrors(errors, ['server_id', 'name', 'maxmemory_mb', 'eviction'])} />
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <Errors errors={otherErrors(errors, ['server_id', 'name', 'version', 'memory_mb', 'disk_gb', 'eviction', 'settings.eviction'])} />
                     <Button variant="primary" type="submit" loading={submitting} disabled={!serverId || !name}>
-                        {keyValue ? `Create ${label}` : 'Create database'}
+                        Create {label}
                     </Button>
                 </>
             )}

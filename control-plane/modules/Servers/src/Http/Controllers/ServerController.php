@@ -114,8 +114,6 @@ final class ServerController extends Controller
                 'php_versions' => array_values((array) config('servers.php_versions')),
                 'php_runtimes' => [['value' => 'frankenphp', 'label' => 'FrankenPHP'], ['value' => 'fpm', 'label' => 'PHP-FPM + Caddy']],
                 'node_versions' => array_map('strval', array_keys((array) config('servers.node_versions'))),
-                'databases' => collect((array) config('servers.databases'))->map(fn (array $db, string $key) => ['value' => $key, 'label' => $db['label']])->values(),
-                'caches' => collect((array) config('servers.caches'))->map(fn (array $cache, string $key) => ['value' => $key, 'label' => $cache['label']])->values(),
             ],
             'sshKeys' => SshKey::query()->where('organization_id', $organizationId)->orderBy('name')->get(['id', 'name', 'fingerprint']),
             'canManageProviders' => $this->access->can($request->user(), $organizationId, 'providers.manage'),

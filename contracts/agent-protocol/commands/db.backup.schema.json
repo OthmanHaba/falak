@@ -1,26 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.backup.schema.json",
-  "title": "db.backup — dump a database (Redis / Valkey: an RDB snapshot of an instance), compress, write to a local path or PUT to a presigned URL",
+  "title": "db.backup — stream `falak-db backup logical` out of an instance's container (postgres pg_dump -Fc, mysql/mariadb dump, redis/valkey RDB snapshot), compress, write to a local path or PUT to a presigned URL",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "instance",
     "engine",
     "database",
     "destination"
   ],
   "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
     "engine": {
       "enum": [
-        "mysql",
         "postgres",
+        "mysql",
+        "mariadb",
         "redis",
         "valkey"
       ]
     },
     "database": {
       "type": "string",
-      "description": "SQL: the database. Redis / Valkey (feature db.redis.backup): the instance's name."
+      "description": "SQL: the database (identifier). Redis / Valkey: the instance's database row name, informational"
     },
     "compression": {
       "enum": [
@@ -81,8 +87,9 @@
         "properties": {
           "engine": {
             "enum": [
-              "redis",
-              "valkey"
+              "postgres",
+              "mysql",
+              "mariadb"
             ]
           }
         },
@@ -93,13 +100,7 @@
       "then": {
         "properties": {
           "database": {
-            "pattern": "^[a-z][a-z0-9_-]{0,40}$"
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "database": {
+            "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
           }
         }

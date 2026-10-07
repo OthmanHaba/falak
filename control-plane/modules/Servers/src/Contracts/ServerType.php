@@ -28,10 +28,10 @@ enum ServerType: string
     public function description(): string
     {
         return match ($this) {
-            self::App => 'All-in-one: PHP, Node, database and cache on one machine.',
-            self::Web => 'Serves sites behind Caddy / FrankenPHP; database and cache live elsewhere.',
-            self::Database => 'Dedicated database engine.',
-            self::Cache => 'Dedicated Redis / Valkey.',
+            self::App => 'All-in-one: PHP, Node, sites and database containers on one machine.',
+            self::Web => 'Serves sites behind Caddy / FrankenPHP; databases live elsewhere.',
+            self::Database => 'For database containers (any server can run them).',
+            self::Cache => 'For Redis / Valkey containers (any server can run them).',
             self::Worker => 'Runs queue workers, daemons and scheduled tasks; no public web traffic.',
             self::LoadBalancer => 'Caddy load balancer in front of web servers.',
             self::Builder => 'Builds releases and images (Railpack / BuildKit) for other servers.',
@@ -51,19 +51,17 @@ enum ServerType: string
     }
 
     /**
-     * Stack components allowed for the type.
+     * Stack components allowed for the type. Every server runs Docker (database containers can run anywhere), so
+     * Docker is not a choice; a database or cache server is a server labelled for that role.
      *
-     * @return list<'php'|'node'|'database'|'cache'|'docker'>
+     * @return list<'php'|'node'>
      */
     public function allowedComponents(): array
     {
         return match ($this) {
-            self::App => ['php', 'node', 'database', 'cache', 'docker'],
-            self::Web, self::Worker => ['php', 'node', 'docker'],
-            self::Database => ['database'],
-            self::Cache => ['cache'],
-            self::LoadBalancer => [],
-            self::Builder => ['node', 'docker'],
+            self::App, self::Web, self::Worker => ['php', 'node'],
+            self::Database, self::Cache, self::LoadBalancer => [],
+            self::Builder => ['node'],
         };
     }
 }

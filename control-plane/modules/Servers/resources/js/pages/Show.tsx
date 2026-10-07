@@ -200,9 +200,6 @@ export default function Show({ server, agent, metrics, services, machineCheck, c
         [
             server.stack.php && `${server.stack.php.runtime === 'fpm' ? 'PHP-FPM' : 'FrankenPHP'}${server.php ? ` ${server.php}` : ''}`,
             server.stack.node && `Node ${server.stack.node}`,
-            server.stack.database,
-            server.stack.cache,
-            server.stack.docker && 'Docker',
         ]
             .filter(Boolean)
             .join(' · ') || null;

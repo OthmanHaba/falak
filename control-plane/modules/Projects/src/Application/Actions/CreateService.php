@@ -53,7 +53,8 @@ final class CreateService
             (string) $data['engine'],
             (string) $data['name'],
             $userId,
-            array_intersect_key($data, array_flip(['maxmemory_mb', 'eviction', 'persistence'])),
+            // The container joins this environment's Docker network, where its sites reach it by name.
+            [...array_intersect_key($data, array_flip(['version', 'memory_mb', 'disk_gb', 'eviction', 'persistence'])), 'environment_id' => $environment->id],
         );
 
         return ($this->link)($environment, ServiceKind::Database, $database->id, $database->name, $x, $y);

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -30,6 +31,7 @@ type Location struct {
 
 // BackupPayload is db.backup.
 type BackupPayload struct {
+	Instance    string   `json:"instance"`
 	Engine      string   `json:"engine"`
 	Database    string   `json:"database"`
 	Compression string   `json:"compression"`
@@ -44,52 +46,77 @@ type BackupResult struct {
 	DurationMS int64  `json:"duration_ms"`
 	// RDB is a Redis / Valkey snapshot's format, e.g. REDIS0011 or VALKEY080.
 	RDB string `json:"rdb,omitempty"`
-	// UncompressedBytes is the dump's size before compression; a restore of a Redis / Valkey snapshot gets it back
-	// (db.restore uncompressed_bytes) to check the disk's free space and cap what it writes.
+	// UncompressedBytes is the dump's size before compression.
 	UncompressedBytes int64 `json:"uncompressed_bytes,omitempty"`
 }
 
-func (e engine) dumpCmd(dbname string) runner.Cmd {
-	if e.name == "mysql" {
-		return runner.Cmd{Name: "mysqldump", Args: []string{"--single-transaction", "--quick", "--routines", "--triggers", "--events",
-			"--hex-blob", "--default-character-set=utf8mb4", "--no-tablespaces", dbname}}
-	}
-	return runner.Cmd{Name: "pg_dump", Args: []string{"-Fp", "--no-owner", "--no-acl", "-d", dbname}, User: "postgres"}
-}
-
-// Backup dumps a database (Redis / Valkey: an RDB snapshot of the instance, see redisBackup), optionally gzips it, and
-// stores it locally or PUTs it to a presigned URL.
+// Backup streams `falak-db backup logical` out of the instance's container (pg_dump -Fc, mysqldump, an RDB
+// snapshot), optionally gzips it, and stores it locally or PUTs it to a presigned URL.
 func (db *DB) Backup(ctx context.Context, p BackupPayload, st commands.Stream) (any, error) {
-	if isKeyValue(p.Engine) {
-		return db.redisBackup(ctx, p, st)
-	}
 	start := time.Now()
-	e, err := db.engine(p.Engine)
-	if err != nil {
+	if err := checkID("instance", p.Instance); err != nil {
 		return nil, err
 	}
-	if err := checkIdent("database", p.Database); err != nil {
+	defer db.lock(p.Instance)()
+	if err := checkEngine(p.Engine); err != nil {
 		return nil, err
+	}
+	args := []string{"backup", "logical", "--out", "-"}
+	if !isKeyValue(p.Engine) {
+		if err := checkIdent("database", p.Database); err != nil {
+			return nil, err
+		}
+		args = []string{"backup", "logical", "--database", p.Database, "--out", "-"}
 	}
 	if err := checkDestination(p.Destination); err != nil {
 		return nil, err
 	}
-	return db.ship(ctx, p, start, st, func(out io.Writer) error {
-		c := e.dumpCmd(p.Database)
-		c.Stdout = out
-		c.Stderr = st.Stderr()
-		res, err := db.d.Runner.Run(ctx, c)
-		if err == nil && res.ExitCode != 0 {
-			err = &runner.ExitError{Cmd: c.Name, Code: res.ExitCode, Stderr: string(res.Stderr)}
-		}
+	var head headWriter
+	res, err := db.ship(ctx, p, start, st, func(out io.Writer) error {
+		_, stderr, err := db.exec(ctx, p.Instance, nil, io.MultiWriter(out, &head), nil, args...)
 		if err != nil {
+			return fmt.Errorf("dump %s: %w", p.Database, err)
+		}
+		var r struct {
+			Bytes int64 `json:"bytes"`
+		}
+		if err := streamResult(stderr, &r); err != nil {
 			return fmt.Errorf("dump %s: %w", p.Database, err)
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	if isKeyValue(p.Engine) {
+		res.RDB = head.rdb()
+	}
+	return res, nil
 }
 
-func isKeyValue(engine string) bool { return engine == "redis" || engine == "valkey" }
+// headWriter keeps the first bytes of a stream (an RDB file's header: REDIS0011, VALKEY080).
+type headWriter struct{ b []byte }
+
+func (h *headWriter) Write(p []byte) (int, error) {
+	if n := 16 - len(h.b); n > 0 {
+		h.b = append(h.b, p[:min(n, len(p))]...)
+	}
+	return len(p), nil
+}
+
+func (h *headWriter) rdb() string {
+	s := string(h.b)
+	for _, prefix := range []string{"REDIS", "VALKEY"} {
+		if strings.HasPrefix(s, prefix) {
+			n := len(prefix)
+			for n < len(s) && n < len(prefix)+4 && s[n] >= '0' && s[n] <= '9' {
+				n++
+			}
+			return s[:n]
+		}
+	}
+	return ""
+}
 
 func checkDestination(d Location) error {
 	switch d.Kind {
@@ -215,26 +242,21 @@ func redact(err error) error {
 
 // RestorePayload is db.restore.
 type RestorePayload struct {
+	Instance    string   `json:"instance"`
 	Engine      string   `json:"engine"`
 	Database    string   `json:"database"`
 	Compression string   `json:"compression"`
 	Source      Location `json:"source"`
 	SHA256      string   `json:"sha256"`
-	// UncompressedBytes is the size the backup recorded (feature db.redis.restore_checks; Redis / Valkey restores
-	// check the free space against it and cap the gunzipped copy).
-	UncompressedBytes int64 `json:"uncompressed_bytes,omitempty"`
+	// Owner (postgres) gets the restored database and every object in it: the application keeps migrating it.
+	Owner string `json:"owner,omitempty"`
 }
 
 // RestoreResult is its result.
 type RestoreResult struct {
-	Bytes      int64 `json:"bytes"`
-	DurationMS int64 `json:"duration_ms"`
-	// Redis / Valkey: the snapshot's format and the instance's earlier files, moved aside (data directory names).
-	RDB        string   `json:"rdb,omitempty"`
-	MovedAside []string `json:"moved_aside,omitempty"`
-	// Warnings: the restore succeeded, but something needs attention (Redis / Valkey: a config file that could not
-	// be put back).
-	Warnings []string `json:"warnings,omitempty"`
+	Bytes      int64    `json:"bytes"`
+	DurationMS int64    `json:"duration_ms"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 type countingWriter struct {
@@ -259,40 +281,100 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// Restore loads a dump into a database (created if missing); Redis / Valkey: see redisRestore.
+// Restore loads a dump into a database of the instance (created if missing; postgres objects are dropped first).
+// Redis / Valkey: the container is stopped, a one-off container of the same image replaces the data directory's
+// snapshot, and the instance starts again.
 func (db *DB) Restore(ctx context.Context, p RestorePayload, st commands.Stream) (any, error) {
-	if isKeyValue(p.Engine) {
-		return db.redisRestore(ctx, p, st)
-	}
 	start := time.Now()
-	e, err := db.engine(p.Engine)
-	if err != nil {
+	if err := checkID("instance", p.Instance); err != nil {
 		return nil, err
 	}
-	if err := checkIdent("database", p.Database); err != nil {
+	defer db.lock(p.Instance)()
+	if err := checkEngine(p.Engine); err != nil {
 		return nil, err
+	}
+	if !isKeyValue(p.Engine) {
+		if err := checkIdent("database", p.Database); err != nil {
+			return nil, err
+		}
 	}
 	file, cleanup, err := db.fetchSource(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	if _, err := db.Create(ctx, CreatePayload{Engine: p.Engine, Name: p.Database}, st); err != nil {
-		return nil, err
-	}
 	in, closeIn, err := openDump(file, p.Compression)
 	if err != nil {
 		return nil, err
 	}
 	defer closeIn()
 	cr := &countingReader{r: in}
-	c := e.cmd(p.Database)
-	c.Stdin = cr
-	c.Stdout, c.Stderr = st.Stdout(), st.Stderr()
-	if _, err := runner.Check(ctx, db.d.Runner, c); err != nil {
+	if isKeyValue(p.Engine) {
+		if err := db.restoreKeyValue(ctx, p.Instance, cr, st); err != nil {
+			return nil, err
+		}
+		return RestoreResult{Bytes: cr.n, DurationMS: time.Since(start).Milliseconds()}, nil
+	}
+	args := []string{"restore", "logical", "--database", p.Database, "--in", "-"}
+	if p.Engine == "postgres" {
+		// Into a scratch database, swapped in only once complete: a failed restore leaves the database as it was.
+		args = append(args, "--swap")
+		if p.Owner != "" {
+			if err := checkIdent("owner", p.Owner); err != nil {
+				return nil, err
+			}
+			args = append(args, "--owner", p.Owner)
+		}
+	} else if _, _, err := db.exec(ctx, p.Instance, nil, nil, nil, "database", "create", "--name", p.Database); err != nil {
+		return nil, err
+	}
+	if _, _, err := db.exec(ctx, p.Instance, cr, st.Stdout(), nil, args...); err != nil {
 		return nil, fmt.Errorf("restore into %s: %w", p.Database, err)
 	}
 	return RestoreResult{Bytes: cr.n, DurationMS: time.Since(start).Milliseconds()}, nil
+}
+
+// restoreKeyValue replaces a stopped Redis / Valkey instance's snapshot through a one-off container with the same
+// image and data mount (`falak-db restore logical` refuses a running server), then starts the instance again.
+func (db *DB) restoreKeyValue(ctx context.Context, id string, in io.Reader, st commands.Stream) error {
+	name := Container(id)
+	cur, ok, err := db.d.Docker.ContainerInspect(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%s does not exist", name)
+	}
+	var data string
+	for _, m := range cur.Mounts {
+		if m.Destination == "/data" {
+			data = m.Source
+		}
+	}
+	if data == "" {
+		return fmt.Errorf("%s has no /data mount", name)
+	}
+	if _, err := db.d.Docker.ContainerStop(ctx, cur.ID, stopGrace); err != nil {
+		return err
+	}
+	fmt.Fprintf(st.Stdout(), "stopped %s\n", name)
+	var errBuf bytes.Buffer
+	res, runErr := db.d.Runner.Run(ctx, runner.Cmd{Name: "docker", Args: []string{
+		"run", "--rm", "-i", "--name", name + "-restore", "--network", "none", "--entrypoint", "falak-db",
+		"--mount", "type=bind,source=" + data + ",target=/data", cur.Image, "restore", "logical", "--in", "-",
+	}, Stdin: in, Stdout: st.Stdout(), Stderr: &errBuf})
+	if runErr == nil && res.ExitCode != 0 {
+		runErr = fmt.Errorf("falak-db restore logical: exit %d: %s", res.ExitCode, lastLines(errBuf.String(), 5))
+	}
+	// The instance runs again whatever happened (falak-db only replaces the snapshot once it is complete).
+	if err := db.d.Docker.ContainerStart(ctx, cur.ID); err != nil {
+		return errors.Join(runErr, fmt.Errorf("starting %s: %w", name, err))
+	}
+	if runErr != nil {
+		return runErr
+	}
+	_, err = db.awaitHealthy(ctx, name)
+	return err
 }
 
 // fetchSource gives the dump as a local file: a local source checked against sha256, or a URL downloaded (and checked)

@@ -1,6 +1,5 @@
 <?php
 
-use Falak\Databases\Application\EngineInventory;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Enums\Trigger;
@@ -52,9 +51,11 @@ it('renders resolved references into the release .env and the deploy script envi
     $world = projects_deploy_world(['APP_KEY' => 'base64:k', 'DATABASE_URL' => '${{ shop.DATABASE_URL }}', 'DB_HOST' => '${{ shop.DB_HOST }}']);
     // A dedicated database server on the site's private network (DigitalOcean droplets of one credential and region).
     $vpc = ['provider' => 'digitalocean', 'provider_credential_id' => '01k6cccccccccccccccccccccc', 'region' => 'fra1'];
-    $engineServer = databases_server($world->organization, 'postgresql', ServerType::Database, $vpc);
+    $engineServer = databases_server($world->organization, ServerType::Database, $vpc);
+    // Published on its private address: a site of its environment runs on another server.
+    $instance = databases_instance($world->organization, 'postgresql', $engineServer, ['published_addresses' => [$engineServer->private_ipv4]]);
     Server::query()->whereIn('id', Site::query()->findOrFail($world->site->id)->serverIds())->update([...$vpc, 'private_ipv4' => '10.0.0.40']);
-    [, , $engine] = projects_database($world->organization, 'shop', projects_default_env($world->organization), engineServer: app(EngineInventory::class)->sync($engineServer->id));
+    [, , $engine] = projects_database($world->organization, 'shop', projects_default_env($world->organization), instance: $instance);
     $host = Server::query()->find($engine->server_id)->private_ipv4;
 
     $deployment = projects_deploy($world);
@@ -62,7 +63,7 @@ it('renders resolved references into the release .env and the deploy script envi
     $env = $world->agents->last('deploy.prepare')['payload']['env_file']['content'];
 
     expect($deployment->status)->toBe(DeploymentStatus::Succeeded)
-        ->and($env)->toContain("DATABASE_URL=\"postgresql://shop_user:p%40ss%2Fword@{$host}:5432/shop\"")
+        ->and($env)->toContain("DATABASE_URL=\"postgresql://shop_user:p%40ss%2Fword@{$host}:{$engine->host_port}/shop\"")
         ->toContain("DB_HOST={$host}")
         ->not->toContain('${{');
 

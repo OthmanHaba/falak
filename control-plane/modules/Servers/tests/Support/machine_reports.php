@@ -139,8 +139,8 @@ function mc_docker_ce(array $report, array $plugins = ['compose', 'buildx'], boo
  */
 function mc_docker_io(array $report, array $plugins = []): array
 {
-    $report = mc_package($report, 'docker.io', '27.5.1-0ubuntu3~24.04.2');
-    $docker = ['engine_package' => 'docker.io', 'client_version' => '27.5.1', 'server_version' => '27.5.1', 'compose' => null, 'buildx' => null, 'snap' => false, 'rootless' => false, 'system_daemon' => true, 'daemon' => null];
+    $report = mc_package($report, 'docker.io', '28.2.2-0ubuntu1~24.04.1');
+    $docker = ['engine_package' => 'docker.io', 'client_version' => '28.2.2', 'server_version' => '28.2.2', 'compose' => null, 'buildx' => null, 'snap' => false, 'rootless' => false, 'system_daemon' => true, 'daemon' => null];
 
     if (in_array('compose', $plugins, true)) {
         $report = mc_package($report, 'docker-compose-v2', '2.33.1+ds1-0ubuntu1~24.04.1');

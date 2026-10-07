@@ -10,12 +10,13 @@
     "node": {"versions": ["22.11.0"], "default": "22.11.0"},
     "caddy": {"enabled": false}
   },
-  "services": [{"name": "redis-server", "enabled": true, "state": "started"}],
+  "services": [{"name": "docker", "enabled": true, "state": "started"}],
   "unattended_upgrades": {"enabled": true, "auto_reboot": false, "reboot_time": "04:00"},
   "ssh": {"port": 22, "permit_root_login": "prohibit-password", "password_authentication": false},
   "components": [
     {"name": "docker", "decision": "adopt", "packages": ["docker-ce", "docker-compose-plugin", "docker-buildx-plugin"], "service": "docker"},
     {"name": "swap", "decision": "adopt"},
-    {"name": "database", "decision": "install", "service": "postgresql"}
-  ]
+    {"name": "edge", "decision": "install"}
+  ],
+  "docker": {"live_restore": true, "min_version": "28"}
 }

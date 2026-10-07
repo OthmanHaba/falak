@@ -3,7 +3,6 @@
 namespace Falak\Databases\Application\Actions;
 
 use Falak\Databases\Application\AgentCommands;
-use Falak\Databases\Application\KeyValue\KeyValueBackups;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Enums\ResourceStatus;
@@ -18,9 +17,9 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Dumps one database straight into object storage: the control plane presigns a PUT URL for a fresh
- * object key and the agent streams `db.backup` output to it. No storage credentials reach the server.
- * Redis / Valkey instances: an RDB snapshot (`<ts>-<id>.rdb.gz`), from agents with db.redis.backup only.
+ * Dumps one database straight into object storage: the control plane presigns a PUT URL for a fresh object key and the
+ * agent streams `falak-db backup logical` from the instance's container to it (db.backup). No storage credentials reach
+ * the server. Redis / Valkey instances: an RDB snapshot (`<ts>-<id>.rdb.gz`).
  */
 final class RunBackup
 {
@@ -28,7 +27,6 @@ final class RunBackup
         private readonly AgentCommands $commands,
         private readonly ObjectStores $stores,
         private readonly AuditLog $audit,
-        private readonly KeyValueBackups $keyValue,
     ) {}
 
     /**
@@ -42,21 +40,16 @@ final class RunBackup
         ?string $scheduleId = null,
         ?string $actorId = null,
     ): Backup {
-        $server = $database->databaseServer;
+        $instance = $database->instance;
         $background = $trigger === 'scheduled';
-
-        $unsupported = $this->keyValue->unsupported($server);
-
-        if ($unsupported !== null && ! $background) {
-            throw ValidationException::withMessages(['database' => $unsupported]);
-        }
+        $noun = $instance->engine->isKeyValue() ? 'Instance' : 'Database';
 
         if ($provider->organization_id !== $database->organization_id) {
             throw ValidationException::withMessages(['storage_provider_id' => 'Choose a storage provider of this organization.']);
         }
 
-        if ($database->status !== ResourceStatus::Active && ! $background) {
-            throw ValidationException::withMessages(['database' => ($server->engine->isKeyValue() ? 'Instance' : 'Database')." \"{$database->name}\" is not active."]);
+        if (! $background && ($database->status !== ResourceStatus::Active || ! $instance->isRunning())) {
+            throw ValidationException::withMessages(['database' => "{$noun} \"{$database->name}\" is not active."]);
         }
 
         $store = $this->stores->for($provider);
@@ -69,17 +62,19 @@ final class RunBackup
             'organization_id' => $database->organization_id,
             'schedule_id' => $scheduleId,
             'database_id' => $database->id,
-            'database_server_id' => $server->id,
+            'database_instance_id' => $instance->id,
             'server_id' => $database->server_id,
-            'server_name' => $server->server_name,
+            'server_name' => $instance->server_name,
+            'instance_name' => $instance->name,
             'database_name' => $database->name,
-            'engine' => $server->engine,
+            'engine' => $instance->engine,
+            'engine_version' => $instance->version,
             'storage_provider_id' => $provider->id,
             'object_key' => $store->key(
-                Str::slug($server->server_name).'-'.strtolower(substr($server->server_id, -6)),
+                Str::slug($instance->name).'-'.substr($instance->id, -6),
                 $database->name,
                 $now->format('Y/m'),
-                $now->format('Ymd\THis\Z').'-'.$backup->id.$compression->extension($server->engine),
+                $now->format('Ymd\THis\Z').'-'.$backup->id.$compression->extension($instance->engine),
             ),
             'compression' => $compression,
             'trigger' => $trigger,
@@ -87,20 +82,14 @@ final class RunBackup
             'requested_by' => $actorId,
         ]);
 
-        $error = match (true) {
-            $database->status !== ResourceStatus::Active => ($server->engine->isKeyValue() ? 'Instance' : 'Database')." is {$database->status->value}.",
-            $unsupported !== null => $unsupported,
-            default => null,
-        };
-
-        if ($error !== null) {
-            $backup->fill(['status' => BackupStatus::Failed, 'error' => $error, 'finished_at' => now()])->save();
+        if ($database->status !== ResourceStatus::Active || ! $instance->isRunning()) {
+            $backup->fill(['status' => BackupStatus::Failed, 'error' => $database->status !== ResourceStatus::Active ? "{$noun} is {$database->status->value}." : "The database server is {$instance->status->value}.", 'finished_at' => now()])->save();
             $this->failed($backup);
 
             return $backup;
         }
 
-        $payload = CommandPayloads::backup($server->engine, $database->name, $compression, $store->presignPut($backup->object_key, (int) config('databases.upload_url_ttl', 43200)));
+        $payload = CommandPayloads::backup($instance, $database->name, $compression, $store->presignPut($backup->object_key, (int) config('databases.upload_url_ttl', 43200)));
         $key = "db.backup:{$backup->id}";
         $timeout = (int) config('databases.timeouts.backup', 3600);
 
@@ -120,7 +109,7 @@ final class RunBackup
 
         $this->audit->record('databases.backup_started', 'backup', $backup->id, [
             'database' => $database->name,
-            'server_id' => $database->server_id,
+            'instance_id' => $instance->id,
             'storage_provider' => $provider->name,
             'trigger' => $trigger,
         ], $database->organization_id);

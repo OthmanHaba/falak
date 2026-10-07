@@ -47,8 +47,6 @@ use Illuminate\Support\Carbon;
  * @property ?string $install_command
  * @property ?string $provision_command_id
  * @property int $provision_attempts
- * @property ?string $engine_command_id provision.apply installing a database engine added after creation
- * @property ?string $engine_install_kind what engine_command_id installs: null (database) or "cache"
  * @property ?string $ssh_sync_command_id
  * @property ?Carbon $provisioned_at
  * @property ?string $created_by
@@ -143,32 +141,6 @@ class Server extends Model
         return array_values(array_intersect($offered, array_map('strval', (array) $byOs[$os])));
     }
 
-    /** An engine of this kind (database | cache) added after creation is still being installed. */
-    public function installing(string $kind): bool
-    {
-        return $this->engine_command_id !== null && ($this->engine_install_kind ?? 'database') === $kind;
-    }
-
-    /**
-     * Cache engines this server's OS can install (servers.caches_by_os). Before the agent reported the OS every
-     * engine is offered; a release not listed gets Redis only.
-     *
-     * @return list<string>
-     */
-    public function installableCaches(): array
-    {
-        $offered = array_keys((array) config('servers.caches', []));
-        $os = strtolower(trim((string) $this->os));
-
-        if ($os === '') {
-            return $offered;
-        }
-
-        $byOs = (array) config('servers.caches_by_os', []);
-
-        return array_values(array_intersect($offered, (array) ($byOs[$os] ?? ['redis'])));
-    }
-
     /** "Ubuntu 26.04" from the reported OS ("ubuntu 26.04"). */
     public function osLabel(): string
     {
@@ -216,10 +188,8 @@ class Server extends Model
             defaultPhpVersion: $installed->firstWhere('is_default', true)?->version,
             phpRuntime: $this->stack->phpRuntime,
             nodeVersion: $this->stack->node,
-            // An engine added after creation is only the server's once installed (engine_command_id cleared).
-            databaseEngine: $this->installing('database') ? null : $this->stack->database,
-            cacheEngine: $this->installing('cache') ? null : $this->stack->cache,
-            docker: $this->stack->docker,
+            // Every server runs Docker (provisioning installs it).
+            docker: true,
             unixUser: (string) config('servers.unix_user', 'falak'),
             providerCredentialId: $this->provider_credential_id,
             region: $this->region,

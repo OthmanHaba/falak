@@ -3,8 +3,8 @@
 use Falak\Databases\Http\Controllers\BackupController;
 use Falak\Databases\Http\Controllers\BackupScheduleController;
 use Falak\Databases\Http\Controllers\DatabaseController;
+use Falak\Databases\Http\Controllers\DatabaseInstanceController;
 use Falak\Databases\Http\Controllers\DatabasePanelController;
-use Falak\Databases\Http\Controllers\DatabaseServerController;
 use Falak\Databases\Http\Controllers\DatabaseUserController;
 use Falak\Databases\Http\Controllers\StorageProviderController;
 use Falak\Kernel\Http\LegacyRedirect;
@@ -17,17 +17,22 @@ Route::middleware(['auth', 'org'])->group(function () {
 });
 
 Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->group(function () {
-    Route::get('/', [DatabaseServerController::class, 'index'])->name('index');
+    Route::get('/', [DatabaseInstanceController::class, 'index'])->name('index');
 
-    Route::get('servers/{databaseServer}', [DatabaseServerController::class, 'show'])->name('servers.show');
-    Route::put('servers/{databaseServer}', [DatabaseServerController::class, 'update'])->name('servers.update');
-    Route::post('servers/{databaseServer}/databases', [DatabaseController::class, 'store'])->name('databases.store');
-    Route::post('servers/{databaseServer}/users', [DatabaseUserController::class, 'store'])->name('users.store');
-    Route::post('servers/{databaseServer}/schedules', [BackupScheduleController::class, 'store'])->name('schedules.store');
+    Route::post('instances', [DatabaseInstanceController::class, 'store'])->name('instances.store');
+    Route::get('instances/{instance}', [DatabaseInstanceController::class, 'show'])->name('instances.show');
+    Route::put('instances/{instance}', [DatabaseInstanceController::class, 'update'])->name('instances.update');
+    Route::post('instances/{instance}/restart', [DatabaseInstanceController::class, 'restart'])->name('instances.restart');
+    Route::post('instances/{instance}/network', [DatabaseInstanceController::class, 'network'])->name('instances.network');
+    Route::post('instances/{instance}/upgrade', [DatabaseInstanceController::class, 'upgrade'])->name('instances.upgrade');
+    Route::post('instances/{instance}/password', [DatabaseInstanceController::class, 'password'])->name('instances.password');
+    Route::delete('instances/{instance}', [DatabaseInstanceController::class, 'destroy'])->name('instances.destroy');
+    Route::post('instances/{instance}/databases', [DatabaseController::class, 'store'])->name('databases.store');
+    Route::post('instances/{instance}/users', [DatabaseUserController::class, 'store'])->name('users.store');
+    Route::post('instances/{instance}/schedules', [BackupScheduleController::class, 'store'])->name('schedules.store');
 
     Route::get('databases/{database}', [DatabasePanelController::class, 'show'])->name('databases.show');
     Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');
-    Route::put('databases/{database}/settings', [DatabasePanelController::class, 'settings'])->name('databases.settings');
     Route::post('databases/{database}/backups', [DatabaseController::class, 'backup'])->name('databases.backup');
 
     Route::put('users/{databaseUser}', [DatabaseUserController::class, 'update'])->name('users.update');

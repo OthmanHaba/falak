@@ -272,6 +272,15 @@ type Container struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	// HostConfig: the limits db containers change in place (ContainerUpdate).
+	HostConfig struct {
+		Memory   int64 `json:"Memory"`
+		NanoCpus int64 `json:"NanoCpus"`
+	} `json:"HostConfig"`
+	Mounts []struct {
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+	} `json:"Mounts"`
 	NetworkSettings struct {
 		Ports    map[string][]PortBinding `json:"Ports"`
 		Networks map[string]struct {
@@ -290,6 +299,13 @@ func (c *Client) ImageRepoDigests(ctx context.Context, ref string) ([]string, bo
 		return nil, false, nil
 	}
 	return out.RepoDigests, err == nil, err
+}
+
+// ContainerUpdate changes a running container's memory limit (swap at the same value: none) and CPUs in place.
+func (c *Client) ContainerUpdate(ctx context.Context, id string, memory, nanoCPUs int64) error {
+	body := map[string]any{"Memory": memory, "MemorySwap": memory, "NanoCpus": nanoCPUs}
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/update", nil, body, nil)
+	return err
 }
 
 // ContainerRestart restarts a container (stop timeout t).
@@ -378,6 +394,7 @@ type ContainerSummary struct {
 	Names   []string          `json:"Names"`
 	Image   string            `json:"Image"`
 	State   string            `json:"State"`
+	Status  string            `json:"Status"` // "Up 5 minutes (healthy)"
 	Created int64             `json:"Created"`
 	Labels  map[string]string `json:"Labels"`
 	Mounts  []MountPoint      `json:"Mounts,omitempty"`
@@ -417,7 +434,30 @@ type CreateBody struct {
 	WorkingDir   string              `json:"WorkingDir,omitempty"`
 	Labels       map[string]string   `json:"Labels,omitempty"`
 	ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
-	HostConfig   HostConfig          `json:"HostConfig"`
+	Healthcheck  *Healthcheck        `json:"Healthcheck,omitempty"`
+	// StopTimeout is the seconds `docker stop` (and a daemon shutdown) waits before SIGKILL.
+	StopTimeout      *int              `json:"StopTimeout,omitempty"`
+	HostConfig       HostConfig        `json:"HostConfig"`
+	NetworkingConfig *NetworkingConfig `json:"NetworkingConfig,omitempty"`
+}
+
+// Healthcheck of a container (durations in nanoseconds).
+type Healthcheck struct {
+	Test        []string `json:"Test"`
+	Interval    int64    `json:"Interval,omitempty"`
+	Timeout     int64    `json:"Timeout,omitempty"`
+	Retries     int      `json:"Retries,omitempty"`
+	StartPeriod int64    `json:"StartPeriod,omitempty"`
+}
+
+// NetworkingConfig names the endpoint a container is created on (HostConfig.NetworkMode), with its DNS aliases.
+type NetworkingConfig struct {
+	EndpointsConfig map[string]EndpointConfig `json:"EndpointsConfig"`
+}
+
+// EndpointConfig is one network endpoint.
+type EndpointConfig struct {
+	Aliases []string `json:"Aliases,omitempty"`
 }
 
 // HostConfig subset.
@@ -431,6 +471,7 @@ type HostConfig struct {
 	RestartPolicy RestartPolicy `json:"RestartPolicy"`
 	Memory        int64         `json:"Memory,omitempty"`
 	NanoCPUs      int64         `json:"NanoCpus,omitempty"`
+	ShmSize       int64         `json:"ShmSize,omitempty"`
 	// Hardening (function containers).
 	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`

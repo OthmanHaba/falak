@@ -144,6 +144,16 @@
       },
       "uniqueItems": true,
       "description": "Names of the secret variables in this payload. The agent looks their values up in the payload (env maps, dotenv content) and masks them, plus their base64 and URL-encoded forms, as \u2022\u2022\u2022\u2022 in the command's output, error and result. Values shorter than 6 bytes are not masked."
+    },
+    "join_networks": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^falak-env-[0-9a-z]{26}$"
+      },
+      "description": "feature db.instances: environment networks where the environment's databases answer by name, created before `up` (labels falak.managed / falak.network=environment): the control plane's override file (compose.falak.yaml) declares them as external networks of every service, so containers start on them; containers still missing one join it after `up`"
     }
   },
   "$defs": {

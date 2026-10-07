@@ -2,7 +2,7 @@
 
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Domain\Models\Grant;
 use Falak\Deployments\Domain\Models\Deployment;
@@ -95,20 +95,22 @@ function projects_site(Organization $organization, string $name, array $variable
 }
 
 /**
- * An active database with a user granted all privileges, placed in $environment.
+ * An active database with a user granted all privileges in a running database container (its own unless $instance;
+ * on $server when given), placed in $environment (the container is then on that environment's network).
  *
- * @return array{0: Database, 1: DatabaseUser, 2: DatabaseServer}
+ * @return array{0: Database, 1: DatabaseUser, 2: DatabaseInstance}
  */
-function projects_database(Organization $organization, string $name = 'app', ?Environment $environment = null, string $engine = 'postgresql', ?DatabaseServer $engineServer = null): array
+function projects_database(Organization $organization, string $name = 'app', ?Environment $environment = null, string $engine = 'postgresql', ?DatabaseInstance $instance = null, ?Server $server = null): array
 {
-    $engineServer ??= databases_engine($organization, $engine);
-    $database = databases_active_db($engineServer, $name);
+    $instance ??= databases_instance($organization, $engine, $server, ['environment_id' => $environment?->id]);
+    $database = databases_active_db($instance, $name);
+    $keyValue = $instance->engine->isKeyValue();
 
-    $user = $engineServer->users()->create([
+    $user = $instance->users()->create([
         'organization_id' => $organization->id,
-        'server_id' => $engineServer->server_id,
-        'username' => $name.'_user',
-        'password' => 'p@ss/word',
+        'server_id' => $instance->server_id,
+        'username' => $keyValue ? 'default' : $name.'_user',
+        'password' => $keyValue ? $instance->root_password : 'p@ss/word',
         'host' => '%',
         'status' => ResourceStatus::Active,
     ]);
@@ -118,7 +120,7 @@ function projects_database(Organization $organization, string $name = 'app', ?En
         app(LinkService::class)($environment, ServiceKind::Database, $database->id, $name);
     }
 
-    return [$database, $user, $engineServer];
+    return [$database, $user, $instance];
 }
 
 function projects_service(string $kind, string $refId): ?Service

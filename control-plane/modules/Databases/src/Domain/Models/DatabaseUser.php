@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property string $id
  * @property string $organization_id
- * @property string $database_server_id
+ * @property string $database_instance_id
  * @property string $server_id
  * @property string $username
  * @property string $password encrypted at rest; only revealed with databases.credentials.reveal
@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property int $revision
  * @property ?string $created_by
  * @property Carbon $created_at
- * @property-read DatabaseServer $databaseServer
+ * @property-read DatabaseInstance $instance
  * @property-read Collection<int, Grant> $grants
  */
 class DatabaseUser extends Model
@@ -54,11 +54,11 @@ class DatabaseUser extends Model
     }
 
     /**
-     * @return BelongsTo<DatabaseServer, $this>
+     * @return BelongsTo<DatabaseInstance, $this>
      */
-    public function databaseServer(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(DatabaseServer::class);
+        return $this->belongsTo(DatabaseInstance::class, 'database_instance_id');
     }
 
     /**

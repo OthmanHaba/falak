@@ -1,6 +1,5 @@
 <?php
 
-use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseProvisioner;
 use Falak\Identity\Contracts\Role;
@@ -48,9 +47,8 @@ beforeEach(function () {
     $this->actingAs($this->user);
     $this->environment = projects_default_env($this->organization);
 
-    // An app server running PostgreSQL and Docker; the stack runs there.
-    $this->server = databases_server($this->organization, 'postgresql', attributes: ['stack' => ['database' => 'postgresql', 'docker' => true]]);
-    $this->engine = app(EngineInventory::class)->sync($this->server->id);
+    // An app server; the stack runs there.
+    $this->server = databases_server($this->organization);
     $this->stack = projects_site($this->organization, 'Shop', ['API_KEY' => 'k-123'], $this->environment, [$this->server], [
         'runtime' => 'compose', 'framework' => 'docker', 'php_version' => null, 'compose_source' => 'repo', 'compose_file' => 'deploy/compose.yaml',
         'source_connection_id' => null, 'repository' => 'acme/shop', 'branch' => 'main',
@@ -63,7 +61,7 @@ it('replaces a database service with a Falak database next to the stack and rewr
 
     expect($database->name)->toBe('shop')
         ->and($database->serverId)->toBe($this->server->id)
-        ->and($this->agents->last('db.create')['payload']['name'])->toBe('shop')
+        ->and($this->agents->last('db.instance.create')['payload']['instance'])->toMatchArray(['engine' => 'postgres', 'version' => '17', 'network' => 'falak-env-'.strtolower($this->environment->id)])
         ->and($this->stack->refresh()->compose_services['db'])->toMatchArray(['mode' => 'database', 'database_id' => $database->id]);
 
     // Placed in the stack's environment, so its references resolve there.
@@ -83,30 +81,30 @@ it('replaces a database service with a Falak database next to the stack and rewr
     ]);
     $rewrites = $rewrites->dotenv();
 
-    // Resolved for the stack (containers on the engine's server): the Docker bridge, once container access is on.
-    $this->engine->forceFill(['container_access' => true])->save();
+    // Resolved for the stack (containers on the database container's server): its name on the environment network.
+    $instanceId = $this->agents->last('db.instance.create')['payload']['instance']['id'];
     $resolved = app(VariableReferences::class)->resolve($this->environment->id, $this->stack->id, $rewrites);
     expect($resolved->errors)->toBe([])
         ->and(array_keys($rewrites))->toBe(['FALAK_SVC_APP_DATABASE_URL', 'FALAK_SVC_APP_DB_HOST', 'FALAK_SVC_APP_DB_PASSWORD', 'FALAK_SVC_WORKER_PGHOST', 'FALAK_SVC_WORKER_PGPORT'])
-        ->and($resolved->variables['FALAK_SVC_APP_DB_HOST'])->toBe('172.17.0.1')
+        ->and($resolved->variables['FALAK_SVC_APP_DB_HOST'])->toBe("falak-db-{$instanceId}")
+        ->and($resolved->variables['FALAK_SVC_WORKER_PGPORT'])->toBe('5432')
         ->and($resolved->variables['FALAK_SVC_APP_DATABASE_URL'])->toStartWith('postgresql://shop:');
 });
 
-it('picks a free database name when another stack\'s database holds the one the service used', function () {
-    $taken = app(DatabaseProvisioner::class)->create($this->organization->id, $this->server->id, 'postgresql', 'shop');
-    app(DatabaseProvisioner::class)->create($this->organization->id, $this->server->id, 'postgresql', str_replace('-', '_', $this->stack->slug).'_shop');
+it('gives every extracted service its own container, so the name the service used is always free', function () {
+    $other = app(DatabaseProvisioner::class)->create($this->organization->id, $this->server->id, 'postgresql', 'shop');
 
     $database = $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK);
 
-    // shop is taken, <stack>_shop too: <stack>_shop_2. The app reads the name from its rewritten DATABASE_URL.
-    expect($database->id)->not->toBe($taken->id)
-        ->and($database->name)->toBe(str_replace('-', '_', $this->stack->slug).'_shop_2')
+    expect($database->id)->not->toBe($other->id)
+        ->and($database->instanceId)->not->toBe($other->instanceId)
+        ->and($database->name)->toBe('shop')
         ->and($this->stack->refresh()->compose_services['db'])->toMatchArray(['mode' => 'database', 'database_id' => $database->id])
         ->and($this->extraction->rewrites($this->stack->id)->groups['app']['DATABASE_URL'])->toStartWith('${{ ');
 });
 
 it('links an existing database of the same engine and environment instead of creating one', function () {
-    [$existing] = projects_database($this->organization, 'orders', $this->environment, engineServer: $this->engine);
+    [$existing] = projects_database($this->organization, 'orders', $this->environment, server: $this->server);
 
     $database = $this->extraction->toDatabase($this->stack->id, 'db', $existing->id, 'postgresql', SHOP_STACK);
 
@@ -126,7 +124,7 @@ it('refuses services that are not a database of that engine, and services alread
     };
 
     $fails(fn () => $this->extraction->toDatabase($this->stack->id, 'cache', null, 'postgresql', SHOP_STACK), 'engine');
-    $fails(fn () => $this->extraction->toDatabase($this->stack->id, 'cache', null, 'redis', SHOP_STACK), 'engine');
+    $fails(fn () => $this->extraction->toDatabase($this->stack->id, 'cache', null, 'valkey', SHOP_STACK), 'engine');
     $fails(fn () => $this->extraction->toDatabase($this->stack->id, 'nope', null, 'postgresql', SHOP_STACK), 'service');
 
     $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK);
@@ -376,7 +374,7 @@ it('gives the service back when creating the Falak service fails, and refuses a 
             throw ValidationException::withMessages(['name' => 'boom']);
         }
 
-        public function delete(string $databaseId): void {}
+        public function delete(string $databaseId, bool $deleteVolume = false): void {}
     });
     app()->forgetInstance(ComposeServiceExtraction::class);
     $extraction = app(ComposeServiceExtraction::class);

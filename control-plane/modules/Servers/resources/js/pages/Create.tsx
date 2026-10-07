@@ -37,8 +37,6 @@ interface Props {
         php_versions: string[];
         php_runtimes: Option[];
         node_versions: string[];
-        databases: Option[];
-        caches: Option[];
     };
     sshKeys: SshKeyOption[];
     canManageProviders: boolean;
@@ -203,9 +201,6 @@ export default function Create({ types, providers, credentials, options, sshKeys
             stack: {
                 php: allows('php') ? form.stack.php : null,
                 node: allows('node') ? form.stack.node : null,
-                database: allows('database') ? form.stack.database : null,
-                cache: allows('cache') ? form.stack.cache : null,
-                docker: allows('docker') ? form.stack.docker : false,
             },
         }));
 
@@ -485,45 +480,19 @@ export default function Create({ types, providers, credentials, options, sshKeys
                             </div>
                         )}
 
-                        {(allows('node') || allows('database') || allows('cache')) && (
+                        {allows('node') && (
                             <div className="grid gap-4 sm:grid-cols-3">
-                                {allows('node') && (
-                                    <Field label="Node.js" error={errorBag['stack.node']}>
-                                        <Select
-                                            value={data.stack.node ?? NONE}
-                                            onValueChange={(node) => setStack({ node: node === NONE ? null : node })}
-                                            options={nullable(
-                                                options.node_versions.map((version) => ({ value: version, label: `Node ${version}` })),
-                                                'No Node.js',
-                                            )}
-                                        />
-                                    </Field>
-                                )}
-                                {allows('database') && (
-                                    <Field label="Database" error={errorBag['stack.database']}>
-                                        <Select
-                                            value={data.stack.database ?? NONE}
-                                            onValueChange={(database) => setStack({ database: database === NONE ? null : database })}
-                                            options={nullable(options.databases, 'None')}
-                                        />
-                                    </Field>
-                                )}
-                                {allows('cache') && (
-                                    <Field label="Cache" error={errorBag['stack.cache']}>
-                                        <Select
-                                            value={data.stack.cache ?? NONE}
-                                            onValueChange={(cache) => setStack({ cache: cache === NONE ? null : cache })}
-                                            options={nullable(options.caches, 'None')}
-                                        />
-                                    </Field>
-                                )}
+                                <Field label="Node.js" error={errorBag['stack.node']}>
+                                    <Select
+                                        value={data.stack.node ?? NONE}
+                                        onValueChange={(node) => setStack({ node: node === NONE ? null : node })}
+                                        options={nullable(
+                                            options.node_versions.map((version) => ({ value: version, label: `Node ${version}` })),
+                                            'No Node.js',
+                                        )}
+                                    />
+                                </Field>
                             </div>
-                        )}
-
-                        {allows('docker') && (
-                            <Field inline label="Install Docker Engine (with Compose and Buildx)" error={errorBag['stack.docker']}>
-                                <Checkbox checked={data.stack.docker} onCheckedChange={(checked) => setStack({ docker: checked === true })} />
-                            </Field>
                         )}
                     </Section>
                 )}
