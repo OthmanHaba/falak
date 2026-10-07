@@ -3,6 +3,7 @@
 namespace Falak\Volumes\Http\Controllers;
 
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Kernel\Security\BackupKeys;
 use Falak\Volumes\Application\Actions\PruneVolumeBackups;
@@ -15,6 +16,7 @@ use Falak\Volumes\Domain\Enums\Consistency;
 use Falak\Volumes\Domain\Models\BackupSchedule;
 use Falak\Volumes\Domain\Models\Volume;
 use Falak\Volumes\Domain\Models\VolumeBackup;
+use Falak\Volumes\Domain\Policies\VolumePolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -160,6 +162,13 @@ final class VolumeBackupController extends Controller
             'drill' => ['sometimes', 'in:off,weekly,monthly'],
             'drill_server_id' => ['nullable', 'string', 'size:26'],
         ]);
+
+        // Drills on another server put the restored data there: that takes the browse permission (admins).
+        $server = isset($data['drill_server_id']) && $data['drill_server_id'] !== '' ? strtolower((string) $data['drill_server_id']) : null;
+
+        if ($server !== null && $server !== $schedule?->drill_server_id && ! app(OrganizationAccess::class)->can($request->user(), $volume->organization_id, VolumePolicy::BROWSE)) {
+            throw ValidationException::withMessages(['drill_server_id' => 'Only admins can run drills on another server (it receives the restored data).']);
+        }
 
         return $save(
             $volume,

@@ -140,7 +140,11 @@ export function ProtectionFields({
                     ]}
                 />
             </Field>
-            <Field label="Drill server" hint="When this server lacks the memory or disk for a drill." error={errors.drill_server_id}>
+            <Field
+                label="Drill server"
+                hint="When this server lacks the memory or disk for a drill (admins only: it receives the restored data)."
+                error={errors.drill_server_id}
+            >
                 <Select
                     value={value.drill_server_id || NO_SERVER}
                     onValueChange={(id) => set({ drill_server_id: id === NO_SERVER ? '' : id })}

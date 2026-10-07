@@ -52,7 +52,8 @@ final class RunVolumeBackup
         $background = $trigger === 'scheduled';
         $provider = $this->storage->find($volume->organization_id, $storageProviderId);
         $schedule = $scheduleId !== null ? BackupSchedule::query()->find($scheduleId) : null;
-        $customer = $schedule !== null && $schedule->encryption_mode === BackupKeys::CUSTOMER && BackupKeys::validRecipient($schedule->age_recipient);
+        // A customer-held schedule never falls back to keys Falak holds: without a valid recipient, the backup fails.
+        $customer = $schedule !== null && $schedule->encryption_mode === BackupKeys::CUSTOMER;
 
         $error = match (true) {
             ! $volume->kind->portable() => 'Only Docker and sized volumes can be backed up.',
@@ -60,6 +61,7 @@ final class RunVolumeBackup
             $volume->holdsDatabase() && $trigger !== 'move' => 'A database’s data volume is backed up with the database.',
             $volume->status !== VolumeStatus::Active => "The volume is {$volume->status->value}.",
             $provider === null => 'Choose a storage provider of this organization.',
+            $customer && ! BackupKeys::validRecipient($schedule?->age_recipient) => 'The schedule\'s keys are customer-held but its age public key is missing or invalid.',
             default => null,
         };
 

@@ -49,7 +49,9 @@ final class RunBackup
     ): Backup {
         $scheduleId = $schedule?->id;
         $compression = Compression::Zstd;
-        $customer = $schedule !== null && $schedule->encryption_mode === BackupKeys::CUSTOMER && BackupKeys::validRecipient($schedule->age_recipient);
+        // A customer-held schedule never falls back to keys Falak holds: without a valid recipient, the backup fails.
+        $customer = $schedule !== null && $schedule->encryption_mode === BackupKeys::CUSTOMER;
+        $badRecipient = $customer && ! BackupKeys::validRecipient($schedule->age_recipient);
         $instance = $database->instance;
         $background = $trigger === 'scheduled';
         $noun = $instance->engine->isKeyValue() ? 'Instance' : 'Database';
@@ -94,6 +96,13 @@ final class RunBackup
             'status' => BackupStatus::Pending,
             'requested_by' => $actorId,
         ]);
+
+        if ($badRecipient) {
+            $backup->fill(['status' => BackupStatus::Failed, 'error' => 'The schedule\'s keys are customer-held but its age public key is missing or invalid.', 'finished_at' => now()])->save();
+            $this->failed($backup);
+
+            return $backup;
+        }
 
         if ($database->status !== ResourceStatus::Active || ! $instance->isRunning()) {
             $backup->fill(['status' => BackupStatus::Failed, 'error' => $database->status !== ResourceStatus::Active ? "{$noun} is {$database->status->value}." : "The database server is {$instance->status->value}.", 'finished_at' => now()])->save();

@@ -133,3 +133,12 @@ it('drills volume schedules and alerts on failure', function () {
     expect($backup->refresh()->verified_at)->not->toBeNull()
         ->and(VolumeDrill::query()->latest('id')->first()->rto_estimate_seconds)->toBe(2);
 });
+
+it('fails a customer-held archive whose recipient is gone instead of falling back to Falak-held keys', function () {
+    $schedule = venc_schedule($this, ['encryption_mode' => 'customer', 'age_recipient' => 'age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p']);
+    $schedule->forceFill(['age_recipient' => null])->save();
+    $backup = app(RunVolumeBackup::class)($this->volume, $this->provider->id, $schedule->consistency, 'scheduled', $schedule->id);
+
+    $this->agents->assertNothingDispatched('volume.archive');
+    expect($backup)->status->value->toBe('failed')->error->toContain('age public key')->wrapped_key->toBeNull();
+});

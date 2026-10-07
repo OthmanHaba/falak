@@ -188,3 +188,21 @@ it('keeps drills of other organizations apart', function () {
     $this->actingAs($stranger)->post("/databases/schedules/{$schedule->id}/drill")->assertNotFound();
     expect(Drill::query()->count())->toBe(0);
 });
+
+it('lets only admins choose a drill server (it receives the restored data)', function () {
+    [$developer] = memberOf($this->organization, Role::Developer);
+    $other = databases_server($this->organization);
+    $body = ['name' => 'N', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *', 'drill' => 'weekly'];
+
+    $this->actingAs($developer)->post("/databases/instances/{$this->engine->id}/schedules", [...$body, 'drill_server_id' => $other->id])
+        ->assertSessionHasErrors('drill_server_id');
+    $this->actingAs($developer)->post("/databases/instances/{$this->engine->id}/schedules", $body)->assertSessionHasNoErrors();
+
+    // An admin sets it; a developer editing the schedule keeps it (unchanged) but can't move it.
+    $schedule = BackupSchedule::query()->sole();
+    $this->actingAs($this->user)->put("/databases/schedules/{$schedule->id}", [...$body, 'drill_server_id' => $other->id])->assertSessionHasNoErrors();
+    $this->actingAs($developer)->put("/databases/schedules/{$schedule->id}", [...$body, 'name' => 'Renamed', 'drill_server_id' => $other->id])->assertSessionHasNoErrors();
+    $third = databases_server($this->organization);
+    $this->actingAs($developer)->put("/databases/schedules/{$schedule->id}", [...$body, 'drill_server_id' => $third->id])->assertSessionHasErrors('drill_server_id');
+    expect($schedule->refresh()->drill_server_id)->toBe($other->id);
+});

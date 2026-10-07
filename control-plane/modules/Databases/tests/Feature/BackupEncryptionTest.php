@@ -196,3 +196,12 @@ it('never flashes the age identity into the session when a restore fails validat
     expect(json_encode(session()->all()))->not->toContain(str_repeat('Q', 58))
         ->and(session()->getOldInput('database'))->toBe('shop_copy');
 });
+
+it('fails a customer-held backup whose recipient is gone instead of falling back to Falak-held keys', function () {
+    $schedule = enc_schedule($this, ['encryption_mode' => 'customer', 'age_recipient' => ENC_RECIPIENT]);
+    $schedule->forceFill(['age_recipient' => 'not-a-recipient'])->save();
+    $this->post("/databases/schedules/{$schedule->id}/run");
+
+    $this->agents->assertNothingDispatched('db.backup');
+    expect(Backup::query()->sole())->status->value->toBe('failed')->error->toContain('age public key')->wrapped_key->toBeNull();
+});
