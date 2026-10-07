@@ -31,12 +31,12 @@ var Catalogue = []string{
 	"proc.apply", "proc.restart", "proc.status",
 	"cron.apply",
 	"db.instance.create", "db.instance.update", "db.instance.restart", "db.instance.stop", "db.instance.delete", "db.instance.password", "db.instance.secrets", "db.instance.upgrade",
-	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore",
+	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore", "db.drill",
 	"net.firewall.apply", "net.wireguard.apply", "net.tunnel.apply",
 	"fn.release.apply", "fn.release.remove", "fn.run", "fn.status",
 	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
 	"telemetry.configure",
-	"volume.create", "volume.resize", "volume.delete", "volume.inventory", "volume.archive", "volume.restore", "volume.clone", "volume.browse", "volume.download",
+	"volume.create", "volume.resize", "volume.delete", "volume.inventory", "volume.archive", "volume.restore", "volume.clone", "volume.browse", "volume.download", "volume.drill",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",
 }
 
@@ -271,7 +271,11 @@ func TestFunctionResultsValidate(t *testing.T) {
 func TestDatabaseSchemas(t *testing.T) {
 	c := compiler(t)
 	inst := `"instance":"01hzyinst00000000000000001"`
-	dest := `"destination":{"kind":"presigned_url","url":"https://s3.example.com/b/k?X-Amz-Signature=x"}`
+	dest := `"encryption":{"mode":"cp","key_id":"01hzybackup000000000000001","key":"q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s="},"destination":{"kind":"presigned_url","url":"https://s3.example.com/b/k?X-Amz-Signature=x"}`
+	plainDest := `"destination":{"kind":"presigned_url","url":"https://s3.example.com/b/k?X-Amz-Signature=x"}`
+	source := `"source":{"kind":"url","url":"https://s3.example.com/b/k"},"sha256":"` + strings.Repeat("a", 64) + `"`
+	recipient := `"recipient":"age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"`
+	identity := `"identity":"AGE-SECRET-KEY-1` + strings.Repeat("Q", 58) + `"`
 	for _, tc := range []struct {
 		typ, body string
 		valid     bool
@@ -280,6 +284,17 @@ func TestDatabaseSchemas(t *testing.T) {
 		{"db.backup", `{` + inst + `,"engine":"mariadb","database":"shop_db",` + dest + `}`, true},
 		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop-db",` + dest + `}`, false},
 		{"db.backup", `{"engine":"mysql","database":"shop",` + dest + `}`, false},
+		// Always encrypted: no unencrypted backup, and no compression choice.
+		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop",` + plainDest + `}`, false},
+		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop","compression":"gzip",` + dest + `}`, false},
+		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop","encryption":{"mode":"age","key_id":"k",` + recipient + `},` + plainDest + `}`, true},
+		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop","encryption":{"mode":"age","key_id":"k","recipient":"ssh-ed25519 AAAA"},` + plainDest + `}`, false},
+		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop","encryption":{"mode":"age","key_id":"k",` + identity + `},` + plainDest + `}`, false},
+		{"db.restore", `{` + inst + `,"engine":"mysql","database":"shop","encryption":{"mode":"age","key_id":"k",` + identity + `},` + source + `}`, true},
+		{"db.restore", `{` + inst + `,"engine":"mysql","database":"shop","encryption":{"mode":"age","key_id":"k",` + recipient + `},` + source + `}`, false},
+		{"db.restore", `{` + inst + `,"engine":"mysql","database":"shop",` + source + `}`, false},
+		{"db.drill", `{"drill":"01hzydrill0000000000000001","instance":{"engine":"postgres","version":"17","image":"i","digest":"sha256:` + strings.Repeat("a", 64) + `","memory_bytes":1024},"database":"shop","encryption":{"mode":"age","key_id":"k",` + identity + `},` + source + `,"checks":{}}`, false},
+		{"db.drill", `{"drill":"01hzydrill0000000000000001","instance":{"engine":"postgres","version":"17","image":"i","digest":"sha256:` + strings.Repeat("a", 64) + `","memory_bytes":268435456},"database":"shop","encryption":{"mode":"age","key_id":"k",` + identity + `},` + source + `,"checks":{"tolerance_percent":200}}`, false},
 		{"db.create", `{` + inst + `,"engine":"redis","name":"x"}`, false},
 		{"db.create", `{"instance":"../x","engine":"postgres","name":"x"}`, false},
 		{"db.user.apply", `{` + inst + `,"engine":"postgres","username":"app","remote":true}`, false},
@@ -299,7 +314,9 @@ func TestDatabaseSchemas(t *testing.T) {
 		}
 	}
 	for typ, res := range map[string]any{
-		"db.backup":            db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42},
+		"db.backup": db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42,
+			PlaintextSHA256: strings.Repeat("b", 64), Encryption: "cp", KeyID: "01hzybackup000000000000001", Cipher: "aes-256-gcm", Compression: "zstd", TableCounts: map[string]int64{"db0": 4}},
+		"db.drill":             db.DrillResult{Status: "failed", Checks: []db.DrillCheck{{Name: "restore", Passed: true, Detail: "ok"}, {Name: "row_counts", Passed: false}}, DownloadMS: 1, RestoreMS: 2, DurationMS: 3, Tables: 4},
 		"db.restore":           db.RestoreResult{Bytes: 10, DurationMS: 5, Warnings: []string{"x"}},
 		"db.create":            db.ChangedResult{Changed: true},
 		"db.user.apply":        db.ChangedResult{Changed: true},
@@ -345,7 +362,9 @@ func TestVolumeResultsValidate(t *testing.T) {
 			{ID: "01j9z8y7x6w5v4t3s2r1q0p9na", Kind: "sized", Exists: true, UsedBytes: &used, SizeBytes: &size, AvailableBytes: &avail, Mounted: &yes, Containers: []string{"falak-shop-blue"}},
 			{ID: "01j9z8y7x6w5v4t3s2r1q0p9nb", Kind: "docker", Exists: false},
 		}, Docker: []volumes.DockerVolume{{Name: "shop_pgdata", Driver: "local", Labels: map[string]string{"a": "b"}, Containers: []string{"shop-db-1"}}}, DurationMS: 3},
-		"volume.archive":  volumes.ArchiveResult{SizeBytes: 10, SHA256: sha, Location: "https://s3.example.com/k", UncompressedBytes: 20, Files: 2, DurationMS: 1, Containers: []string{"c"}},
+		"volume.archive": volumes.ArchiveResult{SizeBytes: 10, SHA256: sha, Location: "https://s3.example.com/k", UncompressedBytes: 20, Files: 2, DurationMS: 1, Containers: []string{"c"},
+			PlaintextSHA256: sha, Encryption: "age", KeyID: "k", Cipher: "aes-256-gcm", Compression: "zstd"},
+		"volume.drill":    volumes.DrillResult{Status: "skipped", Reason: "no room", Checks: []volumes.DrillCheck{}},
 		"volume.restore":  volumes.RestoreResult{Bytes: 20, Files: 2, DurationMS: 1},
 		"volume.clone":    volumes.RestoreResult{Bytes: 20, Files: 2, DurationMS: 1, Containers: []string{"c"}},
 		"volume.browse":   volumes.BrowseResult{Path: "", Entries: []volumes.Entry{{Name: "a", Path: "a", Type: "dir", Size: 0, MTime: "2026-10-06T12:00:00Z"}}, Total: 1},
@@ -370,7 +389,7 @@ func TestVolumeArchiveKeepStoppedNeedsStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"destination":{"kind":"presigned_url","url":"https://s3.example.com/k"}`
+	base := `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"encryption":{"mode":"cp","key_id":"k","key":"q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s="},"destination":{"kind":"presigned_url","url":"https://s3.example.com/k"}`
 	for body, valid := range map[string]bool{
 		base + `,"consistency":"stop","keep_stopped":true}`:   true,
 		base + `,"consistency":"pause","keep_stopped":true}`:  false,

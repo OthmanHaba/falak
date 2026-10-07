@@ -1,14 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.restore.schema.json",
-  "title": "db.restore — load a backup into a database of an instance (`falak-db restore logical`; postgres with --clean; redis/valkey: the instance stops, a one-off container of its image replaces the snapshot, it starts again)",
+  "title": "db.restore — load an FKB1 backup into a database of an instance (`falak-db restore logical`; postgres swapped in from a scratch database; redis/valkey: the instance stops, a one-off container of its image replaces the snapshot, it starts again)",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "instance",
     "engine",
     "database",
-    "source"
+    "encryption",
+    "source",
+    "sha256"
   ],
   "properties": {
     "instance": {
@@ -27,12 +29,8 @@
     "database": {
       "type": "string"
     },
-    "compression": {
-      "enum": [
-        "gzip",
-        "none"
-      ],
-      "default": "gzip"
+    "encryption": {
+      "$ref": "#/$defs/encryption"
     },
     "source": {
       "oneOf": [
@@ -81,7 +79,13 @@
     },
     "sha256": {
       "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "the stored file's SHA-256, checked before anything is restored"
+    },
+    "plaintext_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "the dump's SHA-256, checked against the file's authenticated trailer"
     },
     "owner": {
       "type": "string",
@@ -136,6 +140,60 @@
           }
         }
       }
+    },
+    "encryption": {
+      "description": "opens an FKB1 backup: cp with the data key the control plane unwrapped; age with the customer's identity, given for this command only (never stored by the control plane)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "identity"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "identity": {
+              "type": "string",
+              "pattern": "^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$",
+              "description": "secret: the customer's age X25519 identity (private key)"
+            }
+          }
+        }
+      ]
     }
   }
 }

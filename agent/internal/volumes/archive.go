@@ -18,6 +18,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/OthmanHaba/falak/agent/internal/backupcrypt"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
@@ -33,20 +34,31 @@ type ArchivePayload struct {
 	Volume      Ref      `json:"volume"`
 	Consistency string   `json:"consistency,omitempty"`
 	Destination Location `json:"destination"`
+	// Encryption is the snapshot's key (FKB1: zstd, then AES-256-GCM; internal/backupcrypt).
+	Encryption backupcrypt.Encryption `json:"encryption"`
 	// KeepStopped (consistency stop only): the stopped containers stay stopped once the snapshot is uploaded — a
 	// move redeploys them on the target, so nothing writes to the source after its last snapshot.
 	KeepStopped bool `json:"keep_stopped,omitempty"`
 }
 
-// ArchiveResult is its result.
+// Secrets are the payload's secret values (masked in output).
+func (p ArchivePayload) Secrets() []string { return p.Encryption.Secrets() }
+
+// ArchiveResult is its result. SizeBytes and SHA256 are the stored (encrypted) file's, UncompressedBytes and
+// PlaintextSHA256 the tar stream's (authenticated in the file's trailer).
 type ArchiveResult struct {
 	SizeBytes         int64    `json:"size_bytes"`
 	SHA256            string   `json:"sha256"`
 	Location          string   `json:"location"`
 	UncompressedBytes int64    `json:"uncompressed_bytes,omitempty"`
+	PlaintextSHA256   string   `json:"plaintext_sha256,omitempty"`
 	Files             int64    `json:"files,omitempty"`
 	DurationMS        int64    `json:"duration_ms,omitempty"`
 	Containers        []string `json:"containers,omitempty"`
+	Encryption        string   `json:"encryption,omitempty"`
+	KeyID             string   `json:"key_id,omitempty"`
+	Cipher            string   `json:"cipher,omitempty"`
+	Compression       string   `json:"compression,omitempty"`
 }
 
 func checkDestination(d Location) error {
@@ -56,7 +68,7 @@ func checkDestination(d Location) error {
 	return nil
 }
 
-// Archive streams a snapshot of a volume (tar | zstd, then the Sealer when set) into a staging file while hashing
+// Archive streams a snapshot of a volume (tar, then zstd and AES-256-GCM: FKB1) into a staging file while hashing
 // it, then PUTs it to the presigned URL. Containers that mount the volume are paused or stopped for the read when
 // the consistency mode asks; with keep_stopped they stay stopped after a successful upload (a failed one starts
 // them again: the source keeps serving).
@@ -67,6 +79,9 @@ func (s *Service) Archive(ctx context.Context, p ArchivePayload, st commands.Str
 	}
 	if p.KeepStopped && p.Consistency != "stop" {
 		return nil, payloadErr("keep_stopped needs consistency stop")
+	}
+	if err := p.Encryption.Check(true); err != nil {
+		return nil, &commands.PayloadError{Err: err}
 	}
 	root, hp, err := s.openRoot(ctx, p.Volume)
 	if err != nil {
@@ -90,7 +105,8 @@ func (s *Service) Archive(ctx context.Context, p ArchivePayload, st commands.Str
 		}
 	}
 	defer resume() // on any failure
-	file, sum, size, stats, err := s.stage(dir, func(w io.Writer) (tarStats, error) {
+	enc := p.Encryption
+	file, sum, size, stats, err := s.stage(dir, &enc, func(w io.Writer) (tarStats, error) {
 		defer func() {
 			if !p.KeepStopped {
 				resume()
@@ -110,14 +126,15 @@ func (s *Service) Archive(ctx context.Context, p ArchivePayload, st commands.Str
 		resumed = true // uploaded: the containers stay stopped for the move
 		fmt.Fprintf(st.Stdout(), "kept %s stopped\n", strings.Join(touched, ", "))
 	}
-	fmt.Fprintf(st.Stdout(), "snapshot of volume %s: %d files, %d bytes, sha256 %s\n", p.Volume.ID, stats.files, size, sum)
-	return ArchiveResult{SizeBytes: size, SHA256: sum, Location: loc, UncompressedBytes: stats.bytes, Files: stats.files,
-		DurationMS: time.Since(start).Milliseconds(), Containers: touched}, nil
+	fmt.Fprintf(st.Stdout(), "snapshot of volume %s: %d files, %d bytes encrypted, sha256 %s\n", p.Volume.ID, stats.files, size, sum)
+	return ArchiveResult{SizeBytes: size, SHA256: sum, Location: loc, UncompressedBytes: stats.bytes, PlaintextSHA256: stats.sha256,
+		Files: stats.files, DurationMS: time.Since(start).Milliseconds(), Containers: touched,
+		Encryption: p.Encryption.Mode, KeyID: p.Encryption.KeyID, Cipher: "aes-256-gcm", Compression: "zstd"}, nil
 }
 
-// stage writes tar output through zstd (and the Sealer) into a file of the staging directory dir, returning its
-// path, sha256 and size.
-func (s *Service) stage(dir string, write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
+// stage writes tar output into a file of the staging directory dir: through the backup cipher (FKB1, which
+// compresses) when enc is set, else as plain tar.zst (downloads). It returns the file's path, sha256 and size.
+func (s *Service) stage(dir string, enc *backupcrypt.Encryption, write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
 	f, err := os.CreateTemp(dir, "volume-*")
 	if err != nil {
 		return "", "", 0, tarStats{}, err
@@ -129,29 +146,27 @@ func (s *Service) stage(dir string, write func(io.Writer) (tarStats, error)) (st
 		return "", "", 0, tarStats{}, err
 	}
 	h := sha256.New()
-	var sink io.Writer = io.MultiWriter(f, h)
-	var sealed io.WriteCloser
-	if s.d.Seal != nil { // step 4: backup encryption
-		if sealed, err = s.d.Seal(sink); err != nil {
+	sink := io.MultiWriter(f, h)
+	var w io.WriteCloser
+	var sealed *backupcrypt.Writer
+	if enc != nil {
+		if sealed, err = enc.Seal(sink); err != nil {
 			return fail(err)
 		}
-		sink = sealed
-	}
-	zw, err := zstd.NewWriter(sink)
-	if err != nil {
+		w = sealed
+	} else if w, err = zstd.NewWriter(sink); err != nil {
 		return fail(err)
 	}
-	stats, err := write(zw)
-	if cerr := zw.Close(); err == nil {
+	stats, err := write(w)
+	if cerr := w.Close(); err == nil {
 		err = cerr
 	}
-	if sealed != nil {
-		if cerr := sealed.Close(); err == nil {
-			err = cerr
-		}
-	}
 	if err != nil {
 		return fail(err)
+	}
+	if sealed != nil {
+		sum := sealed.Summary()
+		stats.sha256 = hex.EncodeToString(sum.SHA256[:])
 	}
 	fi, err := f.Stat()
 	if err != nil {
@@ -209,7 +224,11 @@ func redact(err error) error {
 	return err
 }
 
-type tarStats struct{ files, bytes int64 }
+type tarStats struct {
+	files, bytes int64
+	// sha256 is the tar stream's, when it was sealed (stage).
+	sha256 string
+}
 
 type countingWriter struct {
 	w io.Writer
@@ -455,10 +474,16 @@ type RestorePayload struct {
 	Labels            map[string]string `json:"labels,omitempty"`
 	Source            Location          `json:"source"`
 	SHA256            string            `json:"sha256"`
+	PlaintextSHA256   string            `json:"plaintext_sha256,omitempty"`
 	UncompressedBytes int64             `json:"uncompressed_bytes,omitempty"`
+	// Encryption opens the snapshot (FKB1).
+	Encryption backupcrypt.Encryption `json:"encryption"`
 	// ArchiveBytes is the snapshot's recorded (compressed) size: the download is aborted past it (+1 MiB).
 	ArchiveBytes int64 `json:"archive_bytes,omitempty"`
 }
+
+// Secrets are the payload's secret values (masked in output).
+func (p RestorePayload) Secrets() []string { return p.Encryption.Secrets() }
 
 // fetchSlack is what a download may exceed the recorded archive size by.
 const fetchSlack = 1 << 20
@@ -495,6 +520,9 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 	if p.ArchiveBytes < 0 || p.UncompressedBytes < 0 {
 		return nil, payloadErr("sizes must be positive")
 	}
+	if err := p.Encryption.Check(false); err != nil {
+		return nil, &commands.PayloadError{Err: err}
+	}
 	need := p.ArchiveBytes
 	if need == 0 {
 		need = p.UncompressedBytes
@@ -526,33 +554,43 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 		return nil, err
 	}
 	defer os.Remove(file)
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var in io.Reader = f
-	if s.d.Open != nil { // step 4: backup encryption
-		if in, err = s.d.Open(in); err != nil {
-			return nil, err
-		}
-	}
-	zr, err := zstd.NewReader(in)
-	if err != nil {
-		return nil, err
-	}
-	defer zr.Close()
-	// Never unpack more than the snapshot recorded (+1%), whatever the stream claims.
-	limit := p.UncompressedBytes
-	if limit > 0 {
-		limit += limit / 100
-	}
-	stats, err := extract(ctx, root, zr, limit)
+	stats, err := unpack(ctx, root, file, p.Encryption, p.PlaintextSHA256, p.UncompressedBytes)
 	if err != nil {
 		return nil, fmt.Errorf("restore into volume %s: %w", p.Volume.ID, err)
 	}
 	fmt.Fprintf(st.Stdout(), "restored %d files (%d bytes) into volume %s\n", stats.files, stats.bytes, p.Volume.ID)
 	return RestoreResult{Bytes: stats.bytes, Files: stats.files, DurationMS: time.Since(start).Milliseconds()}, nil
+}
+
+// unpack opens a staged snapshot (FKB1) and extracts it into root, never more than the snapshot recorded (+1%),
+// whatever the stream claims. The tar stream must match the recorded SHA-256 (want) when given.
+func unpack(ctx context.Context, root *os.Root, file string, enc backupcrypt.Encryption, want string, uncompressed int64) (tarStats, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return tarStats{}, err
+	}
+	defer f.Close()
+	r, err := enc.Open(f)
+	if err != nil {
+		return tarStats{}, fmt.Errorf("open snapshot: %w", err)
+	}
+	defer r.Close()
+	limit := uncompressed
+	if limit > 0 {
+		limit += limit / 100
+	}
+	stats, err := extract(ctx, root, r, limit)
+	if err != nil {
+		return stats, err
+	}
+	// The tar trailer's padding, then the end of the stream: only then is the file's trailer authenticated.
+	if _, err := io.Copy(io.Discard, r); err != nil {
+		return stats, fmt.Errorf("snapshot: %w", err)
+	}
+	if sum := r.Summary(); want != "" && hex.EncodeToString(sum.SHA256[:]) != strings.ToLower(want) {
+		return stats, fmt.Errorf("the snapshot's content is not the one recorded (sha256 %x)", sum.SHA256)
+	}
+	return stats, nil
 }
 
 // fetch downloads a snapshot into the staging directory dir and checks its sha256. With max > 0, a body larger

@@ -24,11 +24,16 @@ const resultPrefix = "falak-db-result: "
 // set, is streamed to it; stdout, when set, receives the data stream instead (backups). args never hold a secret: they
 // name files in the secrets directory.
 func (db *DB) exec(ctx context.Context, id string, stdin io.Reader, stdout io.Writer, stderr io.Writer, args ...string) (string, string, error) {
+	return db.execIn(ctx, Container(id), stdin, stdout, stderr, args...)
+}
+
+// execIn is exec in a container named directly (a restore drill's).
+func (db *DB) execIn(ctx context.Context, container string, stdin io.Reader, stdout io.Writer, stderr io.Writer, args ...string) (string, string, error) {
 	argv := []string{"exec"}
 	if stdin != nil {
 		argv = append(argv, "-i")
 	}
-	argv = append(argv, Container(id), "falak-db")
+	argv = append(argv, container, "falak-db")
 	argv = append(argv, args...)
 	var out, errBuf bytes.Buffer
 	c := runner.Cmd{Name: "docker", Args: argv, Stdin: stdin, Stdout: &out, Stderr: &errBuf}

@@ -314,11 +314,9 @@ func (s *Service) Download(ctx context.Context, p DownloadPayload, st commands.S
 		DurationMS: time.Since(start).Milliseconds()}, nil
 }
 
-// plainStage is stage without the Sealer: downloads are for the user to open.
+// plainStage is stage without the backup cipher (plain tar.zst): downloads are for the user to open.
 func (s *Service) plainStage(dir string, write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
-	plain := *s
-	plain.d.Seal = nil
-	return plain.stage(dir, write)
+	return s.stage(dir, nil, write)
 }
 
 // copyFile copies one file of a volume (at most limit bytes) into the staging directory dir, hashing it.

@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.backup.schema.json",
-  "title": "db.backup — stream `falak-db backup logical` out of an instance's container (postgres pg_dump -Fc, mysql/mariadb dump, redis/valkey RDB snapshot), compress, write to a local path or PUT to a presigned URL",
+  "title": "db.backup — stream `falak-db backup logical` out of an instance's container (postgres pg_dump -Fc, mysql/mariadb dump, redis/valkey RDB snapshot) through zstd and AES-256-GCM (FKB1), to a local path or a presigned URL",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "instance",
     "engine",
     "database",
+    "encryption",
     "destination"
   ],
   "properties": {
@@ -28,12 +29,12 @@
       "type": "string",
       "description": "SQL: the database (identifier). Redis / Valkey: the instance's database row name, informational"
     },
-    "compression": {
-      "enum": [
-        "gzip",
-        "none"
-      ],
-      "default": "gzip"
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "table_counts": {
+      "type": "boolean",
+      "description": "record the row count of every table (redis/valkey: the keys) before the dump, for restore drills"
     },
     "destination": {
       "oneOf": [
@@ -114,15 +115,22 @@
       "required": [
         "size_bytes",
         "sha256",
-        "location"
+        "location",
+        "plaintext_sha256",
+        "encryption",
+        "key_id",
+        "cipher",
+        "compression"
       ],
       "properties": {
         "size_bytes": {
-          "type": "integer"
+          "type": "integer",
+          "description": "the stored (encrypted) file's size"
         },
         "sha256": {
           "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the stored (encrypted) file's SHA-256"
         },
         "location": {
           "type": "string"
@@ -137,9 +145,90 @@
         },
         "uncompressed_bytes": {
           "type": "integer",
-          "description": "The dump's size before compression (a Redis / Valkey restore gets it back as uncompressed_bytes)"
+          "description": "the dump's size (a Redis / Valkey restore gets it back as uncompressed_bytes)"
+        },
+        "plaintext_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the plaintext's SHA-256 (authenticated in the file's trailer)"
+        },
+        "encryption": {
+          "enum": [
+            "cp",
+            "age"
+          ]
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "cipher": {
+          "const": "aes-256-gcm"
+        },
+        "compression": {
+          "const": "zstd"
+        },
+        "table_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "row count per table (redis/valkey: keys per logical database), taken just before the dump"
         }
       }
+    },
+    "encryption": {
+      "description": "FKB1 (docs/BACKUPS.md): zstd, then AES-256-GCM in 64 KiB segments with a random 32-byte data key per backup. cp: the control plane generated the key (wrapped under the organization's key on its side) and sends it here; age: the agent generates it and stores it in the file's header, encrypted to the customer's X25519 recipient (the control plane never sees it)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "recipient"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "recipient": {
+              "type": "string",
+              "pattern": "^age1[02-9ac-hj-np-z]{58}$",
+              "description": "the customer's age X25519 recipient (public key)"
+            }
+          }
+        }
+      ]
     }
   }
 }

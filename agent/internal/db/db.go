@@ -57,6 +57,11 @@ type Deps struct {
 	// EtcDir holds the instances' TLS files under db/<id>/tls (default /etc/falak).
 	EtcDir  string
 	TempDir string // real path for backup staging; default os.TempDir()
+	// DrillRoot holds restore drills' scratch data (default /var/lib/falak/drills).
+	DrillRoot string
+	// MemAvailable and FreeBytes size up a drill (defaults: /proc/meminfo, statfs(2)).
+	MemAvailable func() (int64, error)
+	FreeBytes    func(path string) (int64, error)
 	// Mounted reports whether a host path is a mountpoint (default: /proc/self/mountinfo).
 	Mounted func(path string) bool
 	// Waits (tests shorten them).
@@ -115,6 +120,15 @@ func New(d Deps) *DB {
 	if d.Mounted == nil {
 		d.Mounted = mounted
 	}
+	if d.DrillRoot == "" {
+		d.DrillRoot = "/var/lib/falak/drills"
+	}
+	if d.MemAvailable == nil {
+		d.MemAvailable = memAvailable(d.FS)
+	}
+	if d.FreeBytes == nil {
+		d.FreeBytes = freeBytes
+	}
 	if d.VolumeWait == 0 {
 		d.VolumeWait = 120 * time.Second
 	}
@@ -142,6 +156,7 @@ func (db *DB) Register(reg *commands.Registry) {
 	reg.Register("db.user.apply", commands.Typed(db.UserApply))
 	reg.Register("db.backup", commands.Typed(db.Backup))
 	reg.Register("db.restore", commands.Typed(db.Restore))
+	reg.Register("db.drill", commands.Typed(db.Drill))
 }
 
 // Labels of database containers.

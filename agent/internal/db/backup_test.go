@@ -2,7 +2,6 @@ package db
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/OthmanHaba/falak/agent/internal/backupcrypt"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
@@ -111,6 +111,23 @@ func (p *putServer) handler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
+// testEnc is the backups' key in tests (control-plane held).
+var testEnc = backupcrypt.Encryption{Mode: "cp", KeyID: "01hzybackup000000000000001", Key: strings.Repeat("ab", 32)}
+
+// opened decrypts a backup file with testEnc.
+func opened(t *testing.T, b []byte) string {
+	t.Helper()
+	r, err := testEnc.Open(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(plain)
+}
+
 func TestBackupStreamsFalakDBToThePresignedURL(t *testing.T) {
 	h := newHarness(t)
 	var ps putServer
@@ -120,24 +137,37 @@ func TestBackupStreamsFalakDBToThePresignedURL(t *testing.T) {
 	h.run.On("docker exec falak-db-"+instID+" falak-db backup logical --database app --out -", runner.Result{
 		Stdout: []byte("PGDMP-custom-format"), Stderr: []byte("pg_dump: done\n" + `falak-db-result: {"kind":"logical","bytes":19}` + "\n"),
 	})
-	res, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "postgres", Database: "app", Compression: "gzip",
+	h.run.On("docker exec falak-db-"+instID+" falak-db table-counts --database app", runner.Result{Stdout: []byte(`{"tables":{"public.users":42}}`)})
+	res, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "postgres", Database: "app", Encryption: testEnc, TableCounts: true,
 		Destination: Location{Kind: "presigned_url", URL: srv.URL + "/b/k?X-Amz-Signature=abc"}}, stream())
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := res.(BackupResult)
-	gz, _ := gzip.NewReader(bytes.NewReader(ps.body))
-	plain, _ := io.ReadAll(gz)
+	if !bytes.HasPrefix(ps.body, []byte("FKB1")) || bytes.Contains(ps.body, []byte("PGDMP")) {
+		t.Fatal("the upload is not encrypted")
+	}
+	plain := opened(t, ps.body)
 	sum := sha256.Sum256(ps.body)
-	if string(plain) != "PGDMP-custom-format" || r.SHA256 != hex.EncodeToString(sum[:]) || r.UncompressedBytes != 19 || strings.Contains(r.Location, "Signature") {
+	psum := sha256.Sum256([]byte(plain))
+	if plain != "PGDMP-custom-format" || r.SHA256 != hex.EncodeToString(sum[:]) || r.UncompressedBytes != 19 || strings.Contains(r.Location, "Signature") ||
+		r.PlaintextSHA256 != hex.EncodeToString(psum[:]) || r.Encryption != "cp" || r.KeyID != testEnc.KeyID || r.Cipher != "aes-256-gcm" || r.Compression != "zstd" {
 		t.Errorf("result %+v body %q", r, plain)
+	}
+	if r.TableCounts["public.users"] != 42 {
+		t.Errorf("counts %v", r.TableCounts)
 	}
 
 	// No result line (falak-db died mid-stream): failed.
 	h.run.On("docker exec falak-db-"+instID+" falak-db backup logical --out -", runner.Result{Stdout: []byte("REDIS0012xyz")})
-	if _, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "redis", Database: "cache", Compression: "none",
+	if _, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc,
 		Destination: Location{Kind: "presigned_url", URL: srv.URL + "/b/k"}}, stream()); err == nil || !strings.Contains(err.Error(), "no result") {
 		t.Errorf("missing result: %v", err)
+	}
+	// Never unencrypted.
+	if _, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "postgres", Database: "app",
+		Destination: Location{Kind: "presigned_url", URL: srv.URL + "/b/k"}}, stream()); !commands.IsPayloadError(err) {
+		t.Errorf("no encryption: %v", err)
 	}
 }
 
@@ -145,7 +175,7 @@ func TestBackupRecordsTheRDBHeader(t *testing.T) {
 	h := newHarness(t)
 	h.run.On("docker exec", runner.Result{Stdout: []byte("VALKEY080\x00\x01data"), Stderr: []byte(`falak-db-result: {"bytes":15}` + "\n")})
 	dest := t.TempDir() + "/out.rdb"
-	res, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "valkey", Database: "cache", Compression: "none",
+	res, err := h.db.Backup(context.Background(), BackupPayload{Instance: instID, Engine: "valkey", Database: "cache", Encryption: testEnc,
 		Destination: Location{Kind: "local", Path: dest}}, stream())
 	if err != nil {
 		t.Fatal(err)
@@ -155,15 +185,20 @@ func TestBackupRecordsTheRDBHeader(t *testing.T) {
 	}
 }
 
-func gzipFile(t *testing.T, h *harness, content string) string {
+// sealedFile writes a backup of content (sealed with testEnc) and returns its path and sha256.
+func sealedFile(t *testing.T, h *harness, content string) (string, string) {
 	t.Helper()
 	os.MkdirAll(h.path("/srv"), 0o755)
-	f, _ := os.Create(h.path("/srv/dump.gz"))
-	gz := gzip.NewWriter(f)
-	gz.Write([]byte(content))
-	gz.Close()
-	f.Close()
-	return "/srv/dump.gz"
+	var b bytes.Buffer
+	w, err := testEnc.Seal(&b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write([]byte(content))
+	w.Close()
+	os.WriteFile(h.path("/srv/dump.fkb"), b.Bytes(), 0o600)
+	sum := sha256.Sum256(b.Bytes())
+	return "/srv/dump.fkb", hex.EncodeToString(sum[:])
 }
 
 func TestRestoreSQLPipesIntoFalakDB(t *testing.T) {
@@ -173,9 +208,9 @@ func TestRestoreSQLPipesIntoFalakDB(t *testing.T) {
 		in = c.Stdin
 		return runner.Result{Stdout: []byte(`{}`)}, nil
 	})
-	file := gzipFile(t, h, "PGDMP")
-	res, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Compression: "gzip",
-		Source: Location{Kind: "local", Path: file}, Owner: "app"}, stream())
+	file, sha := sealedFile(t, h, "PGDMP")
+	res, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Encryption: testEnc,
+		Source: Location{Kind: "local", Path: file}, SHA256: sha, Owner: "app"}, stream())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,8 +239,8 @@ func TestRestoreKeyValueStopsTheInstance(t *testing.T) {
 	})
 	h.dock.calls = nil
 	h.run.Reset()
-	file := gzipFile(t, h, "REDIS0012...")
-	if _, err := h.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Compression: "gzip", Source: Location{Kind: "local", Path: file}}, stream()); err != nil {
+	file, _ := sealedFile(t, h, "REDIS0012...")
+	if _, err := h.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc, Source: Location{Kind: "local", Path: file}}, stream()); err != nil {
 		t.Fatal(err)
 	}
 	line := h.run.Lines()[0]
@@ -223,8 +258,8 @@ func TestRestoreKeyValueStopsTheInstance(t *testing.T) {
 	h2 := newHarness(t)
 	h2.db.InstanceCreate(ctx, p, stream())
 	h2.run.On("docker run", runner.Result{ExitCode: 4, Stderr: []byte("falak-db: conflict")})
-	file = gzipFile(t, h2, "REDIS0012...")
-	if _, err := h2.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Compression: "gzip", Source: Location{Kind: "local", Path: file}}, stream()); err == nil {
+	file, _ = sealedFile(t, h2, "REDIS0012...")
+	if _, err := h2.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc, Source: Location{Kind: "local", Path: file}}, stream()); err == nil {
 		t.Fatal("failed restore succeeded")
 	}
 	if !h2.dock.containers["falak-db-"+instID].State.Running {

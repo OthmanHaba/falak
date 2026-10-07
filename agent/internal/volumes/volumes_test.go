@@ -20,6 +20,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/OthmanHaba/falak/agent/internal/backupcrypt"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
@@ -383,7 +384,7 @@ func TestArchiveRestoreRoundTrip(t *testing.T) {
 		return []docker.ContainerSummary{{ID: "c1", Names: []string{"/shop-app-1"}, Mounts: []docker.MountPoint{{Type: "volume", Name: "shop_data"}}}}
 	}
 
-	res, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "pause", Destination: Location{Kind: "presigned_url", URL: st.url("snap.tar.zst")}}, &nopStream{})
+	res, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: src, Consistency: "pause", Destination: Location{Kind: "presigned_url", URL: st.url("snap.tar.zst")}}, &nopStream{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,13 +406,13 @@ func TestArchiveRestoreRoundTrip(t *testing.T) {
 	source := Location{Kind: "url", URL: st.url("snap.tar.zst")}
 
 	// A wrong checksum writes nothing.
-	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: dst, SizeBytes: 16 << 20, Source: source, SHA256: strings.Repeat("0", 64)}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+	if _, err := e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: dst, SizeBytes: 16 << 20, Source: source, SHA256: strings.Repeat("0", 64)}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("mismatch: %v", err)
 	}
 	if ok, _ := emptyDir(mp); !ok {
 		t.Fatal("a failed checksum wrote files")
 	}
-	res, err = e.svc.Restore(ctx, RestorePayload{Volume: dst, SizeBytes: 16 << 20, Source: source, SHA256: ar.SHA256, UncompressedBytes: ar.UncompressedBytes}, &nopStream{})
+	res, err = e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: dst, SizeBytes: 16 << 20, Source: source, SHA256: ar.SHA256, UncompressedBytes: ar.UncompressedBytes}, &nopStream{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,16 +433,19 @@ func TestArchiveRestoreRoundTrip(t *testing.T) {
 	}
 
 	// Restores go into new or empty volumes only.
-	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: dst, SizeBytes: 16 << 20, Source: source, SHA256: ar.SHA256}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not empty") {
+	if _, err := e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: dst, SizeBytes: 16 << 20, Source: source, SHA256: ar.SHA256}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("non-empty target: %v", err)
 	}
 	// Free space is checked against the snapshot's size.
 	e.svc.d.StatFS = func(string) (Usage, error) { return Usage{Available: 10}, nil }
 	dst3 := Ref{ID: "01j9z8y7x6w5v4t3s2r1q0p9nc", Kind: KindDocker, Name: "restored"}
-	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: dst3, Source: source, SHA256: ar.SHA256, UncompressedBytes: ar.UncompressedBytes}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "free") {
+	if _, err := e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: dst3, Source: source, SHA256: ar.SHA256, UncompressedBytes: ar.UncompressedBytes}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "free") {
 		t.Fatalf("free space: %v", err)
 	}
 }
+
+// testEnc is the snapshots' key in tests (control-plane held).
+var testEnc = backupcrypt.Encryption{Mode: "cp", KeyID: "01hzybackup000000000000001", Key: strings.Repeat("ab", 32)}
 
 func emptyDir(p string) (bool, error) {
 	es, err := os.ReadDir(p)
@@ -451,7 +455,10 @@ func emptyDir(p string) (bool, error) {
 func tarZst(t *testing.T, entries ...*tar.Header) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	zw, _ := zstd.NewWriter(&buf)
+	zw, err := testEnc.Seal(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tw := tar.NewWriter(zw)
 	for _, h := range entries {
 		if h.Typeflag == tar.TypeReg && h.Size == 0 {
@@ -495,7 +502,7 @@ func TestRestoreRefusesEntriesLeavingTheVolume(t *testing.T) {
 			st.objects["/"+name] = archive
 			sum := sha256.Sum256(archive)
 			vol := Ref{ID: id1, Kind: KindDocker, Name: strings.ReplaceAll(name, " ", "-")}
-			_, err := e.svc.Restore(context.Background(), RestorePayload{Volume: vol, Source: Location{Kind: "url", URL: st.srv.URL + "/" + name}, SHA256: hex.EncodeToString(sum[:])}, &nopStream{})
+			_, err := e.svc.Restore(context.Background(), RestorePayload{Encryption: testEnc, Volume: vol, Source: Location{Kind: "url", URL: st.srv.URL + "/" + name}, SHA256: hex.EncodeToString(sum[:])}, &nopStream{})
 			if err == nil {
 				t.Fatal("restore accepted an escaping entry")
 			}
@@ -763,7 +770,7 @@ func TestPayloadValidation(t *testing.T) {
 	if _, err := e.svc.Resize(ctx, ResizePayload{Volume: Ref{ID: id1, Kind: KindDocker, Name: "x"}, SizeBytes: 16 << 20}, &nopStream{}); !isPayload(err) {
 		t.Errorf("resize docker: %v", err)
 	}
-	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: sized(id1), Destination: Location{Kind: "presigned_url", URL: "http://x"}}, &nopStream{}); !isPayload(err) {
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: sized(id1), Destination: Location{Kind: "presigned_url", URL: "http://x"}}, &nopStream{}); !isPayload(err) {
 		t.Errorf("http destination: %v", err)
 	}
 }
@@ -777,7 +784,7 @@ func TestUploadErrorsNeverCarryTheSignature(t *testing.T) {
 	if _, err := e.svc.Create(context.Background(), CreatePayload{Volume: vol}, &nopStream{}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := e.svc.Archive(context.Background(), ArchivePayload{Volume: vol, Destination: Location{Kind: "presigned_url", URL: srv.URL + "/k?X-Amz-Signature=topsecret"}}, &nopStream{})
+	_, err := e.svc.Archive(context.Background(), ArchivePayload{Encryption: testEnc, Volume: vol, Destination: Location{Kind: "presigned_url", URL: srv.URL + "/k?X-Amz-Signature=topsecret"}}, &nopStream{})
 	if err == nil || strings.Contains(err.Error(), "topsecret") {
 		t.Fatalf("%v", err)
 	}
@@ -817,7 +824,7 @@ func TestSharedPathSymlinkSwapsAreRefused(t *testing.T) {
 			if _, err := e.svc.Browse(ctx, BrowsePayload{Volume: vol}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
 				t.Fatalf("browse: %v", err)
 			}
-			if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: vol, Destination: dest}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+			if _, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: vol, Destination: dest}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
 				t.Fatalf("archive: %v", err)
 			}
 			if _, err := e.svc.Download(ctx, DownloadPayload{Volume: vol, Destination: dest, MaxBytes: 100}, &nopStream{}); err == nil {
@@ -870,10 +877,10 @@ func TestArchiveKeepsMovedServicesStopped(t *testing.T) {
 		return []docker.ContainerSummary{{ID: "c1", Names: []string{"/api"}, Mounts: []docker.MountPoint{{Name: "data"}}}}
 	}
 	dest := Location{Kind: "presigned_url", URL: st.url("move")}
-	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "pause", KeepStopped: true, Destination: dest}, &nopStream{}); !isPayload(err) {
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: src, Consistency: "pause", KeepStopped: true, Destination: dest}, &nopStream{}); !isPayload(err) {
 		t.Fatalf("keep_stopped without stop: %v", err)
 	}
-	res, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "stop", KeepStopped: true, Destination: dest}, &nopStream{})
+	res, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: src, Consistency: "stop", KeepStopped: true, Destination: dest}, &nopStream{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -883,7 +890,7 @@ func TestArchiveKeepsMovedServicesStopped(t *testing.T) {
 	// A failed upload starts them again: the source keeps serving.
 	e.docker.calls = nil
 	bad := Location{Kind: "presigned_url", URL: "https://127.0.0.1:1/x"}
-	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "stop", KeepStopped: true, Destination: bad}, &nopStream{}); err == nil {
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: src, Consistency: "stop", KeepStopped: true, Destination: bad}, &nopStream{}); err == nil {
 		t.Fatal("upload to nowhere succeeded")
 	}
 	if strings.Join(e.docker.calls, ",") != "stop c1,start c1" {
@@ -909,7 +916,7 @@ func TestStagingIsOnTheVolumeStoreAndChecksFreeSpace(t *testing.T) {
 	}
 	write(t, e.fs, "/docker/data/big", strings.Repeat("x", 1000))
 	dest := Location{Kind: "presigned_url", URL: st.url("snap")}
-	res, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Destination: dest}, &nopStream{})
+	res, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: src, Destination: dest}, &nopStream{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -921,7 +928,7 @@ func TestStagingIsOnTheVolumeStoreAndChecksFreeSpace(t *testing.T) {
 		t.Fatalf("staging files left: %v", left)
 	}
 	free = 1000 // under the 1000 bytes + 10%
-	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Destination: dest}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not enough free space") {
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Encryption: testEnc, Volume: src, Destination: dest}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not enough free space") {
 		t.Fatalf("free space: %v", err)
 	}
 
@@ -930,12 +937,12 @@ func TestStagingIsOnTheVolumeStoreAndChecksFreeSpace(t *testing.T) {
 	ar := res.(ArchiveResult)
 	st.objects["/huge"] = append(append([]byte{}, st.objects["/snap"]...), make([]byte, 2<<20)...)
 	sum := sha256.Sum256(st.objects["/huge"])
-	_, err = e.svc.Restore(ctx, RestorePayload{Volume: Ref{ID: id2, Kind: KindDocker, Name: "dst"}, Source: Location{Kind: "url", URL: st.url("huge")},
+	_, err = e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: Ref{ID: id2, Kind: KindDocker, Name: "dst"}, Source: Location{Kind: "url", URL: st.url("huge")},
 		SHA256: hex.EncodeToString(sum[:]), ArchiveBytes: ar.SizeBytes}, &nopStream{})
 	if err == nil || !strings.Contains(err.Error(), "recorded") {
 		t.Fatalf("oversized download: %v", err)
 	}
-	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: Ref{ID: id2, Kind: KindDocker, Name: "dst"}, Source: Location{Kind: "url", URL: st.url("snap")},
+	if _, err := e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: Ref{ID: id2, Kind: KindDocker, Name: "dst"}, Source: Location{Kind: "url", URL: st.url("snap")},
 		SHA256: ar.SHA256, ArchiveBytes: ar.SizeBytes, UncompressedBytes: ar.UncompressedBytes}, &nopStream{}); err != nil {
 		t.Fatal(err)
 	}
@@ -951,7 +958,7 @@ func TestCreateNeverAdoptsAnotherDockerVolume(t *testing.T) {
 	if _, err := e.svc.Create(ctx, CreatePayload{Volume: vol}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not this volume") {
 		t.Fatalf("adopted: %v", err)
 	}
-	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: vol, Source: Location{Kind: "url", URL: "https://x.example/s"}, SHA256: strings.Repeat("a", 64)}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not this volume") {
+	if _, err := e.svc.Restore(ctx, RestorePayload{Encryption: testEnc, Volume: vol, Source: Location{Kind: "url", URL: "https://x.example/s"}, SHA256: strings.Repeat("a", 64)}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not this volume") {
 		t.Fatalf("restore adopted: %v", err)
 	}
 	if res, err := e.svc.Create(ctx, CreatePayload{Volume: vol, Adopt: true}, &nopStream{}); err != nil || res.(CreateResult).Created {

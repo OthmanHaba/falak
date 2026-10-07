@@ -7,7 +7,8 @@
   "required": [
     "volume",
     "source",
-    "sha256"
+    "sha256",
+    "encryption"
   ],
   "properties": {
     "volume": {
@@ -131,6 +132,14 @@
       "type": "integer",
       "minimum": 1,
       "description": "The snapshot's recorded (compressed) size: a download larger than it (+1 MiB) is aborted"
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "plaintext_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "the tar stream's SHA-256, checked against the file's authenticated trailer"
     }
   },
   "$defs": {
@@ -151,6 +160,60 @@
           "type": "integer"
         }
       }
+    },
+    "encryption": {
+      "description": "opens an FKB1 backup: cp with the data key the control plane unwrapped; age with the customer's identity, given for this command only (never stored by the control plane)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "identity"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "identity": {
+              "type": "string",
+              "pattern": "^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$",
+              "description": "secret: the customer's age X25519 identity (private key)"
+            }
+          }
+        }
+      ]
     }
   }
 }
