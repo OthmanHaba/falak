@@ -52,6 +52,13 @@ export interface DatabaseInstance {
     /** Published on 127.0.0.1 (and private addresses) */
     host_port: number | null;
     published_addresses: string[];
+    /** New addresses for servers of the environment, waiting to be applied (the container is recreated). */
+    pending_published_addresses: string[] | null;
+    /** Public access allowlist (CIDRs). */
+    allowed_sources: string[];
+    /** Redis / Valkey: the previous password stays valid until then. */
+    password_overlap_until: string | null;
+    replaced_by: string | null;
     public_access: boolean;
     require_tls: boolean;
     memory_mb: number;

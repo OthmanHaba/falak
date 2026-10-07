@@ -128,7 +128,7 @@ export function DatabaseSettingsTab({ ctx }: ServiceTabProps) {
                         <div className="flex flex-wrap items-end gap-3">
                             <Field
                                 label="Version"
-                                hint="The same major again pulls the latest build; a newer major copies the data into a new container."
+                                hint="The same major moves to the newest pinned build (a short restart). A newer major copies the data into a new container; the current one is read-only until the copy is checked, then kept stopped until you delete it."
                             >
                                 <Select
                                     value={version}

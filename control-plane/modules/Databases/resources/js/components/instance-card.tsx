@@ -42,6 +42,7 @@ export function InstanceCard({ instance, options, canManage }: Props) {
         persistence: instance.settings.persistence ?? 'rdb',
         public_access: instance.public_access,
         require_tls: instance.require_tls,
+        allowed_sources: instance.allowed_sources.join(', '),
     });
     const upgrade = useForm({ version: options.versions[options.versions.length - 1] ?? instance.version });
     const password = useForm({ password: '' });
@@ -65,6 +66,10 @@ export function InstanceCard({ instance, options, canManage }: Props) {
                   },
             public_access: data.public_access,
             require_tls: data.require_tls || data.public_access,
+            allowed_sources: data.allowed_sources
+                .split(/[s,]+/)
+                .map((source) => source.trim())
+                .filter(Boolean),
         }));
         limits.put(`/databases/instances/${instance.id}`, { preserveScroll: true, onSuccess: close });
     };
@@ -128,14 +133,50 @@ export function InstanceCard({ instance, options, canManage }: Props) {
                         )}
                     </dd>
                     <dt className="text-muted-foreground">Public access</dt>
-                    <dd>{instance.public_access ? 'on' : 'off'}</dd>
+                    <dd>
+                        {instance.public_access ? 'on' : 'off'}
+                        {instance.public_access && (
+                            <span className="text-muted-foreground text-xs">
+                                {' '}
+                                · {instance.allowed_sources.length > 0 ? `from ${instance.allowed_sources.join(', ')}` : 'nobody allowed yet'}
+                            </span>
+                        )}
+                    </dd>
+                    {instance.password_overlap_until && (
+                        <>
+                            <dt className="text-muted-foreground">Previous password</dt>
+                            <dd>valid until {format(new Date(instance.password_overlap_until), 'yyyy-MM-dd HH:mm')} (redeploy apps before)</dd>
+                        </>
+                    )}
                     {instance.retire_at && (
                         <>
-                            <dt className="text-muted-foreground">Removed</dt>
-                            <dd>{format(new Date(instance.retire_at), 'yyyy-MM-dd HH:mm')}</dd>
+                            <dt className="text-muted-foreground">Container removed</dt>
+                            <dd>{format(new Date(instance.retire_at), 'yyyy-MM-dd HH:mm')} (its data volume is kept)</dd>
                         </>
                     )}
                 </dl>
+                {instance.status === 'retired' && (
+                    <p className="bg-warning-soft text-warning rounded-md px-3 py-2 text-xs">
+                        Retired by a major upgrade: read-only, stopped, its data volume kept. Delete it once you verified the upgraded database.
+                    </p>
+                )}
+                {instance.pending_published_addresses && (
+                    <div className="bg-warning-soft text-warning flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2 text-xs">
+                        <span>
+                            Restart required: publish on {instance.pending_published_addresses.join(', ') || 'loopback only'} for servers of this
+                            environment (the container is recreated on its volume).
+                        </span>
+                        {canManage && running && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => router.post(`/databases/instances/${instance.id}/network`, {}, { preserveScroll: true })}
+                            >
+                                Apply
+                            </Button>
+                        )}
+                    </div>
+                )}
                 {canManage && (
                     <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" disabled={!running} onClick={() => setOpen('limits')}>
@@ -272,10 +313,24 @@ export function InstanceCard({ instance, options, canManage }: Props) {
                             <span>
                                 Public access
                                 <span className="text-muted-foreground block text-xs">
-                                    Publishes the port on every address of the server, TLS required. Restrict who reaches it in the firewall.
+                                    Publishes the port on every address of the server, TLS required. Only the networks allowed below get through
+                                    Falak's firewall.
                                 </span>
                             </span>
                         </label>
+                        {limits.data.public_access && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="instance-sources">Allowed sources</Label>
+                                <Input
+                                    id="instance-sources"
+                                    className="font-mono"
+                                    placeholder="203.0.113.9, 198.51.100.0/24"
+                                    value={limits.data.allowed_sources}
+                                    onChange={(event) => limits.setData('allowed_sources', event.target.value)}
+                                />
+                                <InputError message={Object.entries(limits.errors).find(([key]) => key.startsWith('allowed_sources'))?.[1]} />
+                            </div>
+                        )}
                         {Object.entries(limits.errors)
                             .filter(([key]) => key.startsWith('settings') || key === 'instance')
                             .map(([key, message]) => (
@@ -298,8 +353,8 @@ export function InstanceCard({ instance, options, canManage }: Props) {
                             <DialogTitle>Upgrade {instance.name}</DialogTitle>
                             <DialogDescription>
                                 {major && !keyValue
-                                    ? `A new ${instance.engine_label} ${upgrade.data.version} container is created and every database is copied into it; then it takes over the name apps use and the old container is stopped and kept for 24 hours.`
-                                    : 'The latest image of this version is pulled and the container is recreated on the same volume (a short restart).'}
+                                    ? `A new ${instance.engine_label} ${upgrade.data.version} container is created. While every database is copied into it, ${instance.name} is read-only: writes fail until the copy is checked (downtime grows with the data). Then the new one takes over the name apps use; the old one stays stopped with its data until you delete it.`
+                                    : 'The container is recreated with the newest image of this version this release pins, on the same volume (a short restart).'}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-2">
