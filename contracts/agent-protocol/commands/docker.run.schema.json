@@ -169,6 +169,11 @@
                 "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"
               }
             }
+          },
+          "environment": {
+            "type": "boolean",
+            "default": false,
+            "description": "feature db.instances: a Falak environment network (name falak-env-<id>): created when missing instead of waited for"
           }
         }
       }

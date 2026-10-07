@@ -62,6 +62,9 @@ type ComposeUpPayload struct {
 	Services []string `json:"services,omitempty"`
 	// Mask names the secret variables of env.
 	Mask []string `json:"mask,omitempty"`
+	// JoinNetworks are environment networks (falak-env-<id>) every container of the project joins after `up`, where
+	// the environment's databases answer by name. Created when missing.
+	JoinNetworks []string `json:"join_networks,omitempty"`
 }
 
 // Secrets are the masked env values.
@@ -360,6 +363,11 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
 		}
 	}
+	for _, n := range p.JoinNetworks {
+		if !EnvironmentNetworkRe.MatchString(n) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid join network %q", n)}
+		}
+	}
 	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
@@ -378,6 +386,9 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 		args = append(append(args, "--"), p.Services...)
 	}
 	res, runErr := s.compose(ctx, p.Directory, p.Env, p.RegistryAuth, args, st)
+	if err := s.joinEnvironmentNetworks(ctx, p.Project, p.JoinNetworks, st); err != nil && runErr == nil {
+		runErr = err
+	}
 	out := ComposeUpResult{ExitCode: res.ExitCode}
 	// Report the project state even when up failed (unhealthy services explain the failure).
 	if services, err := s.projectStatus(ctx, p.Project, false); err == nil {
@@ -393,6 +404,30 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 		s.log.Debug("compose up: project status failed", "project", p.Project, "err", err)
 	}
 	return out, runErr
+}
+
+// joinEnvironmentNetworks connects every container of the project to the environment networks (compose recreates
+// containers on its own networks only, so this runs after every `up`).
+func (s *Service) joinEnvironmentNetworks(ctx context.Context, project string, networks []string, st commands.Stream) error {
+	if len(networks) == 0 {
+		return nil
+	}
+	list, err := s.c.ContainerList(ctx, true, []string{LabelComposeProject + "=" + project})
+	if err != nil {
+		return err
+	}
+	for _, n := range networks {
+		if err := s.ensureEnvironmentNetwork(ctx, n); err != nil {
+			return err
+		}
+		for _, c := range list {
+			if err := s.c.NetworkConnect(ctx, n, c.ID, nil); err != nil {
+				return fmt.Errorf("joining %s to %s: %w", containerName(c), n, err)
+			}
+		}
+		fmt.Fprintf(st.Stdout(), "%d container(s) of %s joined %s\n", len(list), project, n)
+	}
+	return nil
 }
 
 func (s *Service) composePull(ctx context.Context, p ComposePullPayload, st commands.Stream) (any, error) {

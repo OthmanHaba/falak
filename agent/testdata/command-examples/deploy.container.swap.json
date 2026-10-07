@@ -47,5 +47,11 @@
   ],
   "mask": [
     "DATABASE_URL"
+  ],
+  "networks": [
+    {
+      "name": "falak-env-01hzyenv000000000000000001",
+      "environment": true
+    }
   ]
 }
