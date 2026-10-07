@@ -33,9 +33,6 @@ final class StoreServerRequest extends FormRequest
             'stack.php.versions.*' => ['string'],
             'stack.php.default' => ['required_with:stack.php', 'string'],
             'stack.node' => ['nullable', 'string'],
-            'stack.database' => ['nullable', 'string'],
-            'stack.cache' => ['nullable', 'string'],
-            'stack.docker' => ['nullable', 'boolean'],
             'ssh_key_ids' => ['nullable', 'array'],
             'ssh_key_ids.*' => ['string'],
         ];

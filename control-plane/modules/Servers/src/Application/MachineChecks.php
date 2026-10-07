@@ -60,7 +60,7 @@ final class MachineChecks
 
     /**
      * Decisions for the next provision.apply: from the stored report against the server's current stack (it may have
-     * changed since the check, e.g. a database engine added), for agents that understand them; null = no machine
+     * changed since the check, e.g. a PHP version added), for agents that understand them; null = no machine
      * check (today's plan).
      */
     public function current(Server $server): ?MachineCheck

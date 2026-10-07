@@ -9,10 +9,10 @@ use Falak\Servers\Domain\Stack\Stack;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 
-/** App server stack: FrankenPHP 8.4, Node 22, PostgreSQL, Redis, Docker. */
-function mc_app_stack(?string $database = 'postgresql', ?string $cache = 'redis', bool $docker = true): Stack
+/** App server stack: FrankenPHP 8.4, Node 22 (and Docker, which every server gets). */
+function mc_app_stack(): Stack
 {
-    return new Stack('frankenphp', ['8.4'], '8.4', '22', $database, $cache, $docker);
+    return new Stack('frankenphp', ['8.4'], '8.4', '22');
 }
 
 /**
@@ -27,13 +27,11 @@ it('installs everything on a fresh machine', function () {
     $check = mc_decide(mc_report(), mc_wanted(mc_app_stack(), base: ['acl', 'curl', 'git']));
 
     expect(mc_decisions($check))->toBe([
-        'base' => 'complete', 'docker' => 'install', 'database' => 'install', 'cache' => 'install', 'edge' => 'install', 'php' => 'install', 'node' => 'install',
+        'base' => 'complete', 'docker' => 'install', 'edge' => 'install', 'php' => 'install', 'node' => 'install',
         'ssh' => 'install', 'firewall' => 'install', 'swap' => 'install', 'hostname' => 'adopt', 'unattended_upgrades' => 'install', 'fail2ban' => 'install',
     ])
         ->and($check->blocking())->toBeFalse()
         ->and($check->for('docker')->install)->toBe(['docker.io', 'docker-compose-v2', 'docker-buildx'])
-        ->and($check->for('database')->install)->toBe(['postgresql', 'postgresql-contrib'])
-        ->and($check->for('database')->service)->toBe('postgresql')
         ->and($check->for('swap')->reason)->toBe('Creates a 2 GB /swapfile.')
         ->and($check->for('base')->install)->toBe(['acl'])
         // Ubuntu's stock 20auto-upgrades is no customisation: Falak writes its config as before.
@@ -113,13 +111,6 @@ it('warns about daemon.json settings that break published ports', function () {
         ->and(array_map(fn ($n) => $n->severity->value, $docker->notes))->toBe(['warning', 'warning', 'info']);
 });
 
-it('reports Docker that the stack does not use without touching it', function () {
-    $check = mc_decide(mc_docker_ce(mc_report()), mc_wanted(mc_app_stack(docker: false)));
-
-    expect($check->for('docker')->decision)->toBe(Decision::Skip)
-        ->and($check->blocking())->toBeFalse();
-});
-
 it('blocks nginx on port 80', function () {
     $report = mc_listen(mc_service(mc_package(mc_report(), 'nginx', '1.24.0-2ubuntu7'), 'nginx.service'), 80, 'nginx', 'nginx.service');
     $check = mc_decide($report, mc_wanted(mc_app_stack()));
@@ -148,66 +139,22 @@ it('blocks an active caddy.service and warns about an enabled but stopped Apache
         ->and(collect($edge->notes)->pluck('severity')->map->value->all())->toBe(['block', 'warning']);
 });
 
-it('adopts MySQL from Oracle when MySQL is wanted and the version is supported', function () {
-    $report = mc_package(mc_report(), 'mysql-community-server', '8.4.2-1ubuntu24.04', 'vendor', 'http://repo.mysql.com/apt/ubuntu', 'MySQL');
-    $report = mc_listen($report, 3306, 'mysqld', 'mysql.service');
-    $database = mc_decide($report, mc_wanted(mc_app_stack('mysql')))->for('database');
+it('installs no database engine and leaves one already on the machine alone', function () {
+    $report = mc_listen(mc_package(mc_report(), 'postgresql-17', '17.2-1.pgdg24.04+1', 'vendor', 'https://apt.postgresql.org/pub/repos/apt'), 5432, 'postgres', 'postgresql@17-main.service');
+    $check = mc_decide($report, mc_wanted(mc_app_stack()));
 
-    expect($database->decision)->toBe(Decision::Adopt)
-        ->and($database->keep)->toBe(['mysql-community-server'])
-        ->and($database->install)->toBe([])
-        ->and($database->service)->toBe('mysql')
-        ->and($database->found)->toBe([['name' => 'MySQL', 'version' => '8.4.2', 'source' => 'repo.mysql.com']]);
-
-    $old = mc_package(mc_report(), 'mysql-community-server', '5.7.44-1ubuntu18.04', 'vendor', 'http://repo.mysql.com/apt/ubuntu');
-    expect(mc_decide($old, mc_wanted(mc_app_stack('mysql')))->for('database')->reason)->toBe('MySQL 5.7.44 is older than 8.0, the oldest Falak supports.');
+    expect($check->for('database'))->toBeNull()
+        ->and($check->for('cache'))->toBeNull()
+        ->and($check->blocking())->toBeFalse();
 });
 
-it('blocks MySQL from Oracle when MariaDB is wanted, and the reverse', function () {
-    $mysql = mc_listen(mc_package(mc_report(), 'mysql-community-server', '8.4.2-1ubuntu24.04', 'vendor', 'http://repo.mysql.com/apt/ubuntu'), 3306, 'mysqld', 'mysql.service');
-    $database = mc_decide($mysql, mc_wanted(mc_app_stack('mariadb')))->for('database');
+it('still blocks a container publishing a port the edge needs', function () {
+    $report = mc_report();
+    $report['containers'] = [['name' => 'proxy', 'image' => 'nginx:1', 'ports' => [['host_ip' => '0.0.0.0', 'host_port' => 443, 'container_port' => 443, 'protocol' => 'tcp']]]];
+    $edge = mc_decide($report, mc_wanted(mc_app_stack()))->for('edge');
 
-    expect($database->decision)->toBe(Decision::Block)
-        ->and($database->reason)->toBe('MySQL 8.4.2 is installed, but this server is set up for MariaDB.')
-        ->and($database->hint())->toContain('apt purge mysql-community-server')
-        // Its mysqld on 3306 is the same conflict, not a second one about the port.
-        ->and($database->blocks())->toHaveCount(1);
-
-    // Something else on the port still is.
-    $other = mc_listen(mc_report(), 3306, 'proxysql', 'proxysql.service');
-    expect(mc_decide($other, mc_wanted(mc_app_stack('mariadb')))->for('database')->reason)->toBe('Port 3306 is in use by proxysql, which MariaDB needs.');
-
-    $mariadb = mc_package(mc_report(), 'mariadb-server', '1:10.11.8-0ubuntu0.24.04.1');
-    expect(mc_decide($mariadb, mc_wanted(mc_app_stack('mysql')))->for('database')->reason)->toBe('MariaDB 10.11.8 is installed, but this server is set up for MySQL.');
-});
-
-it('adopts a PGDG postgresql-17 cluster instead of installing Ubuntu\'s metapackage', function () {
-    $report = mc_package(mc_package(mc_report(), 'postgresql-17', '17.5-1.pgdg24.04+1', 'vendor', 'http://apt.postgresql.org/pub/repos/apt', 'apt.postgresql.org'), 'postgresql-client-17', '17.5-1.pgdg24.04+1', 'vendor', 'http://apt.postgresql.org/pub/repos/apt');
-    $report = mc_listen($report, 5432, 'postgres', 'postgresql@17-main.service', address: '127.0.0.1');
-    $database = mc_decide($report, mc_wanted(mc_app_stack()))->for('database');
-
-    expect($database->decision)->toBe(Decision::Adopt)
-        ->and($database->keep)->toBe(['postgresql-17'])
-        ->and($database->install)->toBe([])
-        ->and($database->reason)->toBe("Uses PostgreSQL 17 from apt.postgresql.org; the cluster and its major version stay, Ubuntu's postgresql package is not installed.");
-});
-
-it('blocks Redis in Docker on 6379', function () {
-    $report = mc_docker_ce(mc_report());
-    $report['containers'] = [['name' => 'cache', 'image' => 'redis:7', 'ports' => [['host_ip' => '0.0.0.0', 'host_port' => 6379, 'container_port' => 6379, 'protocol' => 'tcp']]]];
-    $report = mc_listen($report, 6379, 'docker-proxy', 'docker.service', container: true);
-    $cache = mc_decide($report, mc_wanted(mc_app_stack()))->for('cache');
-
-    expect($cache->decision)->toBe(Decision::Block)
-        ->and($cache->reason)->toBe('A container (cache, redis:7) publishes port 6379, which Redis needs.')
-        ->and($cache->hint())->toContain('docker stop cache')
-        ->and($cache->blocks())->toHaveCount(1);
-});
-
-it('blocks a database port held by a container even without a docker-proxy listener', function () {
-    $report = mc_report(['containers' => [['name' => 'db', 'image' => 'postgres:16', 'ports' => [['host_port' => 5432, 'container_port' => 5432, 'protocol' => 'tcp']]]]]);
-
-    expect(mc_decide($report, mc_wanted(mc_app_stack()))->for('database')->decision)->toBe(Decision::Block);
+    expect($edge->decision)->toBe(Decision::Block)
+        ->and($edge->reason)->toBe("A container (proxy, nginx:1) publishes port 443, which Falak's edge needs.");
 });
 
 it('blocks SSH hardening that would lock everyone out', function () {

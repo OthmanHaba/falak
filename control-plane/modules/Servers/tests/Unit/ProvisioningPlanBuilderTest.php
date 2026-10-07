@@ -43,15 +43,16 @@ it('builds an all-in-one app server plan', function () {
     expect($plan['hostname'])->toBe('web-01')
         ->and($plan['timezone'])->toBe('Europe/Amsterdam')
         ->and($plan['swap_mb'])->toBe(4096)
-        ->and($plan['apt']['packages'])->toContain('postgresql', 'redis-server', 'git', 'fail2ban')
-        ->and($plan['apt']['packages'])->not->toContain('docker.io')
+        ->and($plan['apt']['packages'])->toContain('docker.io', 'docker-compose-v2', 'git', 'fail2ban')
+        ->and($plan['apt']['packages'])->not->toContain('postgresql', 'redis-server')
         ->and($plan['runtimes']['php'])->toMatchArray(['versions' => ['8.4'], 'default' => '8.4', 'fpm' => false])
         ->and($plan['runtimes']['php']['extensions'])->toContain('mbstring', 'pgsql', 'redis')
         ->and($plan['runtimes']['frankenphp']['version'])->toBe(config('servers.frankenphp.version'))
         ->and($plan['runtimes']['node'])->toBe(['versions' => [config('servers.node_versions.22')], 'default' => config('servers.node_versions.22')])
         ->and($plan['runtimes']['caddy'])->toBe(['enabled' => false])
-        ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'postgresql', 'redis-server'])
-        ->and($plan['users'][0])->toMatchArray(['name' => 'falak', 'groups' => ['www-data'], 'sudo' => 'none'])
+        ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'docker'])
+        ->and($plan['docker'])->toBe(['live_restore' => true])
+        ->and($plan['users'][0])->toMatchArray(['name' => 'falak', 'groups' => ['www-data', 'docker'], 'sudo' => 'none'])
         ->and($plan['ssh'])->toBe(['port' => 2222, 'permit_root_login' => 'prohibit-password', 'password_authentication' => false])
         ->and($plan['unattended_upgrades']['enabled'])->toBeTrue();
 });
@@ -66,31 +67,24 @@ it('uses php-fpm + Caddy for the FPM runtime with multiple PHP versions', functi
         ->and(provisionSchemaErrors($plan))->toBe([]);
 });
 
-it('maps database, cache and docker components to packages and services', function (string $database, string $cache, array $packages, array $services) {
-    $plan = planFor(ServerType::App, new Stack('frankenphp', ['8.4'], '8.4', '22', $database, $cache, true));
+it('gives every server Docker with live-restore and no database or cache engine', function (ServerType $type) {
+    $plan = planFor($type);
 
-    expect($plan['apt']['packages'])->toContain(...$packages, ...['docker.io', 'docker-compose-v2'])
-        ->and(array_column($plan['services'], 'name'))->toContain(...$services, ...['docker'])
-        ->and($plan['users'][0]['groups'])->toBe(['www-data', 'docker'])
-        ->and(provisionSchemaErrors($plan))->toBe([]);
-})->with([
-    ['postgresql', 'redis', ['postgresql', 'postgresql-contrib', 'redis-server'], ['postgresql', 'redis-server']],
-    ['mysql', 'valkey', ['mysql-server', 'valkey-server'], ['mysql', 'valkey-server']],
-    ['mariadb', 'redis', ['mariadb-server'], ['mariadb']],
-]);
+    expect($plan['apt']['packages'])->toContain('docker.io', 'docker-compose-v2', 'docker-buildx')
+        ->and($plan['apt']['packages'])->not->toContain('postgresql', 'postgresql-contrib', 'mysql-server', 'mariadb-server', 'redis-server', 'valkey-server')
+        ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'docker'])
+        ->and($plan['docker'])->toBe(['live_restore' => true])
+        ->and($plan['users'][0]['groups'])->toBe(['www-data', 'docker']);
+})->with(ServerType::cases());
 
-it('provisions dedicated servers with only their component', function () {
-    $db = planFor(ServerType::Database, new Stack(database: 'mysql'));
-    $cache = planFor(ServerType::Cache, new Stack(cache: 'valkey'));
+it('provisions dedicated servers with only their runtimes', function () {
+    $db = planFor(ServerType::Database);
     $lb = planFor(ServerType::LoadBalancer);
     $builder = planFor(ServerType::Builder);
 
     expect($db)->not->toHaveKey('runtimes')
-        ->and($db['apt']['packages'])->toContain('mysql-server')->not->toContain('redis-server')
-        ->and($cache['apt']['packages'])->toContain('valkey-server')->not->toContain('mysql-server')
         ->and($lb['runtimes'])->toBe(['caddy' => ['enabled' => true]])
-        ->and($builder['runtimes'])->toHaveKey('node')->not->toHaveKey('php')
-        ->and($builder['apt']['packages'])->toContain('docker.io', 'docker-buildx');
+        ->and($builder['runtimes'])->toHaveKey('node')->not->toHaveKey('php');
 });
 
 it('excludes PHP versions being removed and includes ones being installed', function () {

@@ -26,7 +26,7 @@ function decidedPlan(array $report, ?Stack $stack = null, string $provider = 'cu
 }
 
 it('installs no Docker package for an adopted Docker (the incident) and tells the agent', function () {
-    [$plan] = decidedPlan(mc_docker_ce(mc_report()), new Stack('frankenphp', ['8.4'], '8.4', '22', 'postgresql', 'redis', true));
+    [$plan] = decidedPlan(mc_docker_ce(mc_report()), new Stack('frankenphp', ['8.4'], '8.4', '22'));
 
     expect($plan['apt']['packages'])->not->toContain('docker.io', 'docker-compose-v2', 'docker-buildx', 'docker-ce')
         ->and(array_column($plan['services'], 'name'))->toContain('docker')
@@ -35,33 +35,31 @@ it('installs no Docker package for an adopted Docker (the incident) and tells th
 });
 
 it('installs only the missing piece from the engine\'s family', function () {
-    [$plan] = decidedPlan(mc_docker_ce(mc_report(), ['buildx']), new Stack(docker: true));
+    [$plan] = decidedPlan(mc_docker_ce(mc_report(), ['buildx']), new Stack);
 
     expect(array_values(array_filter($plan['apt']['packages'], fn ($p) => str_starts_with($p, 'docker'))))->toBe(['docker-compose-plugin'])
         ->and(collect($plan['components'])->firstWhere('name', 'docker'))->toMatchArray(['decision' => 'complete', 'packages' => ['docker-compose-plugin']]);
 });
 
-it('adopts engines, swap and hostname without installing or changing them', function () {
+it('adopts swap and hostname without changing them, and leaves an engine on the machine alone', function () {
     $report = mc_package(mc_report(['swap' => [['name' => '/swap.img', 'type' => 'file', 'size_bytes' => 1 << 30]]]), 'postgresql-17', '17.5-1.pgdg24.04+1', 'vendor', 'http://apt.postgresql.org/pub/repos/apt');
     [$plan] = decidedPlan($report);
 
     expect($plan)->not->toHaveKeys(['swap_mb', 'hostname'])
-        ->and($plan['apt']['packages'])->not->toContain('postgresql', 'postgresql-contrib')
-        ->and($plan['apt']['packages'])->toContain('redis-server')
-        ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'postgresql', 'redis-server'])
-        ->and(collect($plan['components'])->pluck('decision', 'name')->all())->toMatchArray(['database' => 'adopt', 'swap' => 'adopt', 'hostname' => 'adopt', 'cache' => 'install'])
+        ->and($plan['apt']['packages'])->not->toContain('postgresql', 'postgresql-contrib', 'redis-server')
+        ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'docker'])
+        ->and(collect($plan['components'])->pluck('decision', 'name')->all())->toMatchArray(['swap' => 'adopt', 'hostname' => 'adopt', 'docker' => 'install'])
+        ->and(collect($plan['components'])->pluck('name')->all())->not->toContain('database', 'cache')
         ->and(app(ProtocolSchemas::class)->validateCommand('provision.apply', ProtocolSchemas::toJson($plan)))->toBe([]);
 });
 
 it('names provider servers and plans no blocked component', function () {
-    $report = mc_listen(mc_report(), 6379, 'docker-proxy', 'docker.service', container: true);
+    $report = mc_listen(mc_report(), 443, 'docker-proxy', 'docker.service', container: true);
     [$plan, $check] = decidedPlan($report, provider: 'hetzner');
 
     expect($check->blocking())->toBeTrue()
         ->and($plan['hostname'])->toBe('app-1')
-        ->and($plan['apt']['packages'])->not->toContain('redis-server')
-        ->and(array_column($plan['services'], 'name'))->not->toContain('redis-server')
-        ->and(collect($plan['components'])->pluck('name')->all())->not->toContain('cache');
+        ->and(collect($plan['components'])->pluck('name')->all())->not->toContain('edge');
 });
 
 it('builds today\'s plan without a machine check', function () {
@@ -70,5 +68,5 @@ it('builds today\'s plan without a machine check', function () {
 
     expect($plan)->not->toHaveKey('components')
         ->and($plan['hostname'])->toBe('app-1')
-        ->and($plan['apt']['packages'])->toContain('postgresql', 'redis-server');
+        ->and($plan['apt']['packages'])->toContain('docker.io')->not->toContain('postgresql', 'redis-server');
 });

@@ -6,7 +6,8 @@ use Falak\Servers\Contracts\ServerType;
 
 /**
  * Software selected for a server at creation. PHP versions installed later are tracked in
- * servers_php_versions; the stack keeps the runtime choice and the other components.
+ * servers_php_versions; the stack keeps the runtime choice and the other components. Every server runs Docker, and
+ * databases are containers (Databases), so neither is part of the stack.
  */
 final readonly class Stack
 {
@@ -20,9 +21,6 @@ final readonly class Stack
         public array $phpVersions = [],
         public ?string $phpDefault = null,
         public ?string $node = null,
-        public ?string $database = null,
-        public ?string $cache = null,
-        public bool $docker = false,
     ) {}
 
     public static function defaultsFor(ServerType $type): self
@@ -31,12 +29,9 @@ final readonly class Stack
         $node = (string) config('servers.default_node', '22');
 
         return match ($type) {
-            ServerType::App => new self('frankenphp', [$php], $php, $node, 'postgresql', 'redis'),
-            ServerType::Web, ServerType::Worker => new self('frankenphp', [$php], $php, $node),
-            ServerType::Database => new self(database: 'postgresql'),
-            ServerType::Cache => new self(cache: 'redis'),
-            ServerType::LoadBalancer => new self,
-            ServerType::Builder => new self(node: $node, docker: true),
+            ServerType::App, ServerType::Web, ServerType::Worker => new self('frankenphp', [$php], $php, $node),
+            ServerType::Database, ServerType::Cache, ServerType::LoadBalancer => new self,
+            ServerType::Builder => new self(node: $node),
         };
     }
 
@@ -53,39 +48,23 @@ final readonly class Stack
             phpVersions: $versions,
             phpDefault: $php ? (string) ($php['default'] ?? ($versions[0] ?? '')) ?: null : null,
             node: isset($data['node']) && $data['node'] !== '' ? (string) $data['node'] : null,
-            database: isset($data['database']) && $data['database'] !== '' ? (string) $data['database'] : null,
-            cache: isset($data['cache']) && $data['cache'] !== '' ? (string) $data['cache'] : null,
-            docker: (bool) ($data['docker'] ?? false),
         );
     }
 
     /**
-     * @return array{php: array{runtime: string, versions: list<string>, default: ?string}|null, node: ?string, database: ?string, cache: ?string, docker: bool}
+     * @return array{php: array{runtime: string, versions: list<string>, default: ?string}|null, node: ?string}
      */
     public function toArray(): array
     {
         return [
             'php' => $this->phpRuntime !== null ? ['runtime' => $this->phpRuntime, 'versions' => $this->phpVersions, 'default' => $this->phpDefault] : null,
             'node' => $this->node,
-            'database' => $this->database,
-            'cache' => $this->cache,
-            'docker' => $this->docker,
         ];
-    }
-
-    public function withDatabase(?string $engine): self
-    {
-        return new self($this->phpRuntime, $this->phpVersions, $this->phpDefault, $this->node, $engine, $this->cache, $this->docker);
-    }
-
-    public function withCache(?string $engine): self
-    {
-        return new self($this->phpRuntime, $this->phpVersions, $this->phpDefault, $this->node, $this->database, $engine, $this->docker);
     }
 
     public function withPhp(string $runtime, array $versions, ?string $default): self
     {
-        return new self($runtime, array_values($versions), $default, $this->node, $this->database, $this->cache, $this->docker);
+        return new self($runtime, array_values($versions), $default, $this->node);
     }
 
     /**
@@ -99,9 +78,6 @@ final readonly class Stack
         $present = array_filter([
             'php' => $this->phpRuntime !== null,
             'node' => $this->node !== null,
-            'database' => $this->database !== null,
-            'cache' => $this->cache !== null,
-            'docker' => $this->docker,
         ]);
 
         foreach (array_keys($present) as $component) {
@@ -128,26 +104,6 @@ final readonly class Stack
 
         if ($this->node !== null && ! array_key_exists($this->node, (array) config('servers.node_versions', []))) {
             $errors['stack.node'] = 'Unsupported Node.js version.';
-        }
-
-        if ($this->database !== null && ! array_key_exists($this->database, (array) config('servers.databases', []))) {
-            $errors['stack.database'] = 'Unsupported database engine.';
-        }
-
-        if ($this->cache !== null && ! array_key_exists($this->cache, (array) config('servers.caches', []))) {
-            $errors['stack.cache'] = 'Unsupported cache engine.';
-        }
-
-        if ($type === ServerType::Database && $this->database === null) {
-            $errors['stack.database'] = 'A database server needs a database engine.';
-        }
-
-        if ($type === ServerType::Cache && $this->cache === null) {
-            $errors['stack.cache'] = 'A cache server needs Redis or Valkey.';
-        }
-
-        if ($type === ServerType::Builder && ! $this->docker) {
-            $errors['stack.docker'] = 'Builders require Docker.';
         }
 
         return $errors;

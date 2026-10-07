@@ -85,20 +85,6 @@ for the server's architecture, or the agent already runs it.
           "rollout_id": null, "error": null, "requested_at": "2026-09-28T10:00:00+00:00", "finished_at": null}}
 ```
 
-### `POST /api/v1/servers/{server}/database-engine` — update permission on the server
-Adds a database engine to a provisioned server that has none: `{"engine": "postgresql|mysql|mariadb"}`, or Redis /
-Valkey to one without a cache engine: `{"engine": "redis|valkey"}` (server types with a cache component: `app`,
-`cache`; Valkey only where the OS packages it: Ubuntu 24.04 and 26.04, Debian 13). One engine install runs at a time. The engine
-joins the server's stack and the provisioning plan converges with it (`provision.apply`: the distribution's packages
-and service, as at creation). `202` `{"data": {"engine", "status": "installing", "command_id"}}`. Once the agent
-reports success the engine appears under Databases (and, on app servers, is reachable from the server's containers);
-when the plan fails it is taken back out of the stack (audit `server.database_engine_install_failed`). `422` for an
-unsupported engine, a server that already runs (or is installing) one, a server type without databases (only `app`
-servers may add one; `database` servers always have one), or a server that is not active, and when the server's
-machine check blocks that engine (another engine of the kind, or its port taken; the message names it). An engine
-the machine check found is adopted rather than installed again. Rate limited to 10/min.
-Panel: server Settings → Database engine.
-
 ### Machine check
 Before provisioning (after enrollment, on Re-provision), servers whose agent has the `provision.v2` feature get a
 read-only machine check (`provision.inspect`): what is already installed and where it came from. Each component

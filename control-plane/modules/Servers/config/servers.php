@@ -36,26 +36,7 @@ return [
         'node' => env('FALAK_NODE_MIRROR'),
     ],
 
-    // Engine => Ubuntu packages + systemd service.
-    'databases' => [
-        'postgresql' => ['label' => 'PostgreSQL', 'packages' => ['postgresql', 'postgresql-contrib'], 'service' => 'postgresql'],
-        'mysql' => ['label' => 'MySQL', 'packages' => ['mysql-server'], 'service' => 'mysql'],
-        'mariadb' => ['label' => 'MariaDB', 'packages' => ['mariadb-server'], 'service' => 'mariadb'],
-    ],
-    'caches' => [
-        'redis' => ['label' => 'Redis', 'packages' => ['redis-server'], 'service' => 'redis-server'],
-        'valkey' => ['label' => 'Valkey', 'packages' => ['valkey-server'], 'service' => 'valkey-server'],
-    ],
-    // Cache engines each release's archive has, keyed by the server's reported OS ("<id> <version>"); releases not
-    // listed get Redis only. valkey-server: Ubuntu 24.04 (noble-updates, 7.2), 26.04 (9.0), Debian 13 (8.1); not in
-    // jammy or bookworm (only bookworm-backports, which is not enabled by default).
-    'caches_by_os' => [
-        'ubuntu 22.04' => ['redis'],
-        'ubuntu 24.04' => ['redis', 'valkey'],
-        'ubuntu 26.04' => ['redis', 'valkey'],
-        'debian 12' => ['redis'],
-        'debian 13' => ['redis', 'valkey'],
-    ],
+    // Every server runs Docker (sites, compose stacks, functions and database containers).
     'docker' => ['packages' => ['docker.io', 'docker-compose-v2', 'docker-buildx'], 'service' => 'docker'],
 
     'base_packages' => ['acl', 'ca-certificates', 'curl', 'fail2ban', 'git', 'htop', 'jq', 'rsync', 'sqlite3', 'unattended-upgrades', 'unzip', 'zip'],
@@ -78,17 +59,11 @@ return [
         'timeout' => 180,
 
         // Lowest versions Falak adopts or completes; anything older blocks. Compared with version_compare on the
-        // upstream version (Debian epoch and revision stripped; PostgreSQL by major from postgresql-NN). Each is what
-        // Falak itself installs on the oldest supported release, so a server Falak provisioned never blocks: Ubuntu 22.04
-        // ships PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0 and docker.io 20.10 (24.0 / 26.1 in jammy-updates);
-        // Valkey first ships with 24.04 (noble-updates, 7.2), its first release.
+        // upstream version (Debian epoch and revision stripped). What Falak itself installs on the oldest supported
+        // release, so a server Falak provisioned never blocks: Ubuntu 22.04 ships docker.io 20.10 (24.0 / 26.1 in
+        // jammy-updates).
         'minimum_versions' => [
             'docker' => '20.10',
-            'postgresql' => '14',
-            'mysql' => '8.0',
-            'mariadb' => '10.6',
-            'redis' => '6.0',
-            'valkey' => '7.2',
         ],
 
         // Docker package families: a missing piece is completed from the engine's own family (never mixed: Ubuntu's
@@ -97,17 +72,6 @@ return [
         'docker_families' => [
             'docker-ce' => ['label' => "Docker's repository", 'compose' => 'docker-compose-plugin', 'buildx' => 'docker-buildx-plugin', 'repo' => 'download.docker.com'],
             'docker.io' => ['label' => "Ubuntu's archive", 'compose' => 'docker-compose-v2', 'buildx' => 'docker-buildx', 'repo' => null],
-        ],
-
-        // Engines Falak can install or adopt, and the ones that conflict with them (same kind, same port). `packages`
-        // are regular expressions over installed package names; `processes` may hold the engine's port.
-        'engines' => [
-            'postgresql' => ['label' => 'PostgreSQL', 'kind' => 'database', 'packages' => ['/^postgresql-\d+$/'], 'processes' => ['postgres'], 'ports' => [5432]],
-            'mysql' => ['label' => 'MySQL', 'kind' => 'database', 'packages' => ['/^mysql-server-core-\d/', '/^mysql-server-\d/', '/^mysql-community-server$/', '/^mysql-server$/'], 'processes' => ['mysqld'], 'ports' => [3306]],
-            'mariadb' => ['label' => 'MariaDB', 'kind' => 'database', 'packages' => ['/^mariadb-server-core/', '/^mariadb-server-\d/', '/^mariadb-server$/'], 'processes' => ['mariadbd', 'mysqld'], 'ports' => [3306]],
-            'percona' => ['label' => 'Percona Server', 'kind' => 'database', 'packages' => ['/^percona-server-server/'], 'processes' => ['mysqld'], 'ports' => [3306]],
-            'redis' => ['label' => 'Redis', 'kind' => 'cache', 'packages' => ['/^redis-server$/'], 'processes' => ['redis-server'], 'ports' => [6379]],
-            'valkey' => ['label' => 'Valkey', 'kind' => 'cache', 'packages' => ['/^valkey-server$/'], 'processes' => ['valkey-server'], 'ports' => [6379]],
         ],
 
         // Ports the edge needs on servers that serve HTTP (Caddy's admin API on 2019 is bound to localhost).

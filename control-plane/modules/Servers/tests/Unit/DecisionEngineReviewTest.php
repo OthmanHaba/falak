@@ -7,39 +7,10 @@ use Falak\Servers\Domain\Stack\Stack;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 
-function mc_review_stack(?string $database = 'postgresql', ?string $cache = 'redis'): Stack
+function mc_review_stack(): Stack
 {
-    return new Stack('frankenphp', ['8.4'], '8.4', '22', $database, $cache, true);
+    return new Stack('frankenphp', ['8.4'], '8.4', '22');
 }
-
-/*
- * What Falak itself installs on each supported Ubuntu release (the archive's versions): a server Falak provisioned must
- * never block on its own engines. Valkey first ships with 26.04.
- */
-dataset('falak_installed_engines', [
-    'jammy postgresql' => ['22.04', 'database', 'postgresql', 'postgresql-14', '14.18-0ubuntu0.22.04.1', '14'],
-    'jammy mysql' => ['22.04', 'database', 'mysql', 'mysql-server-8.0', '8.0.42-0ubuntu0.22.04.1', '8.0.42'],
-    'jammy mariadb' => ['22.04', 'database', 'mariadb', 'mariadb-server', '1:10.6.22-0ubuntu0.22.04.1', '10.6.22'],
-    'jammy redis' => ['22.04', 'cache', 'redis', 'redis-server', '5:6.0.16-1ubuntu1.1', '6.0.16'],
-    'noble postgresql' => ['24.04', 'database', 'postgresql', 'postgresql-16', '16.9-0ubuntu0.24.04.1', '16'],
-    'noble mysql' => ['24.04', 'database', 'mysql', 'mysql-server-8.0', '8.0.42-0ubuntu0.24.04.1', '8.0.42'],
-    'noble mariadb' => ['24.04', 'database', 'mariadb', 'mariadb-server', '1:10.11.13-0ubuntu0.24.04.1', '10.11.13'],
-    'noble redis' => ['24.04', 'cache', 'redis', 'redis-server', '5:7.0.15-1ubuntu0.24.04.1', '7.0.15'],
-    'resolute postgresql' => ['26.04', 'database', 'postgresql', 'postgresql-18', '18.0-1', '18'],
-    'resolute mysql' => ['26.04', 'database', 'mysql', 'mysql-server-8.4', '8.4.6-0ubuntu1', '8.4.6'],
-    'resolute mariadb' => ['26.04', 'database', 'mariadb', 'mariadb-server', '1:11.8.2-1', '11.8.2'],
-    'resolute redis' => ['26.04', 'cache', 'redis', 'redis-server', '5:8.0.2-2', '8.0.2'],
-    'resolute valkey' => ['26.04', 'cache', 'valkey', 'valkey-server', '8.1.1+dfsg1-2', '8.1.1'],
-]);
-
-it('adopts the engine Falak installs on every supported release', function (string $os, string $component, string $engine, string $package, string $version, string $shown) {
-    $report = mc_package(mc_report(['os' => ['id' => 'ubuntu', 'version' => $os]]), $package, $version);
-    $stack = $component === 'database' ? mc_review_stack($engine) : mc_review_stack(cache: $engine);
-    $decision = mc_decide($report, mc_wanted($stack))->for($component);
-
-    expect($decision->decision)->toBe(Decision::Adopt)
-        ->and($decision->found[0]['version'])->toBe($shown);
-})->with('falak_installed_engines');
 
 it('adopts the docker.io Falak installs on every supported release', function (string $version) {
     $report = mc_docker_io(mc_report(), ['compose', 'buildx']);

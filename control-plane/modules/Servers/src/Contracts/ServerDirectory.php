@@ -25,16 +25,9 @@ interface ServerDirectory
 
     /**
      * TCP ports the server's latest machine check saw in use (listeners and ports published by containers); empty
-     * when it was never checked. Used to pick free ports (Redis instances) before the agent re-checks.
+     * when it was never checked. Used to pick free ports (database containers' host ports) before the agent re-checks.
      *
      * @return list<int>
      */
     public function takenPorts(string $serverId): array;
-
-    /**
-     * Cache engines (redis | valkey) the server's OS can install (servers.caches_by_os); empty for an unknown server.
-     *
-     * @return list<string>
-     */
-    public function installableCaches(string $serverId): array;
 }

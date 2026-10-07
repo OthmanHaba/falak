@@ -25,8 +25,7 @@ final readonly class ServerData
         public ?string $defaultPhpVersion,
         public ?string $phpRuntime,
         public ?string $nodeVersion,
-        public ?string $databaseEngine,
-        public ?string $cacheEngine,
+        /** Always true: every server runs Docker */
         public bool $docker,
         public string $unixUser,
         // Provider servers: the credential (account) Falak created it with, and its region.

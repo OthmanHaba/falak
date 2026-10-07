@@ -1,6 +1,5 @@
 <?php
 
-use Falak\Servers\Http\Controllers\DatabaseEngineController;
 use Falak\Servers\Http\Controllers\MachineCheckController;
 use Falak\Servers\Http\Controllers\PhpController;
 use Falak\Servers\Http\Controllers\ServerAgentController;
@@ -32,7 +31,6 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::get('servers/{server}/php', [ServerTabController::class, 'php'])->name('servers.php');
     Route::get('servers/{server}/settings', [ServerTabController::class, 'settings'])->name('servers.settings');
 
-    Route::post('servers/{server}/database-engine', [DatabaseEngineController::class, 'store'])->name('servers.database-engine.store');
     Route::post('servers/{server}/php', [PhpController::class, 'store'])->name('servers.php.store');
     Route::put('servers/{server}/php/{version}/default', [PhpController::class, 'default'])->name('servers.php.default');
     Route::put('servers/{server}/php/{version}/settings', [PhpController::class, 'settings'])->name('servers.php.settings');

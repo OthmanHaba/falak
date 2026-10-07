@@ -98,9 +98,8 @@ class InfrastructureDemoSeeder extends Seeder
                 'arch' => 'amd64',
                 'agent_version' => '1.4.2',
                 'facts' => [
-                    'kernel' => '6.8.0-45-generic', 'docker' => $name === 'worker-1' ? '27.3.1' : null, 'runtimes' => ['php' => ['8.3', '8.4']],
-                    // app-1 runs Redis instances (UiDemoSeeder::cacheInstance); the canvas picker creates more there.
-                    ...($name === 'app-1' ? ['features' => ['db.redis']] : []),
+                    // Every server runs Docker (sites, compose stacks and database containers).
+                    'kernel' => '6.8.0-45-generic', 'docker' => '27.3.1', 'runtimes' => ['php' => ['8.3', '8.4']],
                 ],
                 'metrics' => [
                     'at' => $lastHeartbeat->toIso8601String(),
@@ -237,8 +236,8 @@ class InfrastructureDemoSeeder extends Seeder
     }
 
     /**
-     * A customer's own VM the machine check stopped: nginx holds port 80 and MariaDB is installed where MySQL was
-     * chosen. Docker from Docker's repository (with compose and buildx) is adopted.
+     * A customer's own VM the machine check stopped: nginx holds port 80. Docker from Docker's repository (with compose
+     * and buildx) is adopted; the MariaDB on it is left alone (Falak's databases run in containers).
      */
     private function attentionServer(string $organizationId): void
     {
@@ -255,7 +254,7 @@ class InfrastructureDemoSeeder extends Seeder
             'memory_bytes' => 8 * self::GB,
             'disk_bytes' => 120 * self::GB,
             'timezone' => 'UTC',
-            'stack' => new Stack('frankenphp', ['8.5'], '8.5', '22', 'mysql', 'redis', true),
+            'stack' => new Stack('frankenphp', ['8.5'], '8.5', '22'),
         ]);
 
         Agent::query()->create([

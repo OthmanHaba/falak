@@ -25,7 +25,7 @@ beforeEach(function () {
 });
 
 /**
- * A custom app server (PostgreSQL, Redis, Docker) whose agent enrolls with the given features.
+ * A custom app server (FrankenPHP, Node; Docker like every server) whose agent enrolls with the given features.
  *
  * @param  list<string>  $features
  * @return array{0: Server, 1: array<string, string>}
@@ -34,7 +34,7 @@ function mc_enrolled_server(array $features = ['provision.v2'], array $stack = [
 {
     test()->post('/servers', [
         'name' => 'app-1', 'type' => 'app', 'provider' => 'custom',
-        'stack' => array_replace(['php' => ['runtime' => 'frankenphp', 'versions' => ['8.4'], 'default' => '8.4'], 'node' => '22', 'database' => 'postgresql', 'cache' => 'redis', 'docker' => true], $stack),
+        'stack' => array_replace(['php' => ['runtime' => 'frankenphp', 'versions' => ['8.4'], 'default' => '8.4'], 'node' => '22'], $stack),
     ])->assertSessionHasNoErrors();
 
     $server = Server::query()->where('name', 'app-1')->firstOrFail();
@@ -186,25 +186,6 @@ it('re-provisions an active server through the machine check', function () {
     expect(servers_poll($headers)[0]['type'])->toBe('provision.inspect');
 });
 
-it('refuses a database engine the stored machine check blocks', function () {
-    [$server, $headers] = mc_enrolled_server(stack: ['database' => null]);
-    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_package(mc_report(), 'mariadb-server', '1:10.11.8-0ubuntu0.24.04.1'));
-    servers_finish($headers, servers_poll($headers)[0]['id']);
-    expect($server->refresh()->status)->toBe(ServerStatus::Active);
-
-    $this->post("/servers/{$server->id}/database-engine", ['engine' => 'mysql'])
-        ->assertSessionHasErrors(['engine' => 'MariaDB 10.11.8 is installed, but this server is set up for MySQL. '.
-            "Falak won't run two database engines on one machine. Remove MariaDB (apt purge mariadb-server) or use a server set up for MariaDB, then re-check."]);
-    expect($server->refresh()->stack->database)->toBeNull()
-        ->and($server->engine_command_id)->toBeNull();
-
-    // The engine that is already there is adopted, not reinstalled.
-    $this->post("/servers/{$server->id}/database-engine", ['engine' => 'mariadb'])->assertSessionHasNoErrors();
-    $plan = collect(servers_poll($headers))->firstWhere('type', 'provision.apply')['payload'];
-    expect($plan['apt']['packages'])->not->toContain('mariadb-server')
-        ->and(collect($plan['components'])->firstWhere('name', 'database'))->toMatchArray(['decision' => 'adopt', 'packages' => ['mariadb-server'], 'service' => 'mariadb']);
-});
-
 it('serves the inspection over the API with the server permissions', function () {
     [$server, $headers] = mc_enrolled_server();
     $token = app(CreateApiToken::class)($this->user, $this->organization->id, 'cli', ['servers.view', 'servers.manage'])->plainTextToken;
@@ -218,13 +199,13 @@ it('serves the inspection over the API with the server permissions', function ()
         ->assertJsonPath('data.report', null)
         ->assertJsonPath('data.components', []);
 
-    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_listen(mc_report(), 6379, 'docker-proxy', 'docker.service', container: true));
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_listen(mc_report(), 443, 'docker-proxy', 'docker.service', container: true));
 
     $this->withToken($viewer)->getJson("/api/v1/servers/{$server->id}/inspection")->assertOk()
         ->assertJsonPath('data.status', 'finished')
         ->assertJsonPath('data.supported', true)
         ->assertJsonPath('data.blocking', true)
-        ->assertJsonPath('data.components.0.component', 'cache')
+        ->assertJsonPath('data.components.0.component', 'edge')
         ->assertJsonPath('data.components.0.decision', 'block')
         ->assertJsonPath('data.components.0.decision_label', 'Blocked')
         ->assertJsonPath('data.report.hostname', 'ubuntu-s-1vcpu');
