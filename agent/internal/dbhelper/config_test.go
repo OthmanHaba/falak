@@ -31,6 +31,8 @@ func TestRenderGolden(t *testing.T) {
 		{"mariadb-2g", RenderInput{Engine: MariaDB, MemoryBytes: 2 << 30, Settings: Settings{ServerID: 3}}},
 		{"mariadb-1g-notls", RenderInput{Engine: MariaDB, MemoryBytes: 1 << 30, Settings: Settings{TLS: ptr(false)}}},
 		{"redis-512m", RenderInput{Engine: Redis, MemoryBytes: 512 << 20, PasswordSHA256: testHash, TLSCA: true}},
+		{"redis-512m-require-tls", RenderInput{Engine: Redis, MemoryBytes: 512 << 20, PasswordSHA256: testHash, TLSCA: true,
+			Settings: Settings{RequireTLS: true}}},
 		{"redis-1g-aof-notls", RenderInput{Engine: Redis, MemoryBytes: 1 << 30, PasswordSHA256: testHash,
 			Settings: Settings{TLS: ptr(false), Persistence: "aof", Eviction: "allkeys-lru", Bind: []string{"0.0.0.0"}}}},
 		{"valkey-256m-none", RenderInput{Engine: Valkey, MemoryBytes: 256 << 20, PasswordSHA256: testHash,

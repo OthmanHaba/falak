@@ -47,7 +47,8 @@ final class EloquentDatabaseConnections implements DatabaseConnections
                 'REDIS_HOST' => $host,
                 'REDIS_PORT' => $port,
                 'REDIS_PASSWORD' => $password,
-                'REDIS_URL' => 'redis://default:'.rawurlencode($password).'@'.$this->urlHost($host).':'.$port,
+                // Redis is TLS-only exactly when the instance requires TLS (falak-db renders tls-port then).
+                'REDIS_URL' => ($instance->require_tls ? 'rediss' : 'redis').'://default:'.rawurlencode($password).'@'.$this->urlHost($host).':'.$port,
             ];
         }
 

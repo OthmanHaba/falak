@@ -260,9 +260,9 @@ func TestPublishedPortsAreFiltered(t *testing.T) {
 	for _, want := range []string{
 		"iptables -w -N " + chain,
 		"iptables -w -F " + chain,
-		"iptables -w -A " + chain + " -p tcp -m conntrack --ctorigdstport 20001 --ctorigdst 10.0.0.5 -s 10.0.0.7/32 -j RETURN",
-		"iptables -w -A " + chain + " -p tcp -m conntrack --ctorigdstport 20001 --ctorigdst 10.0.0.5 -s 10.90.0.0/24 -j RETURN",
-		"iptables -w -A " + chain + " -p tcp -m conntrack --ctorigdstport 20001 --ctorigdst 10.0.0.5 -j DROP",
+		"iptables -w -A " + chain + " -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 20001 --ctorigdst 10.0.0.5 -s 10.0.0.7/32 -j RETURN",
+		"iptables -w -A " + chain + " -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 20001 --ctorigdst 10.0.0.5 -s 10.90.0.0/24 -j RETURN",
+		"iptables -w -A " + chain + " -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 20001 --ctorigdst 10.0.0.5 -j DROP",
 		"iptables -w -C DOCKER-USER -j " + chain,
 	} {
 		if !strings.Contains(lines, want) {
@@ -277,7 +277,7 @@ func TestPublishedPortsAreFiltered(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines = strings.Join(h2.run.Lines(), "\n")
-	if !strings.Contains(lines, "iptables -w -I DOCKER-USER -j "+chain) || !strings.Contains(lines, "-A "+chain+" -p tcp -m conntrack --ctorigdstport 20001 -j DROP") {
+	if !strings.Contains(lines, "iptables -w -I DOCKER-USER -j "+chain) || !strings.Contains(lines, "-A "+chain+" -p tcp -m conntrack --ctdir ORIGINAL --ctorigdstport 20001 -j DROP") {
 		t.Errorf("public without sources: everything dropped:\n%s", lines)
 	}
 	// Loopback only: no chain; deleting the instance removes it.

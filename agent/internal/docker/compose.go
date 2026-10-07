@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -468,7 +470,30 @@ func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st comm
 	}
 	s.releaseStackNetworks(ctx, p.Project, st)
 	res, err := s.compose(ctx, dir, nil, nil, args, st)
+	if err == nil && res.ExitCode == 0 {
+		// The project is gone from this server (the site was deleted or moved away): its env files on the tmpfs hold
+		// its secrets and must not outlive it until the next reboot.
+		s.forgetComposeEnv(p.Project, st)
+	}
 	return ExitResult{ExitCode: res.ExitCode}, err
+}
+
+// forgetComposeEnv removes a compose project's env files from the env directory (compose-<project>.env,
+// compose-<project>.<name>.env).
+func (s *Service) forgetComposeEnv(project string, st commands.Stream) {
+	dir := s.opts.FS.P(s.opts.EnvDir)
+	for _, pattern := range []string{"compose-" + project + ".env", "compose-" + project + ".*.env"} {
+		matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, m := range matches {
+			if err := os.Remove(m); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				s.log.Warn("removing compose env file", "file", m, "err", err)
+				continue
+			}
+			if st != nil {
+				fmt.Fprintf(st.Stdout(), "removed %s\n", filepath.Base(m))
+			}
+		}
+	}
 }
 
 // releaseStackNetworks detaches Falak's own containers (a split-out service run as its own site) from the project's

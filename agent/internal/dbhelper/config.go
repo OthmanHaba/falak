@@ -385,7 +385,10 @@ func renderKV(in RenderInput) ([]File, Tuning, error) {
 	w.line("")
 	w.line("bind %s", strings.Join(bind, " "))
 	w.line("protected-mode no")
-	if s.tls() {
+	// Redis can't offer TLS and plaintext on one port: TLS only when clients must use it (require_tls, e.g. public
+	// access, where apps get rediss:// URLs), else plaintext on the environment's private network like the SQL
+	// engines' optional TLS.
+	if s.tls() && in.Settings.RequireTLS {
 		w.line("port 0")
 		w.line("tls-port %d", kvPort)
 		w.line("tls-cert-file %s", tlsDir+"/server.crt")

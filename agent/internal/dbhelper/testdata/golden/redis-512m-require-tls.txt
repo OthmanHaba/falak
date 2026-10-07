@@ -4,7 +4,13 @@
 
 bind * -::*
 protected-mode no
-port 6379
+port 0
+tls-port 6379
+tls-cert-file /etc/falak/db/tls/server.crt
+tls-key-file /etc/falak/db/tls/server.key
+tls-ca-cert-file /etc/falak/db/tls/ca.crt
+tls-auth-clients no
+tls-protocols "TLSv1.2 TLSv1.3"
 # falak-db talks to the server over this socket only.
 unixsocket /run/falak-db/server.sock
 unixsocketperm 700

@@ -50,7 +50,9 @@ func (db *DB) applyFirewall(ctx context.Context, s InstanceSpec) error {
 		targets = []string{""}
 	}
 	for _, dst := range targets {
-		match := []string{"-A", chain, "-p", "tcp", "-m", "conntrack", "--ctorigdstport", hp}
+		// --ctdir ORIGINAL: only packets towards the database are filtered. Its replies keep the connection's original
+		// destination in conntrack too, and would otherwise hit the DROP below (their source is the container).
+		match := []string{"-A", chain, "-p", "tcp", "-m", "conntrack", "--ctdir", "ORIGINAL", "--ctorigdstport", hp}
 		if dst != "" {
 			match = append(match, "--ctorigdst", dst)
 		}

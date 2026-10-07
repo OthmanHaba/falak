@@ -176,7 +176,8 @@ mysql | mariadb)
 	;;
 redis | valkey)
 	expect maxmemory "$(kv "$c" INFO memory | tr -d '\r' | sed -n 's/^maxmemory://p')" 429496729
-	expect tls "$(docker exec -e REDISCLI_AUTH="$password" "$c" "$engine-cli" --tls --insecure -h 127.0.0.1 -p 6379 --no-auth-warning PING)" PONG
+	# Plaintext TCP by default (the private network); TLS-only needs require_tls (see the redis-512m-require-tls golden).
+	expect tcp "$(docker exec -e REDISCLI_AUTH="$password" "$c" "$engine-cli" -h 127.0.0.1 -p 6379 --no-auth-warning PING)" PONG
 	if docker exec "$c" "$engine-cli" -s /run/falak-db/server.sock PING 2>/dev/null | grep -q PONG; then
 		fail "PING without a password succeeded"
 	fi
