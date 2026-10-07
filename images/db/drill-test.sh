@@ -19,7 +19,9 @@ name="fdbd-$engine-${version//./}-$$"
 work=$(mktemp -d)
 cleanup() {
 	local rc=$?
-	[ "$rc" -ne 0 ] && docker logs --tail 40 "$name" >&2 2>&1 || true
+	if [ "$rc" -ne 0 ]; then
+		docker logs --tail 40 "$name" >&2 2>&1 || true
+	fi
 	docker rm -f "$name" >/dev/null 2>&1 || true
 	docker volume rm -f "$name-data" >/dev/null 2>&1 || true
 	rm -rf "$work"
