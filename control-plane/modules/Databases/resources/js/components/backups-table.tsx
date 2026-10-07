@@ -1,3 +1,4 @@
+import { BackupBadges, useKeyExport } from '@/components/backup-protection';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -7,9 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
-import { Download, RotateCcw, Trash2 } from 'lucide-react';
+import { Download, KeyRound, RotateCcw, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { isKeyValue, retargetRestore, type BackupRow, type RestoreTarget } from '../types';
+import { AGE_IDENTITY, isKeyValue, needsIdentity, retargetRestore, type BackupRow, type RestoreTarget } from '../types';
 import { StatusBadge, formatBytes, formatDuration } from './database-ui';
 
 interface Props {
@@ -27,18 +28,32 @@ interface Props {
 export function BackupsTable({ backups, showServer = false, canManage, canRestore, restoreTargets = [] }: Props) {
     const [restoring, setRestoring] = useState<BackupRow | null>(null);
     const [deleting, setDeleting] = useState<BackupRow | null>(null);
-    const form = useForm({ database_instance_id: '', database: '', confirm: '' });
+    const form = useForm({ database_instance_id: '', database: '', confirm: '', identity: '' });
+    const [keyError, setKeyError] = useState<string | null>(null);
+    const keys = useKeyExport(setKeyError);
+    const customer = restoring !== null && needsIdentity(restoring);
 
     const openRestore = (backup: BackupRow) => {
         form.clearErrors();
-        form.setData({ database_instance_id: backup.instance_id ?? restoreTargets[0]?.id ?? '', database: backup.database_name, confirm: '' });
+        form.setData({
+            database_instance_id: backup.instance_id ?? restoreTargets[0]?.id ?? '',
+            database: backup.database_name,
+            confirm: '',
+            identity: '',
+        });
         setRestoring(backup);
     };
 
     const submitRestore: FormEventHandler = (event) => {
         event.preventDefault();
         if (!restoring) return;
-        form.post(`/databases/backups/${restoring.id}/restore`, { preserveScroll: true, onSuccess: () => setRestoring(null) });
+        // The age identity is used for this restore only: dropped from the form either way.
+        form.transform((data) => (customer ? { ...data, identity: data.identity.trim() } : { ...data, identity: null }));
+        form.post(`/databases/backups/${restoring.id}/restore`, {
+            preserveScroll: true,
+            onSuccess: () => setRestoring(null),
+            onFinish: () => form.setData('identity', ''),
+        });
     };
 
     if (backups.length === 0) {
@@ -72,6 +87,9 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                                 <div className="text-muted-foreground text-xs">
                                     {backup.trigger} → {backup.storage_provider ?? 'deleted provider'}
                                 </div>
+                                <div className="mt-1">
+                                    <BackupBadges backup={backup} />
+                                </div>
                             </TableCell>
                             <TableCell className="text-sm whitespace-nowrap">{format(new Date(backup.created_at), 'yyyy-MM-dd HH:mm')}</TableCell>
                             <TableCell className="tabular-nums">{formatBytes(backup.size_bytes)}</TableCell>
@@ -96,6 +114,17 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                                     {canRestore && backup.restorable && (canPickTarget || backup.instance_id) && (
                                         <Button variant="ghost" size="icon" aria-label="Restore" title="Restore" onClick={() => openRestore(backup)}>
                                             <RotateCcw />
+                                        </Button>
+                                    )}
+                                    {canRestore && backup.restorable && backup.encryption_mode === 'cp' && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            aria-label="Export backup key"
+                                            title="Export backup key (for falak-restore)"
+                                            onClick={() => void keys.exportKey(`/databases/backups/${backup.id}/key`)}
+                                        >
+                                            <KeyRound />
                                         </Button>
                                     )}
                                     {canManage && !['pending', 'running'].includes(backup.status) && (
@@ -176,6 +205,24 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                             )}
                             <InputError message={form.errors.database} />
                         </div>
+                        {customer && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="restore-identity">Your age private key</Label>
+                                <Input
+                                    id="restore-identity"
+                                    type="password"
+                                    className="font-mono"
+                                    autoComplete="off"
+                                    placeholder="AGE-SECRET-KEY-1…"
+                                    value={form.data.identity}
+                                    onChange={(e) => form.setData('identity', e.target.value)}
+                                />
+                                <p className="text-muted-foreground text-xs">
+                                    This backup is encrypted to your age key. It is sent to the server for this restore only and never stored.
+                                </p>
+                                <InputError message={(form.errors as Record<string, string | undefined>).identity} />
+                            </div>
+                        )}
                         <div className="grid gap-2">
                             <Label htmlFor="restore-confirm">
                                 Type <span className="font-mono">{form.data.database}</span> to confirm
@@ -189,7 +236,12 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                             </Button>
                             <Button
                                 variant="destructive"
-                                disabled={form.processing || form.data.confirm !== form.data.database || !form.data.database}
+                                disabled={
+                                    form.processing ||
+                                    form.data.confirm !== form.data.database ||
+                                    !form.data.database ||
+                                    (customer && !AGE_IDENTITY.test(form.data.identity.trim()))
+                                }
                             >
                                 Restore
                             </Button>
@@ -220,6 +272,8 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            {keyError && <p className="px-6 pb-3 text-xs text-red-600">{keyError}</p>}
+            {keys.dialog}
         </>
     );
 }

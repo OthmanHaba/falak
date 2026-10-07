@@ -1,3 +1,4 @@
+import { DrillHistory, ProtectionFields, protectionFrom, protectionPayload, type ProtectionValue } from '@/components/backup-protection';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,9 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { router, useForm } from '@inertiajs/react';
 import { formatDistanceToNow } from 'date-fns';
-import { Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { FlaskConical, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { type DatabaseInstance, type DatabaseRow, type ScheduleRow, type StorageOption } from '../types';
+import { isKeyValue, type DatabaseInstance, type DatabaseRow, type ScheduleRow, type StorageOption } from '../types';
 
 interface Props {
     instance: DatabaseInstance;
@@ -18,6 +19,8 @@ interface Props {
     databases: DatabaseRow[];
     storageProviders: StorageOption[];
     canManage: boolean;
+    /** The organization's other servers drills may run on. */
+    drillServers?: { id: string; name: string }[];
 }
 
 const PRESETS = [
@@ -34,12 +37,13 @@ interface ScheduleForm {
     cron: string;
     retention_count: string;
     retention_days: string;
-    compression: string;
     enabled: boolean;
 }
 
-export function SchedulesCard({ instance, schedules, databases, storageProviders, canManage }: Props) {
+export function SchedulesCard({ instance, schedules, databases, storageProviders, canManage, drillServers = [] }: Props) {
     const [editing, setEditing] = useState<ScheduleRow | 'new' | null>(null);
+    const [protection, setProtection] = useState<ProtectionValue>(protectionFrom());
+    const withQuery = !isKeyValue(instance.engine);
     const [deleting, setDeleting] = useState<ScheduleRow | null>(null);
     const form = useForm<ScheduleForm>({
         name: 'Nightly',
@@ -48,7 +52,6 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
         cron: '0 3 * * *',
         retention_count: '14',
         retention_days: '',
-        compression: 'gzip',
         enabled: true,
     });
 
@@ -63,9 +66,9 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
                 cron: '0 3 * * *',
                 retention_count: '14',
                 retention_days: '',
-                compression: 'gzip',
                 enabled: true,
             });
+            setProtection(protectionFrom());
         } else {
             form.setData({
                 name: schedule.name,
@@ -74,9 +77,9 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
                 cron: schedule.cron,
                 retention_count: schedule.retention_count?.toString() ?? '',
                 retention_days: schedule.retention_days?.toString() ?? '',
-                compression: schedule.compression,
                 enabled: schedule.enabled,
             });
+            setProtection(protectionFrom(schedule));
         }
 
         setEditing(schedule);
@@ -88,6 +91,7 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
             ...data,
             retention_count: data.retention_count === '' ? null : Number(data.retention_count),
             retention_days: data.retention_days === '' ? null : Number(data.retention_days),
+            ...protectionPayload(protection, withQuery),
         }));
         const options = { preserveScroll: true, onSuccess: () => setEditing(null) };
 
@@ -133,8 +137,15 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
                                     <div className="text-muted-foreground text-xs">
                                         <span className="font-mono">{schedule.cron}</span> UTC → {schedule.storage_provider} ·{' '}
                                         {schedule.databases.join(', ')} · keep {schedule.retention_count ?? '∞'} /{' '}
-                                        {schedule.retention_days ? `${schedule.retention_days}d` : '∞'} · {schedule.compression}
+                                        {schedule.retention_days ? `${schedule.retention_days}d` : '∞'} ·{' '}
+                                        {schedule.encryption_mode === 'customer' ? 'your age key' : 'keys held by Falak'} ·{' '}
+                                        {schedule.drill === 'off' ? 'no drills' : `${schedule.drill} drills`}
                                     </div>
+                                    {schedule.drills.length > 0 && (
+                                        <div className="mt-1">
+                                            <DrillHistory drills={schedule.drills.slice(0, 3)} />
+                                        </div>
+                                    )}
                                     <div className="text-muted-foreground text-xs">
                                         {schedule.next_run_at && <>Next {formatDistanceToNow(new Date(schedule.next_run_at), { addSuffix: true })}</>}
                                         {schedule.last_run_at && (
@@ -152,6 +163,15 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
                                             onClick={() => router.post(`/databases/schedules/${schedule.id}/run`, {}, { preserveScroll: true })}
                                         >
                                             <Play />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            aria-label={`Restore drill of ${schedule.name} now`}
+                                            title="Drill now"
+                                            onClick={() => router.post(`/databases/schedules/${schedule.id}/drill`, {}, { preserveScroll: true })}
+                                        >
+                                            <FlaskConical />
                                         </Button>
                                         <Button variant="ghost" size="icon" aria-label={`Edit ${schedule.name}`} onClick={() => open(schedule)}>
                                             <Pencil />
@@ -267,19 +287,14 @@ export function SchedulesCard({ instance, schedules, databases, storageProviders
                                 />
                                 <InputError message={form.errors.retention_days} />
                             </div>
-                            <div className="grid gap-2">
-                                <Label>Compression</Label>
-                                <Select value={form.data.compression} onValueChange={(value) => form.setData('compression', value)}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="gzip">gzip</SelectItem>
-                                        <SelectItem value="none">none</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
+                        <ProtectionFields
+                            value={protection}
+                            onChange={setProtection}
+                            errors={form.errors as Record<string, string | undefined>}
+                            servers={drillServers}
+                            withQuery={withQuery}
+                        />
                         <label className="flex items-center gap-2 text-sm">
                             <Checkbox checked={form.data.enabled} onCheckedChange={(value) => form.setData('enabled', value === true)} />
                             Enabled

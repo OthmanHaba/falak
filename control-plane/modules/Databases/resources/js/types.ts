@@ -1,3 +1,15 @@
+import { type DrillFrequency, type DrillRow, type DrillStatus, type EncryptionMode } from '@/components/backup-protection';
+
+export {
+    AGE_IDENTITY,
+    AGE_RECIPIENT,
+    needsIdentity,
+    type DrillCheck,
+    type DrillFrequency,
+    type DrillRow,
+    type DrillStatus,
+    type EncryptionMode,
+} from '@/components/backup-protection';
 export type EngineName = 'mysql' | 'mariadb' | 'postgresql' | 'redis' | 'valkey';
 /** sql: databases, users and grants; key_value: Redis / Valkey (one keyspace, one `default` user). */
 export type EngineKind = 'sql' | 'key_value';
@@ -137,10 +149,18 @@ export interface ScheduleRow {
     databases: string[];
     retention_count: number | null;
     retention_days: number | null;
-    compression: 'gzip' | 'none';
     enabled: boolean;
     last_run_at: string | null;
     next_run_at: string | null;
+    /** cp: Falak holds each backup's key (sealed); customer: encrypted to age_recipient, Falak never has it. */
+    encryption_mode: EncryptionMode;
+    age_recipient: string | null;
+    drill: DrillFrequency;
+    drill_query: string | null;
+    drill_server_id: string | null;
+    last_drill_at: string | null;
+    next_drill_at: string | null;
+    drills: DrillRow[];
 }
 
 export interface BackupRow {
@@ -154,7 +174,14 @@ export interface BackupRow {
     engine_version: string | null;
     storage_provider: string | null;
     object_key: string;
-    compression: 'gzip' | 'none';
+    compression: 'zstd';
+    /** Null: taken before encryption (not restorable). */
+    encryption_mode: EncryptionMode | null;
+    cipher: string | null;
+    plaintext_sha256: string | null;
+    drill_status: DrillStatus | null;
+    /** When a restore drill last restored it successfully. */
+    verified_at: string | null;
     trigger: 'manual' | 'scheduled';
     schedule_id: string | null;
     status: BackupStatus;
@@ -240,7 +267,8 @@ export interface InstanceOptions {
     privileges: string[];
     /** The current major and newer ones (upgrades only go forward). */
     versions: string[];
-    compressions: string[];
+    /** The organization's other servers drills may run on. */
+    drill_servers: { id: string; name: string }[];
     default_charset?: string | null;
     default_collation?: string | null;
     evictions: string[];

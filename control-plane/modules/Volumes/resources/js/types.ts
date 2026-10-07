@@ -1,3 +1,5 @@
+import { type DrillFrequency, type DrillRow, type DrillStatus, type EncryptionMode } from '@/components/backup-protection';
+
 /** Volumes read models (Falak\Volumes\Http\Controllers\PresentsVolumes). */
 
 export type VolumeKind = 'docker' | 'sized' | 'bind' | 'shared_path';
@@ -58,6 +60,13 @@ export interface VolumeBackup {
     uncompressed_bytes: number | null;
     volume_size_bytes: number | null;
     sha256: string | null;
+    plaintext_sha256: string | null;
+    files: number | null;
+    /** Null: taken before encryption (not restorable). */
+    encryption_mode: EncryptionMode | null;
+    cipher: string | null;
+    drill_status: DrillStatus | null;
+    verified_at: string | null;
     duration_ms: number | null;
     error: string | null;
     restorable: boolean;
@@ -75,6 +84,12 @@ export interface BackupSchedule {
     enabled: boolean;
     last_run_at: string | null;
     next_run_at: string | null;
+    encryption_mode: EncryptionMode;
+    age_recipient: string | null;
+    drill: DrillFrequency;
+    drill_server_id: string | null;
+    next_drill_at: string | null;
+    drills: DrillRow[];
 }
 
 export interface VolumeOperation {

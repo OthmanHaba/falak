@@ -31,7 +31,7 @@ export function DatabasesCard({ instance, databases, storageProviders, canManage
 
     const create = useForm({ name: '', charset: '', collation: '', with_user: true, user: { username: '', password: '' } });
     const destroy = useForm({ confirm: '' });
-    const backup = useForm({ storage_provider_id: storageProviders[0]?.id ?? '', compression: 'gzip' });
+    const backup = useForm({ storage_provider_id: storageProviders[0]?.id ?? '' });
 
     const submitCreate: FormEventHandler = (event) => {
         event.preventDefault();
@@ -266,18 +266,7 @@ export function DatabasesCard({ instance, databases, storageProviders, canManage
                             </Select>
                             <InputError message={backup.errors.storage_provider_id} />
                         </div>
-                        <div className="grid gap-2">
-                            <Label>Compression</Label>
-                            <Select value={backup.data.compression} onValueChange={(value) => backup.setData('compression', value)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="gzip">gzip</SelectItem>
-                                    <SelectItem value="none">none</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        <p className="text-muted-foreground text-xs">Compressed (zstd) and encrypted with a key of its own, held by Falak.</p>
                         <InputError message={(backup.errors as Record<string, string | undefined>).database} />
                         <DialogFooter>
                             <Button type="button" variant="ghost" onClick={() => setBackingUp(null)}>
