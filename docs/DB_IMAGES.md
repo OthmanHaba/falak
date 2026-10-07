@@ -187,7 +187,7 @@ their JSON result as the last stderr line, prefixed with `falak-db-result: `. Er
 | `password set --file FILE [--keep-current]` | running | the superuser's (postgres), root's (every `root@host`, mysql/mariadb) or the default user's (redis/valkey: `ACL SETUSER default resetpass #<sha256>`, and the ACL file rewritten) new password, read from FILE. falak-db connects with the current password file (mysql/mariadb: with the new one when the engine already has it, so a retry finishes); the agent replaces that file afterwards. redis/valkey `--keep-current`: the new password is added, the current one stays valid. `{"changed": true}` |
 | `readonly on\|off` | running, SQL engines | postgres: `default_transaction_read_only` on every database, and the open client sessions are ended; mysql: `super_read_only`; mariadb: `read_only`. `{"read_only"}` |
 | `table-counts --database DB` | running | the exact row count of every table: `{"database","tables":{"schema.table":n}}` (a copy is checked against its source; restore drills compare with the counts taken at backup time). Redis / Valkey: the keys of every logical database, `{"tables":{"db0":n}}` (no `--database`) |
-| `query --database DB` | running, SQL engines | a restore drill's check query, on stdin: one `SELECT` (or `WITH … SELECT`), no `;`, comments or `\`, line breaks become spaces; run as `SELECT count(*) FROM (<query>)` in a read-only transaction with a 60 s statement limit (MySQL / MariaDB with the sandboxed client flags of `restore logical`). `{"database","rows"}` |
+| `query --database DB` | running, SQL engines | a restore drill's check query, on stdin: one `SELECT` (or `WITH … SELECT`), no `;`, comments or `\`, line breaks become spaces; run as `SELECT count(*) FROM (<query>)` in a read-only transaction as a temporary role dropped afterwards: postgres a login role with `pg_read_all_data`, `statement_timeout = 60s` and read-only transactions set on it; mysql/mariadb a user with `SELECT` on the database, a 60 s statement limit and the sandboxed client flags of `restore logical`. `{"database","rows"}` |
 | `reassign --database DB --owner ROLE` | running, postgres | the database, its schemas and every object in them (tables, views, sequences, functions, types; not extensions') owned by ROLE |
 | `version` | any | `{"version","engine"}` |
 
@@ -244,6 +244,8 @@ binlog file and position it is consistent with (`xtrabackup_binlog_info` / `mari
 images/db/build.sh postgres 17                # -> falak-postgres:17-local (add --platform linux/amd64 to cross-build)
 images/db/test.sh postgres 17                 # build, then the smoke tests against real containers
 IMAGE=falak-postgres:17-local images/db/test.sh postgres 17   # test an existing image
+IMAGE=falak-postgres:17-local images/db/drill-test.sh postgres 17   # a restore drill's hardening: cap-drop ALL + the
+                                              # entrypoint's capabilities, no-new-privileges, pids, no network
 SKIP_PITR=1 images/db/test.sh mysql 8.4       # skip physical backup + PITR
 cd agent && go test ./internal/dbhelper       # unit tests (config golden files: go test ./internal/dbhelper -update)
 ```
