@@ -109,17 +109,24 @@ func CommentConflicts(content string) (string, bool) {
 
 func (s *Security) fixSSH(ctx context.Context, b *backup, _ FixPayload, st commands.Stream) (bool, string, error) {
 	eff, _ := s.sshEffective(ctx)
-	var set [][2]string
+	// Every hardened setting goes into the drop-in (so a later edit elsewhere can't undo it); a stricter root login
+	// mode already in effect is kept.
+	var set, wrong [][2]string
 	for _, w := range sshWant {
 		v, ok := eff[w.lower]
 		if !ok {
 			v = sshDefaults[w.lower]
 		}
+		want := w.value
+		if w.lower == "permitrootlogin" && (v == "no" || v == "forced-commands-only") {
+			want = v
+		}
+		set = append(set, [2]string{w.keyword, want})
 		if !sshOK(w.lower, v) {
-			set = append(set, [2]string{w.keyword, w.value})
+			wrong = append(wrong, [2]string{w.keyword, want})
 		}
 	}
-	if len(set) == 0 {
+	if len(wrong) == 0 {
 		return false, "SSH is already hardened", nil
 	}
 	// Turning password logins off must not lock everyone out.
@@ -136,7 +143,7 @@ func (s *Security) fixSSH(ctx context.Context, b *backup, _ FixPayload, st comma
 	if err := s.writeKeepMode(SSHDDropIn, []byte(SetDirectives(cur, set)), 0o644); err != nil {
 		return false, "", err
 	}
-	fmt.Fprintf(st.Stdout(), "%s: %d setting(s)\n", SSHDDropIn, len(set))
+	fmt.Fprintf(st.Stdout(), "%s: %s\n", SSHDDropIn, strings.Join(keywords(set), ", "))
 	for _, f := range append(s.sshDropIns(), SSHDConfig) {
 		if f == SSHDDropIn {
 			continue
@@ -172,7 +179,7 @@ func (s *Security) fixSSH(ctx context.Context, b *backup, _ FixPayload, st comma
 	if err := s.reloadSSH(ctx, st); err != nil {
 		return false, "", err
 	}
-	return true, "SSH hardened: " + strings.Join(keywords(set), ", "), nil
+	return true, "SSH hardened: " + strings.Join(keywords(wrong), ", "), nil
 }
 
 func keywords(set [][2]string) []string {
