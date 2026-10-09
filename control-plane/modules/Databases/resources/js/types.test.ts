@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { AGE_IDENTITY, AGE_RECIPIENT, instanceState, needsIdentity, retargetRestore, type RestoreTarget } from './types';
+import {
+    AGE_IDENTITY,
+    AGE_RECIPIENT,
+    ageOf,
+    inRecoveryRange,
+    instanceState,
+    isoToUtcInput,
+    needsIdentity,
+    retargetRestore,
+    timelineBar,
+    utcInputToIso,
+    type PitrTimeline,
+    type RestoreTarget,
+} from './types';
 
 const targets: RestoreTarget[] = [
     { id: 'pg-a', label: 'shop (PostgreSQL 17 on app-1)', engine: 'postgresql', databases: ['shop', 'analytics'] },
@@ -44,5 +57,50 @@ describe('backup keys', () => {
     it('asks for the identity only for customer-held backups', () => {
         expect(needsIdentity({ encryption_mode: 'customer' })).toBe(true);
         expect(needsIdentity({ encryption_mode: 'cp' })).toBe(false);
+    });
+});
+
+const timeline: PitrTimeline = {
+    ranges: [
+        { from: '2026-10-09T08:00:30.000Z', to: '2026-10-09T09:00:00.000Z', base_id: 'b1' },
+        { from: '2026-10-09T10:30:20.000Z', to: '2026-10-09T11:00:00.000Z', base_id: 'b2' },
+    ],
+    gaps: [{ at: '2026-10-09T09:30:00.000Z', detail: 'segments lost', resolved: true }],
+    from: '2026-10-09T08:00:30.000Z',
+    to: '2026-10-09T11:00:00.000Z',
+    last_segment_at: '2026-10-09T11:00:00.000Z',
+};
+
+describe('point-in-time recovery', () => {
+    it('knows which times are recoverable (not across a gap)', () => {
+        expect(inRecoveryRange(timeline, '2026-10-09T08:30:00Z')).toBe(true);
+        expect(inRecoveryRange(timeline, '2026-10-09T09:45:00Z')).toBe(false);
+        expect(inRecoveryRange(timeline, '2026-10-09T11:00:00Z')).toBe(true);
+        expect(inRecoveryRange(null, '2026-10-09T08:30:00Z')).toBe(false);
+    });
+
+    it('places ranges and gaps on the bar, clipped to the window', () => {
+        const start = Date.parse('2026-10-09T08:00:00Z');
+        const end = Date.parse('2026-10-09T12:00:00Z');
+        const bar = timelineBar(timeline, start, end);
+        expect(bar.ranges).toHaveLength(2);
+        expect(bar.ranges[0].left).toBeCloseTo(0.208, 2);
+        expect(bar.gaps[0].left).toBeCloseTo(37.5, 5);
+        expect(timelineBar(timeline, Date.parse('2026-10-09T10:00:00Z'), end).ranges).toHaveLength(1);
+    });
+
+    it('reads the picker as UTC, to the second for MySQL / MariaDB', () => {
+        expect(utcInputToIso('2026-10-09T08:30')).toBe('2026-10-09T08:30:00Z');
+        expect(utcInputToIso('2026-10-09T08:30:05.250')).toBe('2026-10-09T08:30:05.250Z');
+        expect(utcInputToIso('2026-10-09T08:30:05.250', true)).toBe('2026-10-09T08:30:05Z');
+        expect(utcInputToIso('yesterday')).toBeNull();
+        expect(isoToUtcInput('2026-10-09T08:30:05.250Z')).toBe('2026-10-09T08:30:05');
+    });
+
+    it('says how long ago the last segment shipped', () => {
+        const now = Date.parse('2026-10-09T12:00:00Z');
+        expect(ageOf('2026-10-09T11:59:48Z', now)).toBe('12 s');
+        expect(ageOf('2026-10-09T11:50:00Z', now)).toBe('10 min');
+        expect(ageOf(null, now)).toBe('—');
     });
 });

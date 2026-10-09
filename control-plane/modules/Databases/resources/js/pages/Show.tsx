@@ -10,6 +10,7 @@ import { ConnectionCard } from '../components/connection-card';
 import { StatusBadge, formatBytes, formatDuration } from '../components/database-ui';
 import { DatabasesCard } from '../components/databases-card';
 import { InstanceCard } from '../components/instance-card';
+import { PitrCard } from '../components/pitr-card';
 import { SchedulesCard } from '../components/schedules-card';
 import { UsersCard } from '../components/users-card';
 import {
@@ -20,6 +21,7 @@ import {
     type DatabaseRow,
     type DatabaseUserRow,
     type InstanceOptions,
+    type PitrState,
     type RestoreRow,
     type RestoreTarget,
     type ScheduleRow,
@@ -34,6 +36,7 @@ interface Props {
     schedules: ScheduleRow[];
     backups: BackupRow[];
     restores: RestoreRow[];
+    pitr: PitrState;
     storageProviders: StorageOption[];
     restoreTargets: RestoreTarget[];
     options: InstanceOptions;
@@ -50,6 +53,7 @@ export default function Show({
     schedules,
     backups,
     restores,
+    pitr,
     storageProviders,
     restoreTargets,
     options,
@@ -69,13 +73,15 @@ export default function Show({
         databases.some((d) => CONVERGING.includes(d.status)) ||
         users.some((u) => CONVERGING.includes(u.status)) ||
         backups.some((b) => CONVERGING.includes(b.status)) ||
-        restores.some((r) => CONVERGING.includes(r.status));
+        restores.some((r) => CONVERGING.includes(r.status)) ||
+        pitr.restores.some((r) => CONVERGING.includes(r.status)) ||
+        pitr.bases.some((b) => CONVERGING.includes(b.status));
 
     // Agent results arrive asynchronously: refresh while anything is converging.
     useEffect(() => {
         if (!converging) return;
         const timer = window.setInterval(
-            () => router.reload({ only: ['instance', 'connection', 'databases', 'users', 'backups', 'restores'] }),
+            () => router.reload({ only: ['instance', 'connection', 'databases', 'users', 'backups', 'restores', 'pitr'] }),
             3000,
         );
 
@@ -141,6 +147,10 @@ export default function Show({
                     canManage={can.manage}
                     drillServers={options.drill_servers}
                 />
+
+                {!keyValue && (
+                    <PitrCard instance={instance} pitr={pitr} storageProviders={storageProviders} canManage={can.manage} canRestore={can.restore} />
+                )}
 
                 <Card className="gap-0 py-0">
                     <CardHeader className="border-b py-4">

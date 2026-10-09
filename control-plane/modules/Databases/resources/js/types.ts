@@ -29,11 +29,12 @@ export interface RestoreTarget {
 }
 
 export type ResourceStatus = 'pending' | 'active' | 'failed' | 'deleting';
-export type InstanceStatus = 'pending' | 'active' | 'failed' | 'upgrading' | 'retired' | 'deleting';
+/** inspecting: a point-in-time restore's read-only copy, waiting for a decision. */
+export type InstanceStatus = 'pending' | 'active' | 'failed' | 'upgrading' | 'retired' | 'deleting' | 'inspecting';
 /** Heartbeat health of the container (null before the first report). */
 export type InstanceHealth = 'healthy' | 'unhealthy' | 'starting' | 'none' | 'stopped' | 'missing';
 export type BackupStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'pruned';
-export type RestoreStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+export type RestoreStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'awaiting_decision' | 'discarded';
 
 /** falak-db settings of a container (docs/DB_IMAGES.md "Settings"). */
 export interface InstanceSettings {
@@ -77,6 +78,8 @@ export interface DatabaseInstance {
     cpus: number | null;
     settings: InstanceSettings;
     pitr_enabled: boolean;
+    /** A point-in-time restore's copy: the instance it was restored from (until a decision). */
+    restored_from: string | null;
     volume_id: string | null;
     tls_expires_at: string | null;
     status: InstanceStatus;
@@ -182,7 +185,12 @@ export interface BackupRow {
     drill_status: DrillStatus | null;
     /** When a restore drill last restored it successfully. */
     verified_at: string | null;
-    trigger: 'manual' | 'scheduled';
+    trigger: 'manual' | 'scheduled' | 'pitr';
+    /** base: a physical backup of the whole instance for point-in-time recovery. */
+    type: 'logical' | 'base';
+    log_start: string | null;
+    base_started_at: string | null;
+    base_finished_at: string | null;
     schedule_id: string | null;
     status: BackupStatus;
     size_bytes: number | null;
@@ -201,9 +209,11 @@ export interface BackupRow {
 
 export interface RestoreRow {
     id: string;
+    type: 'backup' | 'pitr';
     backup_id: string;
+    target_time: string | null;
     source_database: string;
-    database_name: string;
+    database_name: string | null;
     status: RestoreStatus;
     bytes: number | null;
     duration_ms: number | null;
@@ -292,6 +302,147 @@ export function retargetRestore<T extends { database_instance_id: string; databa
     return databases.includes(data.database)
         ? { ...data, database_instance_id: instanceId }
         : { ...data, database_instance_id: instanceId, database: '', confirm: '' };
+}
+
+/** The heartbeat's view of an instance's PITR spool. */
+export interface PitrReport {
+    spool_bytes: number;
+    volume_bytes: number;
+    pending: number;
+    oldest_pending_at: string | null;
+    last_shipped_at: string | null;
+    error: string | null;
+    at: string;
+}
+
+export interface PitrTimeline {
+    /** Recoverable ranges (UTC, ms precision), oldest first. */
+    ranges: { from: string; to: string; base_id: string }[];
+    gaps: { at: string; detail: string; resolved: boolean }[];
+    from: string | null;
+    to: string | null;
+    last_segment_at: string | null;
+}
+
+export type PitrDecision = 'swap' | 'keep' | 'discard';
+
+export interface PitrRestoreRow {
+    id: string;
+    status: RestoreStatus;
+    target_time: string | null;
+    decision: PitrDecision | null;
+    error: string | null;
+    warnings: string[];
+    segments: number | null;
+    /** Rows per table of each database, as restored. */
+    table_counts: Record<string, Record<string, number>>;
+    duration_ms: number | null;
+    created_at: string;
+    finished_at: string | null;
+    /** The read-only copy (127.0.0.1 on its server only, on no network). */
+    copy: {
+        id: string;
+        name: string;
+        status: InstanceStatus;
+        status_message: string | null;
+        server_name: string;
+        host: string;
+        port: number | null;
+        username: string;
+    } | null;
+}
+
+export interface PitrState {
+    supported: boolean;
+    enabled: boolean;
+    storage_provider_id: string | null;
+    encryption_mode: EncryptionMode;
+    age_recipient: string | null;
+    window_days: number;
+    base_interval_days: number;
+    next_base_at: string | null;
+    last_shipped_at: string | null;
+    report: PitrReport | null;
+    /** MySQL / MariaDB: a restore lands on the second (binlog timestamps have whole seconds). */
+    second_precision: boolean;
+    timeline: PitrTimeline | null;
+    bases: BackupRow[];
+    restores: PitrRestoreRow[];
+}
+
+/** Whether a time (ISO 8601) falls in one of the timeline's recoverable ranges. */
+export function inRecoveryRange(timeline: PitrTimeline | null, iso: string): boolean {
+    const t = Date.parse(iso);
+
+    if (!timeline || Number.isNaN(t)) {
+        return false;
+    }
+
+    return timeline.ranges.some((range) => Date.parse(range.from) <= t && t <= Date.parse(range.to));
+}
+
+/**
+ * Positions (percent of the bar) of the timeline's ranges and gaps between `start` and `end` (ms since the epoch):
+ * what lies outside is clipped, what is entirely outside is left out.
+ */
+export function timelineBar(
+    timeline: PitrTimeline,
+    start: number,
+    end: number,
+): { ranges: { left: number; width: number; from: string; to: string }[]; gaps: { left: number; at: string; detail: string }[] } {
+    const span = Math.max(1, end - start);
+    const pct = (t: number) => ((Math.min(end, Math.max(start, t)) - start) / span) * 100;
+
+    return {
+        ranges: timeline.ranges
+            .filter((range) => Date.parse(range.to) >= start && Date.parse(range.from) <= end)
+            .map((range) => ({
+                left: pct(Date.parse(range.from)),
+                width: pct(Date.parse(range.to)) - pct(Date.parse(range.from)),
+                from: range.from,
+                to: range.to,
+            })),
+        gaps: timeline.gaps
+            .filter((gap) => Date.parse(gap.at) >= start && Date.parse(gap.at) <= end)
+            .map((gap) => ({ left: pct(Date.parse(gap.at)), at: gap.at, detail: gap.detail })),
+    };
+}
+
+/**
+ * A `datetime-local` value (read as UTC: the restore picker works in UTC) as ISO 8601 with a Z, or null. Seconds are
+ * optional; MySQL / MariaDB restores (secondPrecision) drop fractions.
+ */
+export function utcInputToIso(value: string, secondPrecision = false): string | null {
+    const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2})(\.\d{1,3})?)?$/.exec(value.trim());
+
+    if (!match) {
+        return null;
+    }
+
+    const fraction = secondPrecision ? '' : (match[4] ?? '');
+    const iso = `${match[1]}T${match[2]}:${match[3] ?? '00'}${fraction}Z`;
+
+    return Number.isNaN(Date.parse(iso)) ? null : iso;
+}
+
+/** An ISO time as the UTC `datetime-local` value of the restore picker (seconds precision). */
+export function isoToUtcInput(iso: string): string {
+    return new Date(iso).toISOString().slice(0, 19);
+}
+
+/** "12 s", "4 min", "3 h", "2 d" since `iso` (or "—"). */
+export function ageOf(iso: string | null, now: number = Date.now()): string {
+    if (!iso) {
+        return '—';
+    }
+
+    const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
+
+    if (seconds < 120) return `${seconds} s`;
+    if (seconds < 7200) return `${Math.round(seconds / 60)} min`;
+    if (seconds < 172800) return `${Math.round(seconds / 3600)} h`;
+
+    return `${Math.round(seconds / 86400)} d`;
 }
 
 /** "PostgreSQL 17 · 512 MB" */
