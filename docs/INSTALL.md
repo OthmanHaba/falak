@@ -445,6 +445,16 @@ Falak v0.10 runs every database in a container and no longer manages the host da
    backup history and their canvas services go (references to them fail until they point at new services).
 3. Create database containers (canvas → Create → Database) and restore your dumps into them, then remove the flag.
 
+### Upgrading to v0.10.0: resource limits
+
+Services can have memory, CPU, process, restart, log and OOM limits (a site's or compose service's Settings →
+Resources, a worker's or daemon's form). The upgrade sets none: **every existing site, compose service, worker and
+daemon keeps running without limits**, in production and elsewhere, until you set them. Only services created after
+the upgrade outside a production environment start with that environment's defaults (512 MB, 1 CPU, 512 processes,
+20 MB × 3 log files; `FALAK_LIMITS_NONPROD_*` in `/opt/falak/custom.env`), written on the service when it is created —
+changing the defaults later, or moving a service, never changes the limits of services that exist. A PHP-FPM site
+that gets memory, CPU or process limits moves into its own PHP-FPM master (a short restart of its pool).
+
 ### Upgrading the server agents
 
 An update does not touch your servers: each keeps running its `falak-agent` until you upgrade it. The new

@@ -264,12 +264,14 @@ only), `log_max_size` (MB per file), `log_max_files`, `oom` (`protect` = killed 
 clears them. Memory and CPUs are bounded by the smallest server of the site (`422` otherwise). Docker sites and
 compose services get them as container limits, classic sites as a systemd slice (PHP-FPM in its own master, Octane,
 the web process). `applied` says how they took effect: `live` (docker update / set-property), `redeploy` (log caps,
-the OOM preference and removed limits need a new container) or `none`. Outside production, unset values take the
-environment's defaults (`effective`; `config/limits.php`). Compose projects are limited per service; static and
+the OOM preference, removed limits and compose services need a new container) or `none`. What is stored is what runs
+(`effective` = `limits`): a site or worker created outside production starts with the environment's defaults
+(`defaults`; `config/limits.php`) written on it, never merged later. A compose project's `*` entry is what its
+services without their own get. Compose projects are limited per service; static and
 function sites have no limits here; FrankenPHP sites only take `restart_policy`, `max_restarts`, log caps and `oom`.
 Workers and daemons take the same `limits` object in their forms.
 ```json
-{"data": {"limits": {"memory_limit": 512, "cpus": 1}, "effective": {"memory_limit": 512, "cpus": 1, "pids_limit": 512}, "applied": "live"}}
+{"data": {"limits": {"memory_limit": 512, "cpus": 1}, "effective": {"memory_limit": 512, "cpus": 1}, "applied": "live"}}
 ```
 
 ### `GET /api/v1/sites/{site}/logs` — `telemetry.view`

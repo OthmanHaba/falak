@@ -348,6 +348,10 @@ Implementation notes (built on `feat/v010-limits`):
   run inside the shared edge and only take restart / log / OOM settings.
 - Compose limits go into the generated `compose.falak.yaml` (both `mem_limit`/`cpus`/`pids_limit` and their
   `deploy.resources` twins, which Compose requires to agree), written by the control plane per deploy.
+- Defaults are written on a service when it is created outside production (a site placed in a non-production
+  environment, a new worker or daemon) and validated with it; nothing merges defaults at runtime, so an upgrade or a
+  changed default never caps existing services. An invalid slice is skipped by the agent and reported
+  (`slice_errors`), never the whole proc.apply.
 - Agents report `service_events` in heartbeats: Docker `oom` events, restart-count increases of managed containers,
   slices' `memory.events` `oom_kill` and supervised programs' restart counters, each delivered once.
 
