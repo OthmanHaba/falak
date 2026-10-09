@@ -129,7 +129,7 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 
 	t.Log("base backup")
 	baseEnc := backupcrypt.Encryption{Mode: "cp", KeyID: "01hzye2ebase0000000000001", Key: strings.Repeat("cd", 32)}
-	res, err := d.PITRBase(ctx, PITRBasePayload{Instance: src, Engine: engine, Encryption: baseEnc, Destination: Location{Kind: "presigned_url", URL: store.url("base")}}, stream())
+	res, err := d.PITRBase(ctx, PITRBasePayload{Instance: src, Engine: engine, VolumeID: "01hzye2evol000000000000001", Encryption: baseEnc, Destination: Location{Kind: "presigned_url", URL: store.url("base")}}, stream())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,9 +193,15 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 		}
 	}
 	t.Logf("restoring to %s from the base and %d of %d segments", target.Format(time.RFC3339Nano), len(chosen), len(segs))
-	out, err := d.PITRRestore(ctx, PITRRestorePayload{Restore: "01hzye2erestore00000000001", Instance: spec(dst, "01hzye2evol000000000000002", false), Password: password,
+	// Like the control plane sends it: read-only in the config, no scheduled events.
+	dstSpec := spec(dst, "01hzye2evol000000000000002", false)
+	dstSpec.Settings = []byte(`{"read_only":true}`)
+	if engine != "postgres" {
+		dstSpec.Settings = []byte(`{"read_only":true,"event_scheduler":false}`)
+	}
+	out, err := d.PITRRestore(ctx, PITRRestorePayload{Restore: "01hzye2erestore00000000001", Instance: dstSpec, Password: password,
 		Base: PITRObject{URL: store.url("base"), SHA256: base.SHA256, PlaintextSHA256: base.PlaintextSHA256, SizeBytes: base.SizeBytes, PlaintextBytes: base.UncompressedBytes,
-			Encryption: baseEnc}, Segments: chosen, TargetTime: target.Format(time.RFC3339Nano), Databases: []string{"app"}}, stream())
+			Encryption: baseEnc}, Segments: chosen, TargetTime: target.Format(time.RFC3339Nano), Databases: []string{"app"}, Inspection: UserSpec{Username: "falak_inspect", Password: "insp-Pa55word"}}, stream())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +221,7 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 	if _, err := sql(dst, "INSERT INTO items VALUES (5, 'read-only?')"); err == nil {
 		t.Fatal("the restored copy accepted a write before it was promoted")
 	}
-	if _, err := d.PITRPromote(ctx, PITRPromotePayload{Instance: dst, Engine: engine}, stream()); err != nil {
+	if _, err := d.PITRPromote(ctx, PITRPromotePayload{Instance: dst, Engine: engine, InspectionUser: "falak_inspect"}, stream()); err != nil {
 		t.Fatal(err)
 	}
 	if engine == "postgres" {

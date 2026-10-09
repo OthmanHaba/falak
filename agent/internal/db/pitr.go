@@ -579,8 +579,13 @@ func (db *DB) writePITR(s InstanceSpec) error {
 	if isKeyValue(s.Engine) {
 		cfg.Enabled = false
 	}
+	return db.writePITRConfig(s.ID, cfg)
+}
+
+// writePITRConfig writes an instance's pitr.json.
+func (db *DB) writePITRConfig(id string, cfg pitrConfig) error {
 	b, _ := json.Marshal(cfg)
-	p := db.d.FS.P(db.pitrFile(s.ID))
+	p := db.d.FS.P(db.pitrFile(id))
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}

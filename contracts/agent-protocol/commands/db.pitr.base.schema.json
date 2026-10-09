@@ -10,6 +10,7 @@
   "required": [
     "instance",
     "engine",
+    "volume_id",
     "encryption",
     "destination"
   ],
@@ -24,6 +25,11 @@
         "mysql",
         "mariadb"
       ]
+    },
+    "volume_id": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$",
+      "description": "the instance's volume: the base turns shipping on itself (pitr.json) under the instance's lock, so the WAL it needs is never emptied from the spool"
     },
     "encryption": {
       "$ref": "#/$defs/encryption"

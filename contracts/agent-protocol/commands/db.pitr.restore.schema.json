@@ -7,7 +7,8 @@
     "identity",
     "base.encryption.key",
     "segments.*.encryption.key",
-    "instance.tls.private_key"
+    "instance.tls.private_key",
+    "inspection.password"
   ],
   "type": "object",
   "additionalProperties": false,
@@ -17,7 +18,7 @@
     "password",
     "base",
     "segments",
-    "target_time"
+    "inspection"
   ],
   "properties": {
     "restore": {
@@ -269,7 +270,7 @@
     "target_time": {
       "type": "string",
       "format": "date-time",
-      "description": "RFC 3339; MySQL / MariaDB round it down to the second"
+      "description": "RFC 3339; MySQL / MariaDB round it down to the second. Absent: the latest point (everything given is replayed)"
     },
     "databases": {
       "type": "array",
@@ -278,6 +279,26 @@
         "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
       },
       "description": "counted (rows per table) once recovered"
+    },
+    "inspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "description": "the copy's read-only account (SELECT on `databases`), what people inspect it with",
+      "properties": {
+        "username": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 12,
+          "description": "secret"
+        }
+      }
     }
   },
   "$defs": {
@@ -333,7 +354,6 @@
       "required": [
         "container_id",
         "health",
-        "recovered_to",
         "segments",
         "downloaded_bytes",
         "table_counts"
@@ -374,6 +394,10 @@
         },
         "duration_ms": {
           "type": "integer"
+        },
+        "recovered_to_end": {
+          "type": "boolean",
+          "description": "replayed to the end of the log given (the latest point, or no commit after the target in it)"
         }
       }
     }

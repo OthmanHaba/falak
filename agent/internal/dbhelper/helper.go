@@ -118,9 +118,13 @@ func (h *Helper) psql(ctx context.Context, sql string) (string, error) {
 	out, err := output(ctx, h.Run, Cmd{Name: "psql", Args: []string{
 		"-h", pgSocketDir, "-p", strconv.Itoa(pgPort), "-U", h.pgUser(), "-d", "postgres",
 		"-AtqX", "-v", "ON_ERROR_STOP=1", "-c", sql,
-	}})
+	}, Env: pgAdminEnv})
 	return strings.TrimSpace(out), err
 }
+
+// pgAdminEnv: falak-db's own superuser sessions are not held back by a read-only config (settings read_only) or by
+// `readonly on`: they make the inspection account, end read-only mode, count rows.
+var pgAdminEnv = []string{"PGOPTIONS=-c default_transaction_read_only=off"}
 
 // myCredsArg is where MySQL-family tools read the superuser's client options: a pipe on file descriptor 3, so the
 // password never touches a file, argv or the environment.

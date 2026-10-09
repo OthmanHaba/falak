@@ -194,6 +194,43 @@ func TestPostgresArchiveCommandIsFixed(t *testing.T) {
 	}
 }
 
+// A point-in-time restore's copy stays read-only across restarts: it is in the config, not only a SET GLOBAL.
+func TestReadOnlySettingsAreRendered(t *testing.T) {
+	off := false
+	for engine, want := range map[Engine][]string{
+		Postgres: {"default_transaction_read_only = on\n"},
+		MySQL:    {"read_only = ON\n", "super_read_only = ON\n", "event_scheduler = OFF\n"},
+		MariaDB:  {"read_only = ON\n", "event_scheduler = OFF\n"},
+	} {
+		s := Settings{ReadOnly: true}
+		if engine != Postgres {
+			s.EventScheduler = &off
+		}
+		files, _, err := Render(RenderInput{Engine: engine, MemoryBytes: 1 << 30, DataDir: "/var/lib/x", Settings: s})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range want {
+			if !strings.Contains(files[0].Content, w) {
+				t.Errorf("%s config lacks %q", engine, w)
+			}
+		}
+		plain, _, _ := Render(RenderInput{Engine: engine, MemoryBytes: 1 << 30, DataDir: "/var/lib/x"})
+		if strings.Contains(plain[0].Content, "read_only") {
+			t.Errorf("%s: read-only without the setting", engine)
+		}
+	}
+	if _, err := ParseSettings([]byte(`{"read_only": true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Settings{EventScheduler: &off}).validate(Postgres); ExitCode(err) != ExitUsage {
+		t.Errorf("event_scheduler on postgres: %v", err)
+	}
+	if err := (Settings{ReadOnly: true}).validate(Redis); ExitCode(err) != ExitUsage {
+		t.Errorf("read_only on redis: %v", err)
+	}
+}
+
 func TestKVACLHoldsOnlyTheHash(t *testing.T) {
 	files, _, err := Render(RenderInput{Engine: Valkey, MemoryBytes: 1 << 30, PasswordSHA256: testHash})
 	if err != nil {

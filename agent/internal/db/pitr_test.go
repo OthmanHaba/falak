@@ -386,7 +386,7 @@ func TestShipperRotatesBinlogsAndReportsGapsOnce(t *testing.T) {
 	// The next base backup restarts spooling.
 	p.run.On("docker exec falak-db-"+instID+" falak-db backup physical", runner.Result{Stdout: []byte("xbstream"),
 		Stderr: []byte(`falak-db-result: {"kind":"physical","started_at":"2026-10-09T12:00:00Z","finished_at":"2026-10-09T12:00:05Z"}` + "\n")})
-	res, err := p.db.PITRBase(ctx, PITRBasePayload{Instance: instID, Engine: "mysql", Encryption: testEnc,
+	res, err := p.db.PITRBase(ctx, PITRBasePayload{Instance: instID, Engine: "mysql", VolumeID: volID, Encryption: testEnc,
 		Destination: Location{Kind: "presigned_url", URL: p.store.url("base")}}, stream())
 	if err != nil {
 		t.Fatal(err)
@@ -483,6 +483,28 @@ func TestShipperRefusesSymlinksInTheSpool(t *testing.T) {
 	}
 }
 
+// A base taken before the update that turns PITR on reached the agent turns it on itself: the WAL it needs stays.
+func TestPITRBaseTurnsShippingOnFirst(t *testing.T) {
+	p := newPITRHarness(t, "postgres")
+	p.db.writePITR(spec()) // off
+	p.spoolFiles(t, "000000010000000000000003")
+	p.run.OnFunc("docker exec falak-db-"+instID+" falak-db backup physical", func(runnertest.Call) (runner.Result, error) {
+		// While the base runs, the shipper's pass must not empty the spool.
+		p.ship.RunOnce(context.Background())
+		return runner.Result{Stdout: []byte("tar"), Stderr: []byte(`falak-db-result: {"kind":"physical","started_at":"2026-10-09T12:00:00Z","finished_at":"2026-10-09T12:00:05Z","start_wal":"000000010000000000000003"}` + "\n")}, nil
+	})
+	if _, err := p.db.PITRBase(context.Background(), PITRBasePayload{Instance: instID, Engine: "postgres", VolumeID: volID, Encryption: testEnc,
+		Destination: Location{Kind: "presigned_url", URL: p.store.url("base")}}, stream()); err != nil {
+		t.Fatal(err)
+	}
+	if !p.db.pitrConfigs()[instID].Enabled {
+		t.Fatal("the base did not turn shipping on")
+	}
+	if len(p.cp.shipped) == 0 && len(p.left()) == 0 {
+		t.Fatal("the WAL the base needs was emptied from the spool")
+	}
+}
+
 // An idle server's binlog does not grow: no new file every minute.
 func TestShipperSkipsTheRotationOfAnIdleBinlog(t *testing.T) {
 	p := newPITRHarness(t, "mysql")
@@ -554,7 +576,7 @@ func sealWith(t *testing.T, store *objectStore, key string, content []byte) PITR
 
 func restorePayload(t *testing.T, store *objectStore, engine string) PITRRestorePayload {
 	s := spec()
-	s.ID, s.VolumeID, s.Engine, s.Network, s.Settings = instID2, "01hzyvol000000000000000002", engine, "", nil
+	s.ID, s.VolumeID, s.Engine, s.Network, s.Settings = instID2, "01hzyvol000000000000000002", engine, "", []byte(`{"read_only":true}`)
 	segs := []PITRSegment{
 		{Name: "binlog.000004", PITRObject: sealWith(t, store, "01hzyseg000000000000000001", []byte("binlog four"))},
 		{Name: "binlog.000005", PITRObject: sealWith(t, store, "01hzyseg000000000000000002", []byte("binlog five"))},
@@ -563,7 +585,7 @@ func restorePayload(t *testing.T, store *objectStore, engine string) PITRRestore
 		segs[0].Name, segs[1].Name = "000000010000000000000004", "000000010000000000000005"
 	}
 	return PITRRestorePayload{Restore: "01hzyrestore00000000000001", Instance: s, Password: secret, Base: sealWith(t, store, "01hzybase0000000000000001", []byte("BASE-BACKUP")),
-		Segments: segs, TargetTime: "2026-10-09T12:30:00.5Z", Databases: []string{"shop"}}
+		Segments: segs, TargetTime: "2026-10-09T12:30:00.5Z", Databases: []string{"shop"}, Inspection: UserSpec{Username: "falak_inspect", Password: "insp-Pa55"}}
 }
 
 func TestPITRRestoreBuildsANewReadOnlyInstance(t *testing.T) {
@@ -614,11 +636,17 @@ func TestPITRRestoreBuildsANewReadOnlyInstance(t *testing.T) {
 				t.Fatalf("staged %v", staged)
 			}
 			lines := strings.Join(h.run.Lines(), "\n")
-			order := []string{"restore physical --in -", "readonly on", "table-counts"}
-			if engine == "postgres" {
-				order = []string{"restore physical --in -", "recover --wal-dir /var/lib/falak/db/spool/replay --target-time 2026-10-09T12:30:00.5Z", "readonly on"}
-			} else {
-				order = append([]string{"restore physical --in -", "recover --binlog-dir /var/lib/falak/db/spool/replay --target-time 2026-10-09T12:30:00.5Z"}, order[1:]...)
+			order := []string{"restore physical --in -", "recover --wal-dir /var/lib/falak/db/spool/replay --target-time 2026-10-09T12:30:00.5Z", "readonly on", "user apply", "table-counts"}
+			if engine != "postgres" {
+				// The binlogs replay into a writable server; the inspection account, then read-only.
+				order = []string{"restore physical --in -", "recover --binlog-dir /var/lib/falak/db/spool/replay --target-time 2026-10-09T12:30:00.5Z", "user apply", "readonly on", "table-counts"}
+				if !h.dock.called("restart falak-db-" + instID2) {
+					t.Fatalf("not restarted read-only: %v", h.dock.calls)
+				}
+			}
+			settings, _ := os.ReadFile(h.path("/etc/falak/db/" + instID2 + "/conf/settings.json"))
+			if !strings.Contains(string(settings), `"read_only":true`) {
+				t.Fatalf("the copy is not read-only in its config: %s", settings)
 			}
 			last := -1
 			for _, o := range order {
@@ -628,7 +656,7 @@ func TestPITRRestoreBuildsANewReadOnlyInstance(t *testing.T) {
 				}
 				last = i
 			}
-			if !h.dock.called("create falak-db-"+instID2) || strings.Contains(lines, secret) {
+			if !h.dock.called("create falak-db-"+instID2) || strings.Contains(lines, secret) || strings.Contains(lines, "insp-Pa55") {
 				t.Fatalf("calls %v", h.dock.calls)
 			}
 			// Restore files are gone; the new instance does not ship (PITR is off until decided).
@@ -639,6 +667,46 @@ func TestPITRRestoreBuildsANewReadOnlyInstance(t *testing.T) {
 				t.Fatal("the restored instance ships its spool")
 			}
 		})
+	}
+}
+
+// The latest point replays everything given; a postgres target with no commit after it in the shipped WAL recovers to
+// the WAL's end instead of failing (everything there happened before the target).
+func TestPITRRestoreToTheEndOfTheLog(t *testing.T) {
+	h := newHarness(t)
+	store := newObjectStore(t)
+	h.db.d.HTTP = store.srv.Client()
+	h.db.d.FreeBytes = func(string) (int64, error) { return 100 << 30, nil }
+	p := restorePayload(t, store, "mysql")
+	p.TargetTime = ""
+	res, err := h.db.PITRRestore(context.Background(), p, stream())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(h.run.Lines(), "\n"), "--target-time") || !res.(PITRRestoreResult).RecoveredToEnd {
+		t.Fatalf("latest: %v %+v", h.run.Lines(), res)
+	}
+
+	h = newHarness(t)
+	h.db.d.HTTP = store.srv.Client()
+	h.db.d.FreeBytes = func(string) (int64, error) { return 100 << 30, nil }
+	h.db.d.HealthWait = 50 * time.Millisecond
+	failed := false
+	h.dock.onStart = func(c *docker.Container) {
+		// The first start dies like postgres does when the target is past the last commit of the WAL.
+		if !failed {
+			failed = true
+			c.State.Running, c.State.Status, c.State.Health = false, "exited", nil
+			h.dock.logs = "FATAL:  recovery ended before configured recovery target was reached"
+		}
+	}
+	res, err = h.db.PITRRestore(context.Background(), restorePayload(t, store, "postgres"), stream())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Join(h.run.Lines(), "\n")
+	if !res.(PITRRestoreResult).RecoveredToEnd || !strings.Contains(lines, "recover --wal-dir /var/lib/falak/db/spool/replay\n") {
+		t.Fatalf("no fallback to the end of the WAL: %+v\n%s", res, lines)
 	}
 }
 
@@ -687,11 +755,30 @@ func TestPITRRestoreVerifiesEverythingBeforeTheEngineSeesIt(t *testing.T) {
 func TestPITRPromoteMakesTheCopyWritableAndStopsTheReplacedOne(t *testing.T) {
 	h := newHarness(t)
 	h.dock.containers[Container(instID)] = runningContainer()
-	if _, err := h.db.PITRPromote(context.Background(), PITRPromotePayload{Instance: instID2, Engine: "mysql", Stop: instID}, stream()); err != nil {
+	copyC := runningContainer()
+	copyC.ID, copyC.Name = "c-copy", "/"+Container(instID2)
+	h.dock.containers[Container(instID2)] = copyC
+	conf := h.path("/etc/falak/db/" + instID2 + "/conf")
+	os.MkdirAll(conf, 0o755)
+	os.WriteFile(filepath.Join(conf, "settings.json"), []byte(`{"max_connections":50,"read_only":true,"event_scheduler":false}`), 0o644)
+	s := spec()
+	s.PITR = &PITRSpec{Enabled: true}
+	h.db.writePITR(s) // the replaced instance shipped
+	if _, _, err := h.db.ensureSecretsDir(instID2); err != nil {
 		t.Fatal(err)
 	}
-	if !h.run.Ran("docker exec falak-db-"+instID2+" falak-db readonly off") || !h.dock.called("stop falak-db-"+instID) {
+	if _, err := h.db.PITRPromote(context.Background(), PITRPromotePayload{Instance: instID2, Engine: "mysql", Stop: instID, InspectionUser: "falak_inspect"}, stream()); err != nil {
+		t.Fatal(err)
+	}
+	if !h.run.Ran("docker exec falak-db-"+instID2+" falak-db readonly off") || !h.dock.called("stop falak-db-"+instID) || !h.dock.called("restart falak-db-"+instID2) ||
+		!h.run.Ran("docker exec falak-db-"+instID2+" falak-db user apply") {
 		t.Fatalf("lines %v calls %v", h.run.Lines(), h.dock.calls)
+	}
+	if b, _ := os.ReadFile(filepath.Join(conf, "settings.json")); string(b) != `{"max_connections":50}` {
+		t.Fatalf("settings %s", b)
+	}
+	if _, ok := h.db.pitrConfigs()[instID]; ok {
+		t.Fatal("the replaced instance still ships")
 	}
 	if _, err := h.db.PITRPromote(context.Background(), PITRPromotePayload{Instance: instID, Engine: "mysql", Stop: instID}, stream()); err == nil {
 		t.Fatal("an instance replaced itself")

@@ -42,7 +42,7 @@ func (h *Helper) pgExec(ctx context.Context, dbname, sql string) (string, error)
 	out, err := output(ctx, h.Run, Cmd{Name: "psql", Args: []string{
 		"-h", pgSocketDir, "-p", strconv.Itoa(pgPort), "-U", h.pgUser(), "-d", dbname,
 		"-AtqX", "-v", "ON_ERROR_STOP=1", "-f", "-",
-	}, Stdin: strings.NewReader(sql)})
+	}, Stdin: strings.NewReader(sql), Env: pgAdminEnv})
 	return strings.TrimSpace(out), err
 }
 

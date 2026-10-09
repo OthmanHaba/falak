@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.pitr.promote.schema.json",
-  "title": "db.pitr.promote — a restored instance the user keeps becomes writable (`falak-db readonly off`); with stop (a swap), the instance it replaces is stopped (kept, with its volume)",
+  "title": "db.pitr.promote — a restored instance the user keeps becomes writable (its read-only settings dropped and the container restarted, `falak-db readonly off`, the inspection account dropped); with stop (a swap), the instance it replaces is stopped (kept, with its volume) and ships nothing more",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,6 +23,11 @@
     "stop": {
       "type": "string",
       "pattern": "^[0-9a-z]{26}$"
+    },
+    "inspection_user": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+      "description": "the copy's read-only inspection account, dropped"
     }
   },
   "$defs": {

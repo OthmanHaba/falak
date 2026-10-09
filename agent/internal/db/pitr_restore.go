@@ -3,6 +3,7 @@ package db
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,8 +24,11 @@ import (
 // PITRBasePayload is db.pitr.base: a physical base backup of the instance (`falak-db backup physical`), encrypted
 // (FKB1) and PUT to the presigned URL like db.backup.
 type PITRBasePayload struct {
-	Instance    string                 `json:"instance"`
-	Engine      string                 `json:"engine"`
+	Instance string `json:"instance"`
+	Engine   string `json:"engine"`
+	// VolumeID is the instance's volume: the base turns shipping on itself (pitr.json), so the WAL it needs is never
+	// emptied from the spool by an update that has not arrived yet.
+	VolumeID    string                 `json:"volume_id"`
 	Encryption  backupcrypt.Encryption `json:"encryption"`
 	Destination Location               `json:"destination"`
 }
@@ -65,7 +69,14 @@ func (db *DB) PITRBase(ctx context.Context, p PITRBasePayload, st commands.Strea
 	if err := p.Encryption.Check(true); err != nil {
 		return nil, &commands.PayloadError{Err: err}
 	}
+	if err := checkID("volume_id", p.VolumeID); err != nil {
+		return nil, err
+	}
+	// Under the instance's lock, which the shipper's emptying of a PITR-less spool takes too.
 	defer db.lock(p.Instance)()
+	if err := db.writePITRConfig(p.Instance, pitrConfig{Enabled: true, Engine: p.Engine, VolumeID: p.VolumeID}); err != nil {
+		return nil, fmt.Errorf("pitr: %w", err)
+	}
 	if db.shipper != nil {
 		defer db.shipper.setBusy(p.Instance)()
 	}
@@ -142,17 +153,20 @@ type PITRRestorePayload struct {
 	// Password is the source's superuser / root password: the restored data keeps the source's accounts.
 	Password string `json:"password"`
 	// Identity opens customer-held files (their encryption names only mode age and the key id).
-	Identity   string        `json:"identity,omitempty"`
-	Base       PITRObject    `json:"base"`
-	Segments   []PITRSegment `json:"segments"`
-	TargetTime string        `json:"target_time"`
+	Identity string        `json:"identity,omitempty"`
+	Base     PITRObject    `json:"base"`
+	Segments []PITRSegment `json:"segments"`
+	// TargetTime is where to stop; empty: the latest point (everything given is replayed).
+	TargetTime string `json:"target_time,omitempty"`
 	// Databases are counted (rows per table) once the copy runs.
 	Databases []string `json:"databases,omitempty"`
+	// Inspection is the copy's read-only account (SELECT on Databases): what people look at it with.
+	Inspection UserSpec `json:"inspection"`
 }
 
 // Secrets are the payload's secret values (masked in output).
 func (p PITRRestorePayload) Secrets() []string {
-	out := []string{p.Password, p.Identity, p.Base.Encryption.Key}
+	out := []string{p.Password, p.Identity, p.Base.Encryption.Key, p.Inspection.Password}
 	if p.Instance.TLS != nil {
 		out = append(out, p.Instance.TLS.PrivateKey)
 	}
@@ -168,7 +182,10 @@ type PITRRestoreResult struct {
 	ImageDigest string `json:"image_digest,omitempty"`
 	Health      string `json:"health"`
 	RecoveredTo string `json:"recovered_to"`
-	Segments    int    `json:"segments"`
+	// RecoveredToEnd: replayed to the end of the log given (the latest point, or postgres found no commit after the
+	// target in it: everything there happened before the target).
+	RecoveredToEnd bool `json:"recovered_to_end,omitempty"`
+	Segments       int  `json:"segments"`
 	// DownloadedBytes are the stored files fetched (base and segments).
 	DownloadedBytes int64 `json:"downloaded_bytes"`
 	// TableCounts are the rows of every table of each database, as restored.
@@ -208,9 +225,19 @@ func (p *PITRRestorePayload) validate() (time.Time, error) {
 	if p.Password == "" {
 		return time.Time{}, payloadErr("password is required")
 	}
-	target, err := time.Parse(time.RFC3339Nano, p.TargetTime)
-	if err != nil {
-		return time.Time{}, payloadErr("target_time must be RFC 3339")
+	var target time.Time
+	if p.TargetTime != "" {
+		t, err := time.Parse(time.RFC3339Nano, p.TargetTime)
+		if err != nil {
+			return time.Time{}, payloadErr("target_time must be RFC 3339")
+		}
+		target = t
+	}
+	if err := checkIdent("inspection.username", p.Inspection.Username); err != nil {
+		return time.Time{}, err
+	}
+	if p.Inspection.Password == "" {
+		return time.Time{}, payloadErr("inspection.password is required")
 	}
 	for _, d := range p.Databases {
 		if err := checkIdent("database", d); err != nil {
@@ -312,30 +339,84 @@ func (db *DB) PITRRestore(ctx context.Context, p PITRRestorePayload, st commands
 	}
 	res.DownloadedBytes += n
 	inContainer := spoolTarget + "/" + replayDir
+	latest := target.IsZero()
 	when := target.Format(time.RFC3339Nano)
-	// 3. Replay to T.
-	if s.Engine == "postgres" {
-		if err := db.oneOff(ctx, s, nil, st.Stdout(), true, "recover", "--wal-dir", inContainer, "--target-time", when); err != nil {
+	recoverArgs := func(dirFlag string, toTarget bool) []string {
+		args := []string{"recover", dirFlag, inContainer}
+		if toTarget {
+			args = append(args, "--target-time", when)
+		}
+		return args
+	}
+	// 3. Replay to T (or to the end of the log: the latest point).
+	first := s
+	if s.Engine != "postgres" {
+		// MySQL / MariaDB replay into the running server: it starts writable (no events), read-only comes after.
+		first.Settings = settingsWithout(s.Settings, "read_only")
+	} else if err := db.oneOff(ctx, s, nil, st.Stdout(), true, recoverArgs("--wal-dir", !latest)...); err != nil {
+		return nil, err
+	}
+	applied, err := db.apply(ctx, InstancePayload{Instance: first, Password: p.Password}, st)
+	if err != nil && s.Engine == "postgres" && !latest && strings.Contains(err.Error(), "recovery ended before configured recovery target was reached") {
+		// No commit after T in the shipped WAL: everything it holds happened before T, so its end is T's state.
+		fmt.Fprintf(st.Stdout(), "no transaction after %s in the shipped WAL: recovering to its end\n", when)
+		if rerr := db.removeContainer(ctx, Container(s.ID)); rerr != nil {
+			return nil, rerr
+		}
+		if err := db.oneOff(ctx, s, nil, st.Stdout(), true, recoverArgs("--wal-dir", false)...); err != nil {
 			return nil, err
 		}
+		res.RecoveredToEnd = true
+		applied, err = db.apply(ctx, InstancePayload{Instance: first, Password: p.Password}, st)
 	}
-	applied, err := db.apply(ctx, InstancePayload{Instance: s, Password: p.Password}, st)
 	if err != nil {
 		return nil, err
 	}
 	ir := applied.(InstanceResult)
 	res.ContainerID, res.ImageDigest, res.Health = ir.ContainerID, ir.ImageDigest, ir.Health
 	if s.Engine != "postgres" {
-		if _, _, err := db.exec(ctx, s.ID, nil, nil, nil, "recover", "--binlog-dir", inContainer, "--target-time", when); err != nil {
+		if _, _, err := db.exec(ctx, s.ID, nil, nil, nil, recoverArgs("--binlog-dir", !latest)...); err != nil {
 			return nil, fmt.Errorf("replaying the binlogs: %w", err)
 		}
 	}
-	// 4. Read-only (postgres accepts it once recovery promoted).
-	if err := db.readOnlyWhenReady(ctx, s.ID); err != nil {
-		return nil, err
+	// 4. Read-only. postgres: once recovery promoted (falak-db's sessions ignore the read-only config), every database
+	// too; mysql / mariadb: the config below (a restart), after the inspection account is made.
+	if s.Engine == "postgres" {
+		if err := db.readOnlyWhenReady(ctx, s.ID); err != nil {
+			return nil, err
+		}
 	}
-	fmt.Fprintf(st.Stdout(), "%s recovered to %s, read-only\n", name, when)
-	res.RecoveredTo = when
+	// The read-only account people inspect the copy with.
+	inspection := p.Inspection
+	inspection.State, inspection.Host = "present", "%"
+	if s.Engine == "postgres" {
+		inspection.Host = ""
+	}
+	inspection.Grants = nil
+	for _, d := range p.Databases {
+		inspection.Grants = append(inspection.Grants, Grant{Database: d, Privileges: []string{"SELECT"}})
+	}
+	if _, err := db.userApply(ctx, s.ID, inspection); err != nil {
+		return nil, fmt.Errorf("the inspection account: %w", err)
+	}
+	if s.Engine != "postgres" {
+		// Now read-only in the config as well (it survives a restart): the container restarts with it.
+		applied, err := db.apply(ctx, InstancePayload{Instance: s, Password: p.Password}, st)
+		if err != nil {
+			return nil, err
+		}
+		res.Health = applied.(InstanceResult).Health
+		if err := db.readOnlyWhenReady(ctx, s.ID); err != nil {
+			return nil, err
+		}
+	}
+	if latest || res.RecoveredToEnd {
+		res.RecoveredToEnd = true
+		fmt.Fprintf(st.Stdout(), "%s recovered to the end of the shipped log, read-only\n", name)
+	} else {
+		res.RecoveredTo = when
+		fmt.Fprintf(st.Stdout(), "%s recovered to %s, read-only\n", name, when)
+	}
 	for _, d := range p.Databases {
 		counts, err := db.tableCounts(ctx, s.ID, d)
 		if err != nil {
@@ -491,6 +572,8 @@ type PITRPromotePayload struct {
 	Instance string `json:"instance"`
 	Engine   string `json:"engine"`
 	Stop     string `json:"stop,omitempty"`
+	// InspectionUser is the copy's read-only account, dropped now that it is a database of its own.
+	InspectionUser string `json:"inspection_user,omitempty"`
 }
 
 // PITRPromote ends the restored instance's read-only mode and stops the replaced one.
@@ -514,9 +597,23 @@ func (db *DB) PITRPromote(ctx context.Context, p PITRPromotePayload, st commands
 		}
 		ids = append(ids, p.Stop)
 	}
+	if p.InspectionUser != "" {
+		if err := checkIdent("inspection_user", p.InspectionUser); err != nil {
+			return nil, err
+		}
+	}
 	defer db.lock(ids...)()
+	// The read-only config goes first (a restart), then the read-only mode of the engine.
+	if err := db.dropReadOnlySettings(ctx, p.Instance, st); err != nil {
+		return nil, err
+	}
 	if _, _, err := db.exec(ctx, p.Instance, nil, nil, nil, "readonly", "off"); err != nil {
 		return nil, err
+	}
+	if p.InspectionUser != "" {
+		if _, err := db.userApply(ctx, p.Instance, UserSpec{Username: p.InspectionUser, State: "absent", Host: map[bool]string{true: "", false: "%"}[p.Engine == "postgres"]}); err != nil {
+			return nil, fmt.Errorf("dropping the inspection account: %w", err)
+		}
 	}
 	fmt.Fprintf(st.Stdout(), "%s is writable\n", Container(p.Instance))
 	res := ChangedResult{Changed: true}
@@ -524,7 +621,65 @@ func (db *DB) PITRPromote(ctx context.Context, p PITRPromotePayload, st commands
 		if _, err := db.d.Docker.ContainerStop(ctx, Container(p.Stop), stopGrace); err != nil && !docker.IsNotFound(err) {
 			return nil, err
 		}
+		// The replaced instance ships nothing more (its spool is left as it is, with its volume).
+		if err := os.Remove(db.d.FS.P(db.pitrFile(p.Stop))); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
 		fmt.Fprintf(st.Stdout(), "%s stopped (kept, with its volume)\n", Container(p.Stop))
 	}
 	return res, nil
+}
+
+// dropReadOnlySettings takes a restored copy's inspection settings (read_only, event_scheduler) out of its settings
+// file and restarts it when they were there.
+func (db *DB) dropReadOnlySettings(ctx context.Context, id string, st commands.Stream) error {
+	p := filepath.Join(db.d.FS.P(db.confDir(id)), "settings.json")
+	cur, err := os.ReadFile(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	next := settingsWithout(cur, "read_only", "event_scheduler")
+	if bytes.Equal(bytes.TrimSpace(cur), next) {
+		return nil
+	}
+	if err := os.WriteFile(p+".tmp", next, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(p+".tmp", p); err != nil {
+		return err
+	}
+	fmt.Fprintf(st.Stdout(), "restarting %s without its read-only settings\n", Container(id))
+	if err := db.d.Docker.ContainerRestart(ctx, Container(id), stopGrace); err != nil {
+		return err
+	}
+	_, err = db.awaitHealthy(ctx, Container(id))
+	return err
+}
+
+// settingsWithout is settings JSON without the given keys.
+func settingsWithout(settings json.RawMessage, keys ...string) json.RawMessage {
+	m := map[string]any{}
+	if len(settings) > 0 {
+		_ = json.Unmarshal(settings, &m)
+	}
+	for _, k := range keys {
+		delete(m, k)
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
+
+// removeContainer stops (60 s) and removes a container; a missing one is fine.
+func (db *DB) removeContainer(ctx context.Context, name string) error {
+	cur, ok, err := db.d.Docker.ContainerInspect(ctx, name)
+	if err != nil || !ok {
+		return err
+	}
+	if _, err := db.d.Docker.ContainerStop(ctx, cur.ID, stopGrace); err != nil && !docker.IsNotFound(err) {
+		return err
+	}
+	return db.d.Docker.ContainerRemove(ctx, cur.ID)
 }
