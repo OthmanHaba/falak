@@ -13,7 +13,9 @@ final class AgentDatabasesReported
     use Dispatchable;
 
     /**
-     * @param  list<array{id: string, state: string, health: string, secrets_missing: bool}>  $instances
+     * pitr: the spool of an instance with point-in-time recovery (heartbeat databases[].pitr), else null.
+     *
+     * @param  list<array{id: string, state: string, health: string, secrets_missing: bool, pitr: ?array<string, mixed>}>  $instances
      */
     public function __construct(
         public string $agentId,

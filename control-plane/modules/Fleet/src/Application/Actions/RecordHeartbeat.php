@@ -101,6 +101,7 @@ final class RecordHeartbeat
                 'state' => (string) $instance['state'],
                 'health' => (string) ($instance['health'] ?? 'none'),
                 'secrets_missing' => (bool) ($instance['secrets_missing'] ?? false),
+                'pitr' => is_array($instance['pitr'] ?? null) ? $instance['pitr'] : null,
             ], array_filter((array) $heartbeat['databases'], 'is_array')));
 
             AgentDatabasesReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $instances);

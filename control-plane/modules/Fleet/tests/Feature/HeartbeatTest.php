@@ -129,7 +129,8 @@ it('reports the server\'s database containers (databases)', function () {
     $id = strtolower((string) Str::ulid());
     $heartbeat = fleet_heartbeat(['databases' => [
         ['id' => $id, 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false],
-        ['id' => strtolower((string) Str::ulid()), 'state' => 'created', 'health' => 'none', 'secrets_missing' => true],
+        ['id' => strtolower((string) Str::ulid()), 'state' => 'created', 'health' => 'none', 'secrets_missing' => true,
+            'pitr' => ['spool_bytes' => 4096, 'volume_bytes' => 10737418240, 'pending' => 2, 'oldest_pending_at' => '2026-10-09T12:00:00Z']],
     ]]);
     expect(fleet_schema_errors('heartbeat.schema.json', $heartbeat))->toBe([])
         ->and(fleet_schema_errors('heartbeat.schema.json', fleet_heartbeat(['databases' => [['id' => '../x', 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false]]])))->not->toBe([]);
@@ -137,8 +138,9 @@ it('reports the server\'s database containers (databases)', function () {
     $this->postJson('/agent/v1/heartbeat', $heartbeat, $this->headers)->assertNoContent();
     Event::assertDispatched(AgentDatabasesReported::class, fn (AgentDatabasesReported $e) => $e->serverId === $this->serverId
         && count($e->instances) === 2
-        && $e->instances[0] === ['id' => $id, 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false]
-        && $e->instances[1]['secrets_missing'] === true);
+        && $e->instances[0] === ['id' => $id, 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false, 'pitr' => null]
+        && $e->instances[1]['secrets_missing'] === true
+        && $e->instances[1]['pitr']['pending'] === 2);
 
     // An empty list still reports (the server runs none any more).
     $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(['databases' => []]), $this->headers)->assertNoContent();

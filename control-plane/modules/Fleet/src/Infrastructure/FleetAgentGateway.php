@@ -125,7 +125,7 @@ final class FleetAgentGateway implements AgentGateway
         $changed = false;
 
         if (is_array($payload)) {
-            foreach ($paths as $path) {
+            foreach (array_merge(...array_map(fn (string $path) => self::expand($payload, $path), $paths)) as $path) {
                 if (Arr::has($payload, $path) && Arr::get($payload, $path) !== '[forgotten]') {
                     Arr::set($payload, $path, '[forgotten]');
                     $changed = true;
@@ -137,6 +137,35 @@ final class FleetAgentGateway implements AgentGateway
             'payload' => $changed ? json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) : null,
             'secrets_forgotten_at' => now(),
         ]))->save();
+    }
+
+    /**
+     * A dotted path with `*` segments (segments.*.encryption.key) as the concrete paths present in $payload.
+     *
+     * @param  array<mixed>  $payload
+     * @return list<string>
+     */
+    private static function expand(array $payload, string $path): array
+    {
+        if (! str_contains($path, '*')) {
+            return [$path];
+        }
+
+        [$head, $tail] = explode('*', $path, 2);
+        $head = rtrim($head, '.');
+        $list = $head === '' ? $payload : Arr::get($payload, $head);
+
+        if (! is_array($list)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach (array_keys($list) as $key) {
+            array_push($out, ...self::expand($payload, ltrim(($head === '' ? '' : "{$head}.").$key.$tail, '.')));
+        }
+
+        return $out;
     }
 
     private function id(CommandHandle|string $command): string

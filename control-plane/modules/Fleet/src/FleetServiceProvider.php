@@ -12,6 +12,7 @@ use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Application\Listeners\TrackAgentUpgrades;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\AgentRequests;
 use Falak\Fleet\Contracts\AgentUpgrades;
 use Falak\Fleet\Contracts\Enrollment;
 use Falak\Fleet\Contracts\ServerCertificates;
@@ -23,6 +24,7 @@ use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Http\Channels\CommandChannel;
 use Falak\Fleet\Infrastructure\AgentBinaries;
+use Falak\Fleet\Infrastructure\AgentRequestRegistry;
 use Falak\Fleet\Infrastructure\CaServerCertificates;
 use Falak\Fleet\Infrastructure\EloquentAgentDirectory;
 use Falak\Fleet\Infrastructure\EloquentAgentUpgrades;
@@ -58,6 +60,7 @@ class FleetServiceProvider extends ModuleServiceProvider
         AgentGateway::class => FleetAgentGateway::class,
         AgentDirectory::class => EloquentAgentDirectory::class,
         ServerCertificates::class => CaServerCertificates::class,
+        AgentRequests::class => AgentRequestRegistry::class,
     ];
 
     public function register(): void
