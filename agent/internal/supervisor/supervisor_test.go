@@ -266,7 +266,7 @@ func TestRestartAndExecutors(t *testing.T) {
 
 func TestLogRotation(t *testing.T) {
 	dir := t.TempDir()
-	r, err := openRot(filepath.Join(dir, "x.log"), 10)
+	r, err := openRot(filepath.Join(dir, "x.log"), 10, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

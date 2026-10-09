@@ -11,10 +11,14 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
+	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/resources"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Options configures a Supervisor.
@@ -26,6 +30,13 @@ type Options struct {
 	LogDir      string // default program log directory (default /var/log/falak)
 	Sink        obs.Sink
 	Logger      *slog.Logger
+	// Slices converges proc.apply `slices` (nil: a payload with slices is refused).
+	Slices interface {
+		Apply(ctx context.Context, desired []cgroup.Slice) ([]string, error)
+		Prune(ctx context.Context, keep []cgroup.Slice) ([]string, error)
+	}
+	// Systemd runs systemctl for programs in slices (version, leftover scopes); default runner.Exec.
+	Systemd runner.Runner
 }
 
 // Supervisor owns all supervised programs.
@@ -37,6 +48,9 @@ type Supervisor struct {
 	mu       sync.Mutex
 	programs map[string]*program
 	waiting  map[string]waitingProgram // restored programs whose secrets are gone
+
+	systemdOnce sync.Once
+	systemdVer  int
 }
 
 // waitingProgram is a persisted program that cannot start: its secret env variables were on the tmpfs.
@@ -63,13 +77,16 @@ func New(o Options) *Supervisor {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
+	if o.Systemd == nil {
+		o.Systemd = runner.Exec{}
+	}
 	return &Supervisor{opts: o, log: o.Logger.With("component", "supervisor"), programs: map[string]*program{}}
 }
 
 // Register adds proc.apply, proc.restart and proc.status.
 func (s *Supervisor) Register(reg *commands.Registry) {
 	reg.Register("proc.apply", commands.Typed(func(ctx context.Context, p ApplyPayload, st commands.Stream) (any, error) {
-		return s.Apply(ctx, p.Programs)
+		return s.ApplyWithSlices(ctx, p.Programs, p.Slices)
 	}))
 	reg.Register("proc.restart", commands.Typed(func(ctx context.Context, p RestartPayload, st commands.Stream) (any, error) {
 		names, err := s.resolve(p.Names, p.Site)
@@ -90,6 +107,8 @@ func (s *Supervisor) Register(reg *commands.Registry) {
 type (
 	ApplyPayload struct {
 		Programs []Program `json:"programs"`
+		// Slices is the full desired set of falak-<name>.slice units (programs' and PHP-FPM masters' limits).
+		Slices []cgroup.Slice `json:"slices,omitempty"`
 	}
 	ApplyResult struct {
 		Changed   bool     `json:"changed"`
@@ -97,6 +116,8 @@ type (
 		Stopped   []string `json:"stopped"`
 		Restarted []string `json:"restarted"`
 		Unchanged []string `json:"unchanged"`
+		// Slices whose limits changed (applied live) or were removed.
+		Slices []string `json:"slices,omitempty"`
 	}
 	RestartPayload struct {
 		Names []string `json:"names,omitempty"`
@@ -188,6 +209,97 @@ func (s *Supervisor) Apply(ctx context.Context, desired []Program) (ApplyResult,
 	return s.apply(ctx, desired, nil)
 }
 
+// ApplyWithSlices converges the slices first (new limits apply live, programs moving into a slice find it ready),
+// then the programs, then removes the slices nothing uses any more.
+func (s *Supervisor) ApplyWithSlices(ctx context.Context, desired []Program, slices []cgroup.Slice) (ApplyResult, error) {
+	if err := cgroup.Validate(slices); err != nil {
+		return ApplyResult{}, &commands.PayloadError{Err: err}
+	}
+	declared := map[string]bool{}
+	for _, sl := range slices {
+		declared[sl.Name] = true
+	}
+	for _, p := range desired {
+		if p.Slice != "" && !declared[p.Slice] {
+			return ApplyResult{}, &commands.PayloadError{Err: fmt.Errorf("program %s: slice %q is not in slices", p.Name, p.Slice)}
+		}
+	}
+	if s.opts.Slices == nil {
+		if len(slices) > 0 {
+			return ApplyResult{}, fmt.Errorf("slices are not supported on this host")
+		}
+		return s.Apply(ctx, desired)
+	}
+	changed, err := s.opts.Slices.Apply(ctx, slices)
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("slices: %w", err)
+	}
+	res, err := s.Apply(ctx, desired)
+	if err != nil {
+		return res, err
+	}
+	removed, err := s.opts.Slices.Prune(ctx, slices)
+	res.Slices = append(changed, removed...)
+	if len(res.Slices) == 0 {
+		res.Slices = nil
+	} else {
+		sort.Strings(res.Slices)
+		res.Changed = true
+	}
+	return res, err
+}
+
+// systemdVersion is the host's systemd version (0 = unknown), read once.
+func (s *Supervisor) systemdVersion() int {
+	s.systemdOnce.Do(func() { s.systemdVer = cgroup.SystemdVersion(context.Background(), s.opts.Systemd) })
+	return s.systemdVer
+}
+
+// RestartPollEvery is how often program restart counters are compared.
+var RestartPollEvery = time.Minute
+
+// WatchRestarts reports program restarts (each instance's counter since the last poll) until ctx ends.
+func (s *Supervisor) WatchRestarts(ctx context.Context, add func(resources.Event)) {
+	var counts resources.Counter
+	t := time.NewTicker(RestartPollEvery)
+	defer t.Stop()
+	for {
+		s.restartsOnce(&counts, add)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (s *Supervisor) restartsOnce(counts *resources.Counter, add func(resources.Event)) {
+	sites := map[string]string{}
+	s.mu.Lock()
+	for name, p := range s.programs {
+		sites[name] = p.spec.Site
+	}
+	s.mu.Unlock()
+	keep := map[string]bool{}
+	byName := map[string]int{}
+	for _, st := range s.Status(nil) {
+		key := st.Name + ":" + itoa(st.Instance)
+		keep[key] = true
+		byName[st.Name] += counts.Delta(key, st.Restarts)
+	}
+	counts.Forget(keep)
+	names := make([]string, 0, len(byName))
+	for n, c := range byName {
+		if c > 0 {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		add(resources.Event{Kind: resources.KindRestart, Source: resources.SourceProgram, Name: n, Site: sites[n], Count: byName[n]})
+	}
+}
+
 func (s *Supervisor) apply(ctx context.Context, desired []Program, waiting map[string]waitingProgram) (ApplyResult, error) {
 	res := ApplyResult{Started: []string{}, Stopped: []string{}, Restarted: []string{}, Unchanged: []string{}}
 	want := map[string]Program{}
@@ -264,13 +376,13 @@ func (s *Supervisor) apply(ctx context.Context, desired []Program, waiting map[s
 }
 
 func (s *Supervisor) newProgram(spec Program) (*program, error) {
-	out, err := openRot(spec.Log.Stdout, *spec.Log.MaxBytes)
+	out, err := openRot(spec.Log.Stdout, *spec.Log.MaxBytes, spec.Log.MaxFiles)
 	if err != nil {
 		return nil, fmt.Errorf("program %s: stdout log: %w", spec.Name, err)
 	}
 	errf := out
 	if spec.Log.Stderr != spec.Log.Stdout {
-		if errf, err = openRot(spec.Log.Stderr, *spec.Log.MaxBytes); err != nil {
+		if errf, err = openRot(spec.Log.Stderr, *spec.Log.MaxBytes, spec.Log.MaxFiles); err != nil {
 			out.Close()
 			return nil, fmt.Errorf("program %s: stderr log: %w", spec.Name, err)
 		}

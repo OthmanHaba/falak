@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/config"
 	"github.com/OthmanHaba/falak/agent/internal/cron"
@@ -31,6 +32,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/netcfg"
 	"github.com/OthmanHaba/falak/agent/internal/provision"
 	"github.com/OthmanHaba/falak/agent/internal/pty"
+	"github.com/OthmanHaba/falak/agent/internal/resources"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/runtime"
 	"github.com/OthmanHaba/falak/agent/internal/supervisor"
@@ -71,6 +73,8 @@ type Components struct {
 	Functions  *functions.Functions
 	DB         *db.DB
 	Volumes    *volumes.Service
+	// Events queues OOM kills and restarts for the heartbeat.
+	Events *resources.Queue
 }
 
 // Build constructs every executor and registers the full v1 catalogue.
@@ -86,8 +90,10 @@ func Build(d Deps) *Components {
 	sink := d.Telemetry.Sink()
 
 	// Programs' and cron jobs' secret env variables live on the tmpfs, never in their state files.
+	// Programs with limits run in their slices (falak-<key>.slice), converged by proc.apply.
 	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "proc-secrets.json")),
-		LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor")})
+		LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor"),
+		Slices: &cgroup.Manager{Runner: d.Runner, FS: d.FS}, Systemd: d.Runner})
 	var insights cron.InsightsPoster
 	if d.Insights != nil {
 		insights = d.Insights
@@ -138,7 +144,8 @@ func Build(d Deps) *Components {
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 
-	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs, Volumes: vols}
+	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs, Volumes: vols,
+		Events: &resources.Queue{}}
 }
 
 // ensureEnrolled enrolls only when there is no identity yet: `falak-agent run` never replaces one because
@@ -248,6 +255,12 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	poller := &transport.Poller{Client: client, Submit: disp.Submit, Wait: cfg.PollWait, Log: log.With("component", "poller")}
 	hb := &transport.Heartbeater{
 		Client: client, Interval: cfg.Heartbeat, Running: disp.Running, Log: log.With("component", "heartbeat"),
+		ServiceEvents: func() (any, func()) {
+			if ev, delivered := comps.Events.Pending(); len(ev) > 0 {
+				return ev, delivered
+			}
+			return nil, nil
+		},
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
 			hb := transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
@@ -282,6 +295,17 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	log.Info("falak-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
 	loops.Add(1)
 	go func() { defer loops.Done(); sweepDrills(runCtx, comps, log, time.Hour) }()
+	// OOM kills and restarts of containers, slices and programs, delivered with the heartbeats.
+	for _, fn := range []func(context.Context){
+		func(ctx context.Context) { comps.Docker.Watch(ctx, comps.Events.Add) },
+		func(ctx context.Context) { comps.Supervisor.WatchRestarts(ctx, comps.Events.Add) },
+		func(ctx context.Context) {
+			watchSliceOOM(ctx, &cgroup.WatchOOM{Root: fs.P(cgroup.CgroupRoot)}, comps.Events.Add, time.Minute)
+		},
+	} {
+		loops.Add(1)
+		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
+	}
 	loops.Add(1)
 	go func() {
 		defer loops.Done()
@@ -369,6 +393,20 @@ func sweepDrills(ctx context.Context, comps *Components, log *slog.Logger, every
 		case <-ctx.Done():
 			return
 		case <-time.After(every):
+		}
+	}
+}
+
+// watchSliceOOM reads the slices' OOM-kill counters every interval until ctx ends.
+func watchSliceOOM(ctx context.Context, w *cgroup.WatchOOM, add func(resources.Event), every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		w.Once(add)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }

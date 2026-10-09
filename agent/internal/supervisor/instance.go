@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 	"github.com/OthmanHaba/falak/agent/internal/redact"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
@@ -85,6 +87,7 @@ func (in *instance) run(stopCh, done chan struct{}) {
 	}()
 	spec := in.spec
 	backoff := time.Duration(0)
+	quick := 0 // restarts in a row that never reached start_seconds
 	for {
 		select {
 		case <-stopCh:
@@ -110,8 +113,19 @@ func (in *instance) run(stopCh, done chan struct{}) {
 			in.log.Info("program exited", "code", code)
 			return
 		}
+		healthy := uptime >= time.Duration(*spec.StartSeconds)*time.Second
+		if healthy {
+			quick = 0
+		} else {
+			quick++
+		}
+		if spec.MaxRestarts > 0 && quick > spec.MaxRestarts {
+			in.setState(StateFatal)
+			in.log.Error("program keeps failing, giving up", "code", code, "max_restarts", spec.MaxRestarts)
+			return
+		}
 		// Backoff resets after a healthy run of start_seconds.
-		if uptime >= time.Duration(*spec.StartSeconds)*time.Second || backoff == 0 {
+		if healthy || backoff == 0 {
 			backoff = spec.backoffInitial()
 		} else {
 			backoff *= 2
@@ -151,7 +165,18 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 	defer maskErr.Flush()
 	defer maskOut.Flush()
 
-	cmd := exec.Command(spec.Command[0], spec.Command[1:]...)
+	var cred *syscall.Credential
+	var home string
+	if spec.User != "" {
+		var err error
+		if cred, home, err = runner.Credential(spec.User); err != nil {
+			in.log.Error("resolve user", "err", err)
+			_, _ = errW.Write([]byte("falak: " + err.Error() + "\n"))
+			return 127, false
+		}
+	}
+	argv, cred := in.sup.launch(spec, in.idx, cred)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = spec.Cwd
 	cmd.Stdout, cmd.Stderr = maskOut, maskErr
 	cmd.WaitDelay = 2 * time.Second
@@ -163,13 +188,7 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 		"FALAK_PROCESS_INSTANCE=" + itoa(in.idx),
 	}
 	if spec.User != "" {
-		cred, home, err := runner.Credential(spec.User)
-		if err != nil {
-			in.log.Error("resolve user", "err", err)
-			_, _ = errW.Write([]byte("falak: " + err.Error() + "\n"))
-			return 127, false
-		}
-		cmd.SysProcAttr.Credential = cred
+		cmd.SysProcAttr.Credential = cred // nil in a slice: setpriv drops to the user
 		env = append(env, "HOME="+home, "USER="+spec.User, "LOGNAME="+spec.User)
 	} else if h, err := os.UserHomeDir(); err == nil {
 		env = append(env, "HOME="+h)
@@ -190,6 +209,11 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 		return 127, false
 	}
 	pid := cmd.Process.Pid
+	if spec.OomScoreAdj != 0 {
+		if err := cgroup.SetOOMScoreAdj(pid, spec.OomScoreAdj); err != nil {
+			in.log.Warn("set oom_score_adj", "err", err)
+		}
+	}
 	in.mu.Lock()
 	in.pid = pid
 	in.startedAt = time.Now()
@@ -260,4 +284,20 @@ func (in *instance) status() ProcessStatus {
 		st.StartedAt = &t
 	}
 	return st
+}
+
+// launch is the argv a program instance starts with. In a slice it is wrapped in a transient scope of that slice
+// (cgroup.ScopeCommand): systemd-run runs as root and setpriv drops to the user, so no credential is set on the
+// child; a leftover scope of the same name (the agent crashed while it ran) is stopped first.
+func (s *Supervisor) launch(spec Program, idx int, cred *syscall.Credential) ([]string, *syscall.Credential) {
+	if spec.Slice == "" {
+		return spec.Command, cred
+	}
+	unit := "falak-proc-" + spec.Name + "-" + itoa(idx)
+	_, _ = s.opts.Systemd.Run(context.Background(), runner.Cmd{Name: "systemctl", Args: []string{"stop", "--quiet", unit + ".scope"}})
+	sp := cgroup.ScopeSpec{Slice: spec.Slice, Unit: unit, Command: spec.Command, SystemdVersion: s.systemdVersion()}
+	if cred != nil {
+		sp.AsUser, sp.UID, sp.GID = true, cred.Uid, cred.Gid
+	}
+	return cgroup.ScopeCommand(sp), nil
 }

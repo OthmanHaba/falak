@@ -34,6 +34,27 @@
       },
       "description": "Database containers on the server (label falak.db.instance), every heartbeat; omitted when there are none. secrets_missing: the instance's password file is gone (a reboot emptied /run/falak/secrets) and its container cannot start; the control plane answers with db.instance.secrets."
     },
+    "service_events": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "source", "name", "count", "at"],
+        "properties": {
+          "kind": { "enum": ["oom_kill", "restart"] },
+          "source": { "enum": ["container", "slice", "program"] },
+          "name": { "type": "string", "maxLength": 255, "description": "Container name, slice key (falak-<name>.slice) or program name" },
+          "site": { "type": "string", "maxLength": 63, "description": "Site slug (label falak.site, or the program's site)" },
+          "project": { "type": "string", "maxLength": 63, "description": "Compose project (label com.docker.compose.project)" },
+          "service": { "type": "string", "maxLength": 255, "description": "Compose service (label com.docker.compose.service)" },
+          "instance": { "type": "string", "maxLength": 26, "description": "Database instance id (label falak.db.instance)" },
+          "count": { "type": "integer", "minimum": 1, "description": "Kills or restarts since the previous event of the same service" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "OOM kills (docker `oom` events, slices' memory.events oom_kill) and restarts (containers' RestartCount, programs' restart counters) since the last delivered heartbeat; dropped by the agent once a heartbeat carrying them succeeded. Omitted when there are none."
+    },
     "facts": { "$ref": "facts.schema.json", "description": "Only sent when changed since last heartbeat" }
   }
 }

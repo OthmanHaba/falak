@@ -17,6 +17,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
+	"github.com/OthmanHaba/falak/agent/internal/resources"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
 	"github.com/OthmanHaba/falak/agent/internal/volumes"
 )
@@ -167,6 +168,7 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		"docker.compose.restart": `{"project":"shop","services":["a b"]}`,
 		"docker.compose.pull":    `{"project":"shop"}`,
 		"docker.update":          `{"site":"shop","project":"shop","service":"app","memory_bytes":1}`,
+		"runtime.fpm.pool":       `{"php_version":"8.4","pool":"shop","user":"shop","slice":"site-shop"}`,
 		"docker.run":             `{"name":"web","image":"nginx","log":{"max_size_mb":0}}`,
 		"fn.release.apply":       `{"site":"hello","release":"r1","image":"i","entrypoint":"../index.ts","files":[{"path":"../index.ts","content":""}]}`,
 		"fn.status":              `{"site":"Hello World"}`,
@@ -242,6 +244,19 @@ func TestProtocolDocumentsValidate(t *testing.T) {
 	v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
 	if err := hbs.Validate(v); err != nil {
 		t.Fatalf("heartbeat invalid: %v", err)
+	}
+	// With OOM kills and restarts.
+	var q resources.Queue
+	q.Add(resources.Event{Kind: resources.KindOOMKill, Source: resources.SourceContainer, Name: "falak-shop-blue", Site: "shop", Count: 1})
+	q.Add(resources.Event{Kind: resources.KindRestart, Source: resources.SourceContainer, Name: "stack-db-1", Project: "stack", Service: "db", Count: 3})
+	q.Add(resources.Event{Kind: resources.KindOOMKill, Source: resources.SourceSlice, Name: "worker_01j9z8y7x6w5v4t3s2r1q0p9na", Count: 2})
+	q.Add(resources.Event{Kind: resources.KindRestart, Source: resources.SourceProgram, Name: "shop.worker-01j9z8y7x6w5v4t3s2r1q0p9na", Site: "shop", Count: 1})
+	q.Add(resources.Event{Kind: resources.KindOOMKill, Source: resources.SourceContainer, Name: "falak-db-01hzyinst00000000000000001", Instance: "01hzyinst00000000000000001", Count: 1})
+	ev, _ := q.Pending()
+	b, _ = json.Marshal(transport.Heartbeat{At: time.Now(), UptimeS: 5, Load: [3]float64{0.1, 0.2, 0.3}, RunningCommands: []string{}, ServiceEvents: ev})
+	v, _ = jsonschema.UnmarshalJSON(bytes.NewReader(b))
+	if err := hbs.Validate(v); err != nil {
+		t.Fatalf("heartbeat with service events invalid: %v\n%s", err, b)
 	}
 }
 
