@@ -196,6 +196,9 @@ func (db *DB) ship(ctx context.Context, p BackupPayload, start time.Time, st com
 		}
 		file = db.d.FS.P(p.Destination.Path) + ".partial"
 	} else {
+		if err := os.MkdirAll(db.d.TempDir, 0o700); err != nil {
+			return BackupResult{}, err
+		}
 		f, err := os.CreateTemp(db.d.TempDir, "falak-backup-*")
 		if err != nil {
 			return BackupResult{}, err
