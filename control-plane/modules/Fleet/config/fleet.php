@@ -16,6 +16,9 @@ return [
     'fingerprint_header' => 'X-Falak-Client-Cert-Fingerprint',
     'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) env('FALAK_AGENT_TRUSTED_PROXIES', '127.0.0.1/32,::1/128'))))),
 
+    // Agent requests (POST /agent/v1/requests/{type}) per agent and type and minute.
+    'agent_requests_per_minute' => 120,
+
     // Public URLs handed to agents. Defaults derive from APP_URL.
     'panel_url' => env('FALAK_PANEL_URL'),
     'api_url' => env('FALAK_AGENT_API_URL'),

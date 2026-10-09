@@ -24,6 +24,6 @@ Route::middleware(ForceJson::class)->name('fleet.agent.')->group(function () {
         Route::get('commands', CommandPollController::class)->name('commands');
         Route::post('commands/{command}/events', CommandEventsController::class)->name('commands.events');
         Route::post('insights', InsightsController::class)->name('insights');
-        Route::post('requests/{type}', RequestController::class)->where('type', '[a-z_]+(\.[a-z_]+)+')->name('requests');
+        Route::post('requests/{type}', RequestController::class)->where('type', '[a-z_]+(\.[a-z_]+)+')->middleware('throttle:fleet-agent-requests')->name('requests');
     });
 });

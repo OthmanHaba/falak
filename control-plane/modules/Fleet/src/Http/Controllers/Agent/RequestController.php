@@ -14,7 +14,7 @@ use Illuminate\Http\Request;
 /**
  * POST /agent/v1/requests/{type} — a request an agent sends to the control plane (contracts/agent-protocol/requests),
  * answered by the module that registered the type (AgentRequests). The body is validated against
- * requests/<type>.schema.json; 404 `unknown_request` for a type nobody answers, 409 with a reason code when the
+ * requests/<type>.schema.json (a type without one is refused); 404 `unknown_request` for a type nobody answers, 409 with a reason code when the
  * handler refuses, 422 when the body is invalid.
  */
 final class RequestController extends Controller
@@ -34,8 +34,14 @@ final class RequestController extends Controller
             return response()->json(['message' => 'This agent has no server.', 'error' => 'no_server'], 409);
         }
 
+        // Fail closed: a type without a schema is never answered (nothing unvalidated reaches a handler).
         $schema = "requests/{$type}.schema.json";
-        $body = $this->document($request, $schemas, is_file($schemas->path().'/'.$schema) ? $schema : null);
+
+        if (! is_file($schemas->path().'/'.$schema)) {
+            return response()->json(['message' => "Agent request [{$type}] has no schema.", 'error' => 'unknown_request'], 404);
+        }
+
+        $body = $this->document($request, $schemas, $schema);
 
         /** @var AgentRequestHandler $handler */
         $handler = app($class);

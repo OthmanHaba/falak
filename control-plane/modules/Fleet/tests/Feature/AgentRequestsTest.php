@@ -15,7 +15,7 @@ final class EchoAgentRequest implements AgentRequestHandler
 {
     public function handle(AgentCaller $caller, array $body): array
     {
-        if (($body['refuse'] ?? false) === true) {
+        if (($body['gaps'][0]['detail'] ?? '') === 'refuse') {
             throw new AgentRequestRefused('nope', 'Refused.');
         }
 
@@ -29,18 +29,34 @@ beforeEach(function () {
     $this->serverId = (string) Str::ulid();
     $this->enrolled = fleet_enroll($this->organization->id, $this->serverId);
     $this->headers = fleet_mtls($this->enrolled['fingerprint']);
-    app(AgentRequests::class)->register('test.echo', EchoAgentRequest::class);
+    // A type with a schema (pitr.gap's), answered here by a test handler.
+    app(AgentRequests::class)->register('pitr.gap', EchoAgentRequest::class);
+    $this->body = fn (string $detail = 'x') => ['instance' => strtolower((string) Str::ulid()), 'kind' => 'binlog', 'gaps' => [['kind' => 'missing', 'detail' => $detail]]];
 });
 
 it('hands an authenticated agent request to the module that registered its type, with the caller', function () {
-    $this->postJson('/agent/v1/requests/test.echo', ['x' => 1], $this->headers)
+    $body = ($this->body)();
+    $this->postJson('/agent/v1/requests/pitr.gap', $body, $this->headers)
         ->assertOk()
-        ->assertJson(['agent' => $this->enrolled['agent']->id, 'server' => $this->serverId, 'organization' => $this->organization->id, 'body' => ['x' => 1]]);
+        ->assertJson(['agent' => $this->enrolled['agent']->id, 'server' => $this->serverId, 'organization' => $this->organization->id, 'body' => $body]);
 
-    $this->postJson('/agent/v1/requests/test.echo', ['refuse' => true], $this->headers)->assertStatus(409)->assertJson(['error' => 'nope']);
+    $this->postJson('/agent/v1/requests/pitr.gap', ($this->body)('refuse'), $this->headers)->assertStatus(409)->assertJson(['error' => 'nope']);
     $this->postJson('/agent/v1/requests/test.nobody', [], $this->headers)->assertNotFound()->assertJson(['error' => 'unknown_request']);
+    // Fail closed: a registered type without a schema is never answered.
+    app(AgentRequests::class)->register('test.echo', EchoAgentRequest::class);
+    $this->postJson('/agent/v1/requests/test.echo', ['x' => 1], $this->headers)->assertNotFound()->assertJson(['error' => 'unknown_request']);
     // mTLS like every agent endpoint.
-    $this->postJson('/agent/v1/requests/test.echo', ['x' => 1])->assertUnauthorized();
+    $this->postJson('/agent/v1/requests/pitr.gap', $body)->assertUnauthorized();
+});
+
+it('throttles each agent\'s requests per type', function () {
+    config(['fleet.agent_requests_per_minute' => 2]);
+    $this->postJson('/agent/v1/requests/pitr.gap', ($this->body)(), $this->headers)->assertOk();
+    $this->postJson('/agent/v1/requests/pitr.gap', ($this->body)(), $this->headers)->assertOk();
+    $this->postJson('/agent/v1/requests/pitr.gap', ($this->body)(), $this->headers)->assertStatus(429);
+    // Another agent has its own budget.
+    $other = fleet_enroll($this->organization->id, (string) Str::ulid());
+    $this->postJson('/agent/v1/requests/pitr.gap', ($this->body)(), fleet_mtls($other['fingerprint']))->assertOk();
 });
 
 it('validates requests that have a schema', function () {

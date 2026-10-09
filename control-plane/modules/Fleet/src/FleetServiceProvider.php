@@ -23,6 +23,7 @@ use Falak\Fleet\Events\AgentUpgradeSucceeded;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Http\Channels\CommandChannel;
+use Falak\Fleet\Http\Middleware\AuthenticateAgent;
 use Falak\Fleet\Infrastructure\AgentBinaries;
 use Falak\Fleet\Infrastructure\AgentRequestRegistry;
 use Falak\Fleet\Infrastructure\CaServerCertificates;
@@ -123,6 +124,9 @@ class FleetServiceProvider extends ModuleServiceProvider
         Route::group([], $this->modulePath().'/routes/install.php');
 
         RateLimiter::for('fleet-enroll', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
+        // Agent requests (POST /agent/v1/requests/{type}): per authenticated agent and type.
+        RateLimiter::for('fleet-agent-requests', fn (Request $request) => Limit::perMinute((int) config('fleet.agent_requests_per_minute', 120))
+            ->by($request->attributes->get(AuthenticateAgent::AGENT)?->id.':'.$request->route('type')));
 
         $registry = $this->app->make(PermissionRegistry::class);
         $registry->register('fleet.commands.view', [Role::Admin, Role::Developer, Role::Viewer], 'View agent command output', 'fleet');
