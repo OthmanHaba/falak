@@ -3,8 +3,6 @@
 namespace Falak\Limits\Application;
 
 use Falak\Databases\Contracts\DatabaseDirectory;
-use Falak\Limits\Contracts\LimitDefaults;
-use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Processes\Contracts\Data\ProcessOwner;
 use Falak\Processes\Contracts\ProcessOwners;
 use Falak\Sites\Contracts\Data\SiteData;
@@ -27,7 +25,6 @@ final class ServiceResolver
         private readonly SiteDirectory $sites,
         private readonly ProcessOwners $processes,
         private readonly DatabaseDirectory $databases,
-        private readonly LimitDefaults $defaults,
     ) {}
 
     /**
@@ -65,7 +62,7 @@ final class ServiceResolver
         }
 
         if ($event['project'] !== null && $event['service'] !== null && ($site = $this->siteBySlug($serverId, $event['project'])) !== null && $site->runtime === SiteRuntime::Compose) {
-            $limits = $this->defaults->effective($site->composeLimits[$event['service']] ?? new ResourceLimits, $site->id);
+            $limits = $site->composeServiceLimits($event['service']);
 
             return new ResolvedService($site->organizationId, 'compose_service', "{$site->id}:{$event['service']}", $site->id, "{$site->name} · {$event['service']}", "/sites/{$site->id}", $limits->memoryLimit);
         }
@@ -83,7 +80,7 @@ final class ServiceResolver
             return $site !== null ? $this->siteService($site) : null;
         }
 
-        return in_array($kind, ['worker', 'daemon'], true) ? $this->owner($this->processes->process($kind, $ref)) : null;
+        return in_array($kind, ['worker', 'daemon'], true) ? $this->owner($this->processes->process($kind, $ref, $serverId)) : null;
     }
 
     private function program(string $serverId, string $name): ?ResolvedService
@@ -98,7 +95,7 @@ final class ServiceResolver
 
     private function siteService(SiteData $site): ResolvedService
     {
-        return new ResolvedService($site->organizationId, 'site', $site->id, $site->id, $site->name, "/sites/{$site->id}", $this->defaults->effective($site->limits, $site->id)->memoryLimit);
+        return new ResolvedService($site->organizationId, 'site', $site->id, $site->id, $site->name, "/sites/{$site->id}", $site->limits->memoryLimit);
     }
 
     private function siteBySlug(string $serverId, string $slug): ?SiteData

@@ -3,6 +3,7 @@
 namespace Falak\Processes\Application\Actions;
 
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Limits\Contracts\LimitValidator;
 use Falak\Processes\Application\EnvInput;
 use Falak\Processes\Application\ServerConverger;
@@ -18,6 +19,7 @@ final class SaveDaemon
         private readonly ServerConverger $converger,
         private readonly AuditLog $audit,
         private readonly LimitValidator $limits,
+        private readonly LimitDefaults $defaults,
     ) {}
 
     /**
@@ -38,9 +40,11 @@ final class SaveDaemon
             'stop_timeout' => (int) $data['stop_timeout'],
             'env' => EnvInput::merge($data['env'] ?? [], $daemon->exists ? ($daemon->env ?? []) : []),
             'server_ids' => ($data['server_ids'] ?? null) ?: null,
-            // Bounded by the servers it runs on.
-            'limits' => array_key_exists('limits', $data)
-                ? ($this->limits->validate(is_array($data['limits']) ? $data['limits'] : null, ($data['server_ids'] ?? null) ?: $site->serverIds())->toArray() ?: null)
+            // Bounded by the servers it runs on. A new one starts with its environment's defaults under what was given
+            // (validated together); later changes replace them.
+            'limits' => array_key_exists('limits', $data) || ! $daemon->exists
+                ? ($this->limits->validate(is_array($data['limits'] ?? null) ? $data['limits'] : null, ($data['server_ids'] ?? null) ?: $site->serverIds(),
+                    base: $daemon->exists ? null : $this->defaults->forSite($site->id))->toArray() ?: null)
                 : $daemon->limits,
         ]);
 

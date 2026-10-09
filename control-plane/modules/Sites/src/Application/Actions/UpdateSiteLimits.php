@@ -5,7 +5,6 @@ namespace Falak\Sites\Application\Actions;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Identity\Contracts\AuditLog;
-use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Limits\Contracts\LimitValidator;
 use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Servers\Contracts\ServerDirectory;
@@ -23,9 +22,11 @@ use Illuminate\Validation\ValidationException;
 /**
  * Sets the resource limits of a site, or of one service of its compose project, and applies them where they run:
  *
- *  - Docker sites and compose services: docker.update on the running containers when only live limits changed
- *    (memory, reservation, CPUs, processes, restart policy) and none was removed; otherwise the next deploy applies
- *    them (log caps and the OOM preference need a new container; a compose project's override is written per deploy).
+ *  - Docker sites: docker.update on the running containers when only live limits changed (memory, reservation,
+ *    CPUs, processes, restart policy) and none was removed; otherwise the next deploy applies them (log caps and the
+ *    OOM preference need a new container).
+ *  - Compose services: the next deploy (their compose.falak.yaml is written per deploy; a live change would be undone
+ *    by the next `docker compose up`).
  *  - Classic sites: their slice (Processes re-converges every server on SiteUpdated: set-property, live), and PHP-FPM
  *    sites moving into or out of their own master get their pool again.
  *
@@ -35,7 +36,6 @@ final class UpdateSiteLimits
 {
     public function __construct(
         private readonly LimitValidator $validator,
-        private readonly LimitDefaults $defaults,
         private readonly AgentGateway $agents,
         private readonly ServerDirectory $servers,
         private readonly ComposeSites $compose,
@@ -85,12 +85,12 @@ final class UpdateSiteLimits
             return 'none';
         }
 
-        $old = $this->defaults->effective($before, $site->id);
-        $new = $this->defaults->effective($limits, $site->id);
-
         return match (true) {
-            $site->runtime === SiteRuntime::Docker || $service !== null => $this->updateContainers($site, $ready->all(), $old, $new, $service),
-            $site->runtime === SiteRuntime::PhpFpm => $this->updatePool($site, $ready->all(), $old, $new),
+            // A compose project's limits live in its compose.falak.yaml, written by each deploy: changed only live, the
+            // next `docker compose up` (a restart, a rollback) would put the old ones back.
+            $service !== null => 'redeploy',
+            $site->runtime === SiteRuntime::Docker => $this->updateContainers($site, $ready->all(), $before, $limits),
+            $site->runtime === SiteRuntime::PhpFpm => $this->updatePool($site, $ready->all(), $before, $limits),
             default => 'live',
         };
     }
@@ -129,13 +129,13 @@ final class UpdateSiteLimits
     /**
      * @param  list<SiteTarget>  $targets
      */
-    private function updateContainers(Site $site, array $targets, ResourceLimits $old, ResourceLimits $new, ?string $service): string
+    private function updateContainers(Site $site, array $targets, ResourceLimits $old, ResourceLimits $new): string
     {
         if (! $old->liveUpdatableTo($new) || $new->dockerUpdate() === []) {
             return 'redeploy';
         }
 
-        $payload = [...($service !== null ? ['project' => $site->slug, 'service' => $service] : ['site' => $site->slug]), ...$new->dockerUpdate()];
+        $payload = ['site' => $site->slug, ...$new->dockerUpdate()];
 
         foreach ($targets as $target) {
             try {

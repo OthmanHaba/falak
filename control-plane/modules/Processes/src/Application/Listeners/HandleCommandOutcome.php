@@ -76,9 +76,11 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         if ($prefix === 'proc') {
+            $sliceErrors = array_filter((array) ($event->result['slice_errors'] ?? []), 'is_string');
             $state->forceFill([
                 'proc_status' => ApplyStatus::Applied,
-                'proc_error' => null,
+                // Slices the agent skipped (their programs run without limits): applied, with what to fix.
+                'proc_error' => $sliceErrors === [] ? null : Str::limit('Limits not applied: '.implode('; ', array_map(fn ($name, $error) => "{$name}: {$error}", array_keys($sliceErrors), $sliceErrors)), 990),
                 'proc_applied_at' => now(),
                 'applied_programs' => array_keys($state->programs ?? []),
                 // Removed programs can no longer crash.

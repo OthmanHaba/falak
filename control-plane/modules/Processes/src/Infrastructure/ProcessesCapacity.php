@@ -4,7 +4,6 @@ namespace Falak\Processes\Infrastructure;
 
 use Falak\Limits\Contracts\CapacitySource;
 use Falak\Limits\Contracts\Data\CapacityItem;
-use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Processes\Application\StatusPoller;
 use Falak\Processes\Domain\Models\Daemon;
 use Falak\Processes\Domain\Models\Worker;
@@ -18,7 +17,6 @@ final class ProcessesCapacity implements CapacitySource
 {
     public function __construct(
         private readonly SiteDirectory $sites,
-        private readonly LimitDefaults $defaults,
     ) {}
 
     public function onServer(string $organizationId, string $serverId): array
@@ -42,7 +40,7 @@ final class ProcessesCapacity implements CapacitySource
 
                 /** @var SiteData $site */
                 $site = $sites[$process->site_id];
-                $limits = $this->defaults->effective($process->resourceLimits(), $site->id);
+                $limits = $process->resourceLimits();
                 $label = $process instanceof Worker ? StateCompiler::workerLabel($process) : $process->name;
                 $items[] = new CapacityItem($kind, $process->id, "{$site->name} · {$label}", $limits->memoryLimit, $limits->memoryReservation, $limits->cpus, StatusPoller::url($site->id, $kind));
             }

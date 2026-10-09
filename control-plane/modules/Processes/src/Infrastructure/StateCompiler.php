@@ -4,7 +4,6 @@ namespace Falak\Processes\Infrastructure;
 
 use Falak\Deployments\Contracts\Data\LiveRelease;
 use Falak\Deployments\Contracts\LiveReleases;
-use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Processes\Application\OctaneRoutes;
 use Falak\Processes\Contracts\ScheduleSources;
@@ -54,7 +53,6 @@ final class StateCompiler
         private readonly LiveReleases $releases,
         private readonly ScheduleSources $sources,
         private readonly SecretVariables $secrets,
-        private readonly LimitDefaults $limits,
     ) {}
 
     public function compile(string $serverId): CompiledState
@@ -211,7 +209,7 @@ final class StateCompiler
                 'numprocs' => max(1, min(64, $worker->processes)),
                 // queue:work finishes the current job on SIGTERM; give it the job timeout plus a margin.
                 'stop_timeout_s' => max(1, $worker->timeout + 15),
-            ], $worker->env ?? []), $this->limits->effective($worker->resourceLimits(), $site->id), ResourceLimits::sliceName('worker', $worker->id)), 'worker', self::workerLabel($worker)];
+            ], $worker->env ?? []), $worker->resourceLimits(), ResourceLimits::sliceName('worker', $worker->id)), 'worker', self::workerLabel($worker)];
         }
 
         foreach ($daemons as $daemon) {
@@ -228,7 +226,7 @@ final class StateCompiler
                 'stop_timeout_s' => max(1, $daemon->stop_timeout),
                 'user' => $daemon->user ?: $site->unixUser,
                 'cwd' => $daemon->directory ?: $site->currentPath(),
-            ], $daemon->env ?? []), $this->limits->effective($daemon->resourceLimits(), $site->id), ResourceLimits::sliceName('daemon', $daemon->id)), 'daemon', $daemon->name];
+            ], $daemon->env ?? []), $daemon->resourceLimits(), ResourceLimits::sliceName('daemon', $daemon->id)), 'daemon', $daemon->name];
         }
 
         return $out;
@@ -241,7 +239,7 @@ final class StateCompiler
      */
     private function siteLimits(SiteData $site): array
     {
-        $limits = $this->limits->effective($site->limits, $site->id);
+        $limits = $site->limits;
         $slice = ResourceLimits::sliceName('site', $site->slug);
 
         if ($limits->hasCgroupLimits()) {

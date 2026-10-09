@@ -145,6 +145,12 @@ final readonly class ResourceLimits
         ];
     }
 
+    /** The reservation, never above the limit (Docker, Compose and systemd refuse that; validation already does). */
+    private function reservation(): ?int
+    {
+        return $this->memoryReservation !== null && $this->memoryLimit !== null ? min($this->memoryReservation, $this->memoryLimit) : $this->memoryReservation;
+    }
+
     // ---- Docker -------------------------------------------------------------------------------------------------
 
     /**
@@ -156,7 +162,7 @@ final readonly class ResourceLimits
     {
         return array_filter([
             'memory_bytes' => $this->memoryLimit !== null ? $this->memoryLimit * 1024 ** 2 : null,
-            'memory_reservation_bytes' => $this->memoryReservation !== null ? $this->memoryReservation * 1024 ** 2 : null,
+            'memory_reservation_bytes' => $this->reservation() !== null ? $this->reservation() * 1024 ** 2 : null,
             'cpus' => $this->cpus,
             'pids_limit' => $this->pidsLimit,
             'restart_policy' => $this->restartPolicy,
@@ -190,7 +196,7 @@ final readonly class ResourceLimits
             'cpus' => $this->cpus !== null ? (string) $this->cpus : null,
             'pids' => $this->pidsLimit,
         ], fn ($value) => $value !== null);
-        $reservations = $this->memoryReservation !== null ? ['memory' => "{$this->memoryReservation}M"] : [];
+        $reservations = $this->reservation() !== null ? ['memory' => "{$this->reservation()}M"] : [];
 
         return array_filter([
             'mem_limit' => $limits['memory'] ?? null,
@@ -235,7 +241,7 @@ final readonly class ResourceLimits
             'name' => $name,
             'memory_max_bytes' => $this->memoryLimit !== null ? $this->memoryLimit * $mb : null,
             'memory_high_bytes' => $this->memoryLimit !== null ? (int) floor($this->memoryLimit * $mb * (float) config('limits.memory_high_ratio', 0.9)) : null,
-            'memory_low_bytes' => $this->memoryReservation !== null ? $this->memoryReservation * $mb : null,
+            'memory_low_bytes' => $this->reservation() !== null ? $this->reservation() * $mb : null,
             'cpu_quota_percent' => $this->cpus !== null ? max(1, (int) round($this->cpus * 100)) : null,
             'tasks_max' => $this->pidsLimit,
         ], fn ($value) => $value !== null);

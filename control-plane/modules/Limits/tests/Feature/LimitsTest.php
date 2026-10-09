@@ -5,13 +5,21 @@ use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Fleet\Events\AgentServiceEventsReported;
 use Falak\Functions\Domain\Models\CloudFunction;
 use Falak\Identity\Contracts\Role;
+use Falak\Limits\Application\Listeners\RecordServiceEvents;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Limits\Contracts\ServiceHealth;
+use Falak\Limits\Domain\Models\ServiceState;
 use Falak\Limits\Events\ServiceOomKilled;
 use Falak\Limits\Events\ServiceRestartLoop;
 use Falak\Processes\Application\ServerConverger;
+use Falak\Processes\Domain\Enums\ApplyStatus;
 use Falak\Processes\Domain\Models\Daemon;
+use Falak\Processes\Domain\Models\ServerState;
 use Falak\Processes\Domain\Models\Worker;
+use Falak\Projects\Application\Actions\LinkService;
+use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\ComposeVersion;
 use Falak\Sites\Domain\Models\Site;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
@@ -136,22 +144,60 @@ it('validates worker and daemon limits against the servers', function () {
 
 // ---- Defaults per environment -------------------------------------------------------------------------------------
 
-it('gives services outside production the configured defaults and production only its own limits', function () {
+it('writes the environment’s defaults on services created outside production, never on existing ones', function () {
     config(['limits.defaults.non_production' => ['memory_limit' => 384, 'cpus' => 0.5, 'pids_limit' => 256]]);
     $staging = projects_environment($this->organization);
-    $prod = projects_site($this->organization, 'Live', environment: projects_default_env($this->organization), servers: [$this->server], attributes: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3200]);
-    $stage = projects_site($this->organization, 'Stage', environment: $staging, servers: [$this->server], attributes: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3300,
-        'limits' => ['cpus' => 1]]);
+    $docker = ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null];
+    $prod = projects_site($this->organization, 'Live', environment: projects_default_env($this->organization), servers: [$this->server], attributes: [...$docker, 'app_port' => 3200]);
+    $stage = projects_site($this->organization, 'Stage', environment: $staging, servers: [$this->server], attributes: [...$docker, 'app_port' => 3300]);
+    $own = projects_site($this->organization, 'Own', environment: $staging, servers: [$this->server], attributes: [...$docker, 'app_port' => 3400, 'limits' => ['cpus' => 1]]);
+    $stack = projects_site($this->organization, 'Stack', environment: $staging, servers: [$this->server], attributes: ['runtime' => 'compose', 'framework' => 'docker', 'php_version' => null]);
+    // A site from before this release placed now (a backfill): untouched.
+    $old = projects_site($this->organization, 'Old', servers: [$this->server], attributes: [...$docker, 'app_port' => 3500, 'created_at' => now()->subDay()]);
+    app(LinkService::class)($staging, ServiceKind::Site, $old->id, 'Old');
 
-    $limits = $this->getJson("/sites/{$stage->id}/limits")->assertOk()->json('data');
-    expect($limits['limits'])->toBe(['cpus' => 1])
-        ->and($limits['effective'])->toBe(['memory_limit' => 384, 'cpus' => 1, 'pids_limit' => 256])
-        ->and($limits['bounds'])->toMatchArray(['memory_mb' => 2048, 'cpus' => 2])
-        ->and($this->getJson("/sites/{$prod->id}/limits")->json('data.effective'))->toBe([]);
+    expect($stage->refresh()->limits)->toBe(['memory_limit' => 384, 'cpus' => 0.5, 'pids_limit' => 256])
+        ->and($own->refresh()->limits)->toBe(['cpus' => 1])
+        ->and($prod->refresh()->limits)->toBeNull()
+        ->and($old->refresh()->limits)->toBeNull()
+        ->and($stack->refresh()->compose_limits)->toBe(['*' => ['memory_limit' => 384, 'cpus' => 0.5, 'pids_limit' => 256]])
+        ->and($stack->toData()->composeServiceLimits('db')->memoryLimit)->toBe(384);
 
+    // What is stored is what runs: no merge at runtime.
+    $limits = $this->getJson("/sites/{$own->id}/limits")->assertOk()->json('data');
+    expect($limits['effective'])->toBe(['cpus' => 1])
+        ->and($limits['defaults'])->toBe(['memory_limit' => 384, 'cpus' => 0.5, 'pids_limit' => 256]);
     $items = collect($this->getJson("/servers/{$this->server->id}/capacity")->json('data.items'))->keyBy('id');
-    expect($items[$stage->id])->toMatchArray(['memory_limit_mb' => 384, 'cpus' => 1])
-        ->and($items[$prod->id])->toMatchArray(['memory_limit_mb' => null, 'cpus' => null]);
+    expect($items[$stage->id])->toMatchArray(['memory_limit_mb' => 384])
+        ->and($items[$own->id])->toMatchArray(['memory_limit_mb' => null, 'cpus' => 1])
+        ->and($items[$old->id])->toMatchArray(['memory_limit_mb' => null]);
+
+    // A new worker starts with the defaults under its own values, validated together: a reservation above the
+    // default limit is refused here instead of breaking the server's proc.apply.
+    $blog = projects_site($this->organization, 'Blog', environment: $staging, servers: [$this->server], attributes: ['runtime' => 'php-fpm']);
+    expect($this->agents->last('runtime.fpm.pool', $this->server->id)['payload']['slice'])->toBe('site_'.str_replace('-', '_', $blog->slug));
+    $this->post("/sites/{$blog->id}/queues", ['processes' => 1, 'timeout' => 60, 'sleep' => 3, 'tries' => 1, 'memory' => 128, 'limits' => ['memory_reservation' => 1024]])
+        ->assertSessionHasErrors('limits.memory_reservation');
+    $this->post("/sites/{$blog->id}/queues", ['processes' => 1, 'timeout' => 60, 'sleep' => 3, 'tries' => 1, 'memory' => 128, 'limits' => ['cpus' => 0.25]])
+        ->assertSessionHasNoErrors();
+    expect(Worker::query()->where('site_id', $blog->id)->sole()->limits)->toBe(['memory_limit' => 384, 'cpus' => 0.25, 'pids_limit' => 256]);
+});
+
+it('never sends a reservation above the limit, whatever is stored', function () {
+    $limits = ResourceLimits::fromArray(['memory_limit' => 256, 'memory_reservation' => 1024]);
+
+    expect($limits->docker()['memory_reservation_bytes'])->toBe(256 * 1024 ** 2)
+        ->and($limits->slice('site_x')['memory_low_bytes'])->toBe(256 * 1024 ** 2)
+        ->and($limits->composeService()['mem_reservation'])->toBe('256M');
+});
+
+it('applies a compose service’s limits on the next deploy, never only live', function () {
+    $stack = projects_site($this->organization, 'Stack', servers: [$this->server], attributes: ['runtime' => 'compose', 'framework' => 'docker', 'php_version' => null, 'compose_source' => 'inline']);
+    ComposeVersion::query()->create(['site_id' => $stack->id, 'version' => 1, 'content' => "services:\n  db:\n    image: postgres:17\n", 'created_at' => now()]);
+
+    $this->putJson("/sites/{$stack->id}/compose/services/db/limits", ['limits' => ['memory_limit' => 512]])->assertOk()->assertJsonPath('data.applied', 'redeploy');
+    $this->agents->assertNothingDispatched('docker.update');
+    expect($stack->refresh()->compose_limits)->toBe(['db' => ['memory_limit' => 512]]);
 });
 
 // ---- Capacity ---------------------------------------------------------------------------------------------------
@@ -287,4 +333,40 @@ it('counts compose services and FrankenPHP sites in the capacity view as their r
 
     $ids = collect($this->getJson("/servers/{$this->server->id}/capacity")->json('data.items'))->pluck('id')->all();
     expect($ids)->not->toContain($franken->id)->not->toContain($stack->id);
+});
+
+it('trusts neither the agent’s clock, its counts, nor slices of workers that don’t run on it', function () {
+    Event::fake([ServiceOomKilled::class]);
+    $other = limits_server($this->organization);
+    $blog = projects_site($this->organization, 'Blog', servers: [$this->server, $other], attributes: ['runtime' => 'php-fpm']);
+    $elsewhere = Worker::query()->create(['organization_id' => $this->organization->id, 'site_id' => $blog->id, 'queue' => 'default', 'server_ids' => [$other->id]]);
+    $here = Worker::query()->create(['organization_id' => $this->organization->id, 'site_id' => $blog->id, 'queue' => 'high']);
+
+    limits_report($this, [
+        // Runs on the other server only.
+        ['kind' => 'oom_kill', 'source' => 'slice', 'name' => "worker_{$elsewhere->id}"],
+        // From the future, and from yesterday's queue.
+        ['kind' => 'oom_kill', 'source' => 'slice', 'name' => "worker_{$here->id}", 'at' => now()->addHour()->toIso8601String()],
+        ['kind' => 'oom_kill', 'source' => 'slice', 'name' => "worker_{$here->id}", 'at' => now()->subDays(2)->toIso8601String()],
+        // A count gone wild.
+        ['kind' => 'oom_kill', 'source' => 'slice', 'name' => "worker_{$here->id}", 'count' => 10 ** 9, 'at' => now()->subMinute()->toIso8601String()],
+    ]);
+
+    Event::assertDispatchedTimes(ServiceOomKilled::class, 1);
+    Event::assertDispatched(ServiceOomKilled::class, fn (ServiceOomKilled $e) => $e->serviceId === $here->id && $e->kills === RecordServiceEvents::MAX_COUNT
+        && $e->at === now()->toIso8601String());
+    expect(ServiceState::query()->count())->toBe(1);
+});
+
+it('records the slices an agent skipped as the apply’s error, the rest applied', function () {
+    $blog = projects_site($this->organization, 'Blog', servers: [$this->server], attributes: ['runtime' => 'php-fpm', 'limits' => ['memory_limit' => 256]]);
+    processes_deploy($blog, [$this->server]);
+    app(ServerConverger::class)->converge($this->server->id);
+    $apply = $this->agents->last('proc.apply', $this->server->id);
+
+    $this->agents->succeed($apply['handle'], ['changed' => true, 'started' => [], 'stopped' => [], 'restarted' => [], 'unchanged' => [], 'slice_errors' => ['site_blog' => 'set-property failed']]);
+
+    $state = ServerState::query()->find($this->server->id);
+    expect($state->proc_status)->toBe(ApplyStatus::Applied)
+        ->and($state->proc_error)->toBe('Limits not applied: site_blog: set-property failed');
 });

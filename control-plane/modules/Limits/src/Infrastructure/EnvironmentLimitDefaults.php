@@ -23,9 +23,4 @@ final class EnvironmentLimitDefaults implements LimitDefaults
 
         return ResourceLimits::fromArray((array) config($production ? 'limits.defaults.production' : 'limits.defaults.non_production', []));
     }
-
-    public function effective(ResourceLimits $own, string $siteId): ResourceLimits
-    {
-        return $own->withDefaults($this->forSite($siteId));
-    }
 }

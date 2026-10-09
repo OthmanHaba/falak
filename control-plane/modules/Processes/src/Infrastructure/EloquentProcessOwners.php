@@ -2,7 +2,6 @@
 
 namespace Falak\Processes\Infrastructure;
 
-use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Processes\Application\StatusPoller;
 use Falak\Processes\Contracts\Data\ProcessOwner;
@@ -15,7 +14,6 @@ use Falak\Sites\Contracts\SiteDirectory;
 final class EloquentProcessOwners implements ProcessOwners
 {
     public function __construct(
-        private readonly LimitDefaults $defaults,
         private readonly SiteDirectory $sites,
     ) {}
 
@@ -31,7 +29,7 @@ final class EloquentProcessOwners implements ProcessOwners
         $kind = (string) ($meta['kind'] ?? '');
 
         if (in_array($kind, ['worker', 'daemon'], true) && is_string($meta['ref_id'] ?? null)) {
-            return $this->process($kind, $meta['ref_id']);
+            return $this->process($kind, $meta['ref_id'], $serverId);
         }
 
         $site = $this->sites->find($meta['site_id']);
@@ -40,12 +38,12 @@ final class EloquentProcessOwners implements ProcessOwners
             return null;
         }
 
-        $limits = $this->defaults->effective($site->limits, $site->id);
+        $limits = $site->limits;
 
         return new ProcessOwner($site->organizationId, $site->id, 'site', $site->id, "{$site->name} · ".($meta['label'] ?? $program), "/sites/{$site->id}", $limits->memoryLimit);
     }
 
-    public function process(string $kind, string $id): ?ProcessOwner
+    public function process(string $kind, string $id, ?string $serverId = null): ?ProcessOwner
     {
         $process = match ($kind) {
             'worker' => Worker::query()->find(strtolower($id)),
@@ -58,8 +56,14 @@ final class EloquentProcessOwners implements ProcessOwners
         }
 
         $site = $this->sites->find($process->site_id);
+
+        // A server reporting another server's worker (or one of another organization) names nothing of its own.
+        if ($serverId !== null && ($site === null || ! $process->runsOn($serverId) || ! in_array($serverId, $site->serverIds(), true))) {
+            return null;
+        }
+
         $label = $process instanceof Worker ? StateCompiler::workerLabel($process) : $process->name;
-        $limits = $this->defaults->effective(ResourceLimits::fromArray($process->limits), $process->site_id);
+        $limits = ResourceLimits::fromArray($process->limits);
 
         return new ProcessOwner($process->organization_id, $process->site_id, $kind, $process->id, ($site !== null ? "{$site->name} · " : '').$label,
             StatusPoller::url($process->site_id, $kind), $limits->memoryLimit);

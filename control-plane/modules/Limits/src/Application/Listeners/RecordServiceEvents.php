@@ -10,6 +10,7 @@ use Falak\Limits\Events\ServiceOomKilled;
 use Falak\Limits\Events\ServiceRestartLoop;
 use Falak\Servers\Contracts\ServerDirectory;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -21,6 +22,9 @@ use Throwable;
  */
 final class RecordServiceEvents implements ShouldQueue
 {
+    /** One event never stands for more (a counter gone wild, a forged report). */
+    public const MAX_COUNT = 1000;
+
     public function __construct(
         private readonly ServiceResolver $resolver,
         private readonly ServerDirectory $servers,
@@ -41,15 +45,20 @@ final class RecordServiceEvents implements ShouldQueue
                 continue;
             }
 
+            // The agent's time only filters (its clock is not trusted): an event from the future or older than a day
+            // (a queue that survived a long outage) is dropped. Windows, badges and alert dedup use the time it arrived.
             try {
-                $at = Carbon::parse($reported['at']);
+                $reportedAt = Carbon::parse($reported['at']);
             } catch (Throwable) {
-                $at = now();
+                continue;
             }
 
-            // A clock running ahead never pushes a window into the future.
-            $at = $at->isFuture() ? now() : $at;
-            $count = max(1, (int) $reported['count']);
+            if ($reportedAt->gt(now()->addMinutes(5)) || $reportedAt->lt(now()->subDay())) {
+                continue;
+            }
+
+            $at = now();
+            $count = min(self::MAX_COUNT, max(1, (int) $reported['count']));
 
             match ($reported['kind']) {
                 'oom_kill' => $this->oom($event->serverId, $server->name, $service, $count, $at),
@@ -107,16 +116,25 @@ final class RecordServiceEvents implements ShouldQueue
     {
         $query = ServiceState::query()->where('server_id', $serverId)->where('service_kind', $service->kind)->where('service_id', $service->id);
 
-        /** @var ServiceState */
-        $state = ($lock ? $query->lockForUpdate() : $query)->first() ?? ServiceState::query()->create([
-            'organization_id' => $service->organizationId,
-            'server_id' => $serverId,
-            'site_id' => $service->siteId,
-            'service_kind' => $service->kind,
-            'service_id' => $service->id,
-            'label' => $service->label,
-        ]);
+        $state = ($lock ? $query->clone()->lockForUpdate() : $query->clone())->first();
 
+        if ($state === null) {
+            // One row per service and server (unique index): a concurrent report that created it first wins.
+            try {
+                $state = ServiceState::query()->create([
+                    'organization_id' => $service->organizationId,
+                    'server_id' => $serverId,
+                    'site_id' => $service->siteId,
+                    'service_kind' => $service->kind,
+                    'service_id' => $service->id,
+                    'label' => $service->label,
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                $state = ($lock ? $query->clone()->lockForUpdate() : $query->clone())->firstOrFail();
+            }
+        }
+
+        /** @var ServiceState $state */
         $state->label = $service->label;
 
         return $state;

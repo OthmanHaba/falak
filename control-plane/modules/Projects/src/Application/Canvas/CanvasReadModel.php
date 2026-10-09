@@ -10,7 +10,6 @@ use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Deployments\Contracts\Data\DeploymentSummary;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Fleet\Contracts\AgentDirectory;
-use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Limits\Contracts\ServiceHealth;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Contracts\VariableReferences;
@@ -65,7 +64,6 @@ final class CanvasReadModel
         private readonly ComposeInspector $inspector,
         private readonly DatabaseConnections $connections,
         private readonly ServiceVolumes $volumes,
-        private readonly LimitDefaults $limits,
         private readonly ServiceHealth $health,
     ) {}
 
@@ -155,7 +153,7 @@ final class CanvasReadModel
         $subtitle = implode(' · ', array_filter([
             $site->framework->label(),
             $site->runtime->isPhp() && $site->phpVersion ? "PHP {$site->phpVersion}" : $site->runtime->label(),
-            $this->limits->effective($site->limits, $site->id)->summary(),
+            $site->limits->summary(),
         ]));
 
         $compose = null;

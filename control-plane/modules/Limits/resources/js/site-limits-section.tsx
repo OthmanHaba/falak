@@ -11,6 +11,7 @@ interface SiteLimitsData {
     scope: 'site' | 'services' | 'policy' | 'none';
     limits: ResourceLimits;
     effective: ResourceLimits;
+    /** What a new service of this environment starts with. */
     defaults: ResourceLimits;
     services: { name: string; limits: ResourceLimits; effective: ResourceLimits }[];
     bounds: { memory_mb: number | null; cpus: number | null; min_memory_mb: number };
@@ -26,7 +27,6 @@ const APPLIED: Record<string, string> = {
 function LimitsEditor({
     url,
     initial,
-    defaults,
     bounds,
     policyOnly,
     canUpdate,
@@ -34,7 +34,6 @@ function LimitsEditor({
 }: {
     url: string;
     initial: ResourceLimits;
-    defaults: ResourceLimits;
     bounds: SiteLimitsData['bounds'];
     policyOnly: boolean;
     canUpdate: boolean;
@@ -62,15 +61,7 @@ function LimitsEditor({
 
     return (
         <div className="grid gap-3">
-            <LimitsFields
-                value={value}
-                onChange={setValue}
-                errors={errors}
-                defaults={defaults}
-                bounds={bounds}
-                policyOnly={policyOnly}
-                disabled={!canUpdate}
-            />
+            <LimitsFields value={value} onChange={setValue} errors={errors} bounds={bounds} policyOnly={policyOnly} disabled={!canUpdate} />
             {(errors.limits || errors.service) && <p className="text-danger text-xs">{errors.limits ?? errors.service}</p>}
             {canUpdate && (
                 <div className="flex justify-end">
@@ -96,12 +87,10 @@ export function SiteLimitsSection({ ctx }: ServiceTabProps) {
     if (!data) return <SkeletonRows rows={3} />;
     if (data.scope === 'none') return null;
 
-    const nonProduction = Object.keys(data.defaults).length > 0;
     const description =
         data.scope === 'policy'
             ? 'FrankenPHP sites run inside the shared edge: only the restart, log and OOM settings of their processes apply.'
-            : 'Limits keep one service from starving the others on its servers. Empty fields mean no limit' +
-              (nonProduction ? ' — or this environment’s default, shown in the field.' : '.');
+            : 'Limits keep one service from starving the others on its servers. Empty fields mean no limit.';
 
     return (
         <Section title="Resource limits" description={description}>
@@ -127,7 +116,6 @@ export function SiteLimitsSection({ ctx }: ServiceTabProps) {
                                 <LimitsEditor
                                     url={`/sites/${ctx.service.ref_id}/compose/services/${encodeURIComponent(service.name)}/limits`}
                                     initial={service.limits}
-                                    defaults={data.defaults}
                                     bounds={data.bounds}
                                     policyOnly={false}
                                     canUpdate={data.can.update}
@@ -142,7 +130,6 @@ export function SiteLimitsSection({ ctx }: ServiceTabProps) {
                 <LimitsEditor
                     url={url}
                     initial={data.limits}
-                    defaults={data.defaults}
                     bounds={data.bounds}
                     policyOnly={data.scope === 'policy'}
                     canUpdate={data.can.update}

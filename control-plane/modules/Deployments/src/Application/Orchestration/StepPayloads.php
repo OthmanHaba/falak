@@ -12,7 +12,6 @@ use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Fleet\Contracts\AgentDirectory;
-use Falak\Limits\Contracts\LimitDefaults;
 use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
@@ -50,7 +49,6 @@ final class StepPayloads
         private readonly VolumeMounts $mounts,
         private readonly ServiceVolumes $volumes,
         private readonly ProjectDirectory $projects,
-        private readonly LimitDefaults $limits,
     ) {}
 
     /** @var array<string, list<string>> site id => variables the last resolve filled from the secret store */
@@ -241,11 +239,10 @@ final class StepPayloads
 
         $files = $this->composeFiles($site, $release, $releaseId, $serverId, $deployment);
         $network = $this->environmentNetwork($site->id);
-        $defaults = $this->limits->forSite($site->id);
         $limits = [];
 
         foreach (self::serviceNames((string) $release['yaml']) as $service) {
-            $limits[$service] = ($site->composeLimits[$service] ?? new ResourceLimits)->withDefaults($defaults);
+            $limits[$service] = $site->composeServiceLimits($service);
         }
 
         if (($override = self::falakOverride((string) $release['yaml'], $network, $limits)) !== null) {
@@ -947,9 +944,8 @@ final class StepPayloads
             ]),
             'secret_files' => $files ?: null,
             'mask' => $mask ?: null,
-            // Memory, CPUs, processes, restart policy, log caps and OOM preference (the environment's defaults under the
-            // site's own).
-            ...$this->limits->effective($site->limits, $site->id)->docker(),
+            // Memory, CPUs, processes, restart policy, log caps and OOM preference.
+            ...$site->limits->docker(),
         ], fn ($v) => $v !== null);
     }
 

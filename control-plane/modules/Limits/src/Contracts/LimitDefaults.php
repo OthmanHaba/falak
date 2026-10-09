@@ -3,13 +3,12 @@
 namespace Falak\Limits\Contracts;
 
 /**
- * Limits a site's services get for the values their own leave unset, by the site's environment: none in production
- * (or for a site in no project), config('limits.defaults.non_production') elsewhere (staging, previews).
+ * Limits new services start with, by the site's environment: none in production (or for a site in no project),
+ * config('limits.defaults.non_production') elsewhere (staging, previews). They are written on the service when it is
+ * created (a site placed in an environment, a new worker or daemon) and never merged at runtime: services that existed
+ * before, or whose environment changes, keep exactly the limits they have.
  */
 interface LimitDefaults
 {
     public function forSite(string $siteId): ResourceLimits;
-
-    /** $own with the site environment's defaults filled in: what is enforced. */
-    public function effective(ResourceLimits $own, string $siteId): ResourceLimits;
 }

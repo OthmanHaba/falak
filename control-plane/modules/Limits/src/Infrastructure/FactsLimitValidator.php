@@ -19,14 +19,17 @@ final class FactsLimitValidator implements LimitValidator
         private readonly ServerDirectory $servers,
     ) {}
 
-    public function validate(?array $input, array $serverIds, string $field = 'limits'): ResourceLimits
+    public function validate(?array $input, array $serverIds, string $field = 'limits', ?ResourceLimits $base = null): ResourceLimits
     {
-        if ($input === null) {
+        if ($input === null && $base === null) {
             return new ResourceLimits;
         }
 
-        $data = Validator::make([$field => $input], ResourceLimits::rules($field))->validate();
-        $limits = ResourceLimits::fromArray((array) ($data[$field] ?? []));
+        $data = Validator::make([$field => $input ?? []], ResourceLimits::rules($field))->validate();
+        // What will be enforced: the input over $base (a new service's defaults). Every check below is on it, so an
+        // input that only conflicts with a default (a reservation above the default limit) is refused here, not by
+        // the agent later.
+        $limits = ResourceLimits::fromArray((array) ($data[$field] ?? []))->withDefaults($base ?? new ResourceLimits);
         $errors = [];
 
         if ($limits->memoryLimit !== null && $limits->memoryReservation !== null && $limits->memoryReservation > $limits->memoryLimit) {

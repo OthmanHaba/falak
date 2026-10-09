@@ -11,7 +11,9 @@ use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Insights\Contracts\SiteNameResolver;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Limits\Contracts\CapacitySources;
+use Falak\Projects\Events\ServiceLinked;
 use Falak\Servers\Events\ServerDeleted;
+use Falak\Sites\Application\Listeners\ApplyLimitDefaults;
 use Falak\Sites\Application\Listeners\DeleteOrganizationSites;
 use Falak\Sites\Application\Listeners\DetachSourceConnection;
 use Falak\Sites\Application\Listeners\HandleCommandOutcome;
@@ -83,6 +85,8 @@ class SitesServiceProvider extends ModuleServiceProvider
     protected function bootModule(): void
     {
         Gate::policy(Site::class, SitePolicy::class);
+        // New sites placed outside production start with that environment's default limits.
+        Event::listen(ServiceLinked::class, ApplyLimitDefaults::class);
         // Sites' and compose services' limits in servers' capacity views.
         $this->app->make(CapacitySources::class)->register(SitesCapacity::class);
 

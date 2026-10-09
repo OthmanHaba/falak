@@ -35,7 +35,7 @@ final class SiteLimitsController extends Controller
         if ($site->runtime === SiteRuntime::Compose) {
             foreach ($inspector->parse($compose->project($site->id) ?? '')->serviceNames() as $name) {
                 $limits = ResourceLimits::fromArray($site->compose_limits[$name] ?? null);
-                $services[] = ['name' => $name, 'limits' => (object) $limits->toArray(), 'effective' => (object) $limits->withDefaults($defaults)->toArray()];
+                $services[] = ['name' => $name, 'limits' => (object) $limits->toArray(), 'effective' => (object) $site->toData()->composeServiceLimits($name)->toArray()];
             }
         }
 
@@ -62,7 +62,8 @@ final class SiteLimitsController extends Controller
                 default => 'site',
             },
             'limits' => (object) $own->toArray(),
-            'effective' => (object) $own->withDefaults($defaults)->toArray(),
+            'effective' => (object) $own->toArray(),
+            // What a new service of this environment starts with (written on it when created, never merged later).
             'defaults' => (object) $defaults->toArray(),
             'services' => $services,
             'bounds' => ['memory_mb' => $memory, 'cpus' => $cpus, 'min_memory_mb' => ResourceLimits::MIN_MEMORY_MB],
@@ -86,7 +87,7 @@ final class SiteLimitsController extends Controller
 
         return response()->json(['data' => [
             'limits' => (object) $own->toArray(),
-            'effective' => (object) $this->defaults->effective($own, $site->id)->toArray(),
+            'effective' => (object) $own->toArray(),
             // live: running containers / slices changed now; redeploy: on the next deploy; none: nothing to apply yet.
             'applied' => $applied,
         ]]);
