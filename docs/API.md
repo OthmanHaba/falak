@@ -398,7 +398,13 @@ within 5 minutes, else `423`: the backup's data key as a `falak-restore` key fil
 /databases/databases/{database}` (JSON: the panel). Volumes: `POST /volumes/{volume}/schedules` and `PUT
 /volumes/schedules/{schedule}` take the same `encryption_mode`, `age_recipient`, `drill` and `drill_server_id`; `POST
 /volumes/schedules/{schedule}/drill`, `POST /volumes/backups/{backup}/restore {…, identity?}`, `POST
-/volumes/backups/{backup}/key` (`volumes.browse` and a re-authentication). Backups and drills: docs/BACKUPS.md.
+/volumes/backups/{backup}/key` (`volumes.browse` and a re-authentication). Point-in-time recovery (SQL instances):
+`PUT /databases/instances/{instance}/pitr {enabled, storage_provider_id?, encryption_mode? (cp|customer), age_recipient?,
+window_days? (1–35), base_interval_days?}` (`databases.manage`; turning it on takes a base backup), `POST
+/databases/instances/{instance}/pitr/base` (a base now), `POST /databases/instances/{instance}/pitr/restore
+{target_time, identity?}` (JSON, `databases.restore`: `202 {data: {id, restored_instance_id}}`, a new read-only
+instance at the time), `POST /databases/pitr-restores/{restore}/decision {decision: swap|keep|discard}`
+(`databases.restore`). Backups, drills and PITR: docs/BACKUPS.md.
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 

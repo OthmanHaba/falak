@@ -83,6 +83,9 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 	if _, err := d.InstanceCreate(ctx, InstancePayload{Instance: spec(src, "01hzye2evol000000000000001", true), Password: password}, stream()); err != nil {
 		t.Fatal(err)
 	}
+	// The application's account (MariaDB's read_only holds back every account but those with READ ONLY ADMIN, root).
+	appUser := "app_rw"
+	asApp := false
 	sql := func(id, q string) (string, error) {
 		var argv []string
 		switch engine {
@@ -91,9 +94,13 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 		default:
 			client := "mysql"
 			if engine == "mariadb" {
-				client = "mariadb"
+				client = "mariadb --skip-ssl" // no certificate here; its client requires TLS by default
 			}
-			argv = []string{"exec", Container(id), "sh", "-c", client + ` -uroot -p"$(cat /run/secrets/password)" -N -B app -e "$0"`, q}
+			login := ` -uroot -p"$(cat /run/secrets/password)"`
+			if asApp {
+				login = " -u" + appUser + " -papp-Pa55word"
+			}
+			argv = []string{"exec", Container(id), "sh", "-c", client + login + ` -N -B app -e "$0"`, q}
 		}
 		var out, errb bytes.Buffer
 		res, err := runner.Exec{}.Run(ctx, runner.Cmd{Name: "docker", Args: argv, Stdout: &out, Stderr: &errb})
@@ -114,6 +121,10 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	must(src, "CREATE TABLE items (id int PRIMARY KEY, note varchar(40))")
+	if engine != "postgres" {
+		must(src, "CREATE USER "+appUser+"@'%' IDENTIFIED BY 'app-Pa55word'")
+		must(src, "GRANT ALL ON app.* TO "+appUser+"@'%'")
+	}
 	must(src, "INSERT INTO items VALUES (1, 'before the base'), (2, 'before the base')")
 
 	t.Log("base backup")
@@ -200,6 +211,7 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 	if counts == nil {
 		t.Fatalf("no row counts: %+v", r)
 	}
+	asApp = engine != "postgres"
 	if _, err := sql(dst, "INSERT INTO items VALUES (5, 'read-only?')"); err == nil {
 		t.Fatal("the restored copy accepted a write before it was promoted")
 	}
@@ -211,5 +223,6 @@ func TestPITRFlowEndToEnd(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	must(dst, "INSERT INTO items VALUES (5, 'writable')")
+	asApp = false
 	t.Logf("PASS: %s %s recovered to T (4 rows, the DROP TABLE undone), read-only until promoted", engine, version)
 }

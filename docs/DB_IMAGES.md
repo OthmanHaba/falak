@@ -247,6 +247,8 @@ IMAGE=falak-postgres:17-local images/db/test.sh postgres 17   # test an existing
 IMAGE=falak-postgres:17-local images/db/drill-test.sh postgres 17   # a restore drill's hardening: cap-drop ALL + the
                                               # entrypoint's capabilities, no-new-privileges, pids, no network
 SKIP_PITR=1 images/db/test.sh mysql 8.4       # skip physical backup + PITR
+IMAGE=falak-mysql:8.4-local images/db/pitr-test.sh mysql 8.4   # the agent's whole PITR flow: shipping, a base, a restore
+                                              # to a time into a new instance (docs/BACKUPS.md)
 cd agent && go test ./internal/dbhelper       # unit tests (config golden files: go test ./internal/dbhelper -update)
 ```
 
