@@ -6,6 +6,7 @@ use Falak\Identity\Domain\Models\Organization;
 use Falak\Servers\Domain\Models\Server;
 
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';
+require_once __DIR__.'/../../../Processes/tests/Support/helpers.php';
 require_once __DIR__.'/../../../../tests/Support/FakeAgentGateway.php';
 
 /**

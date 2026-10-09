@@ -1,5 +1,6 @@
 <?php
 
+use Falak\Fleet\Events\AgentServiceEventsReported;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Servers\Contracts\ServerType;
@@ -230,4 +231,14 @@ it('shows compose sites as "Compose · N services" and crashed when a service is
     ]);
 
     expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['status' => 'crashed', 'status_label' => '2/3 services healthy · cache down']);
+});
+
+it('shows a site’s limits in its card subtitle and OOM kills as a badge', function () {
+    $web = sites_server($this->organization->id, ['name' => 'web-1']);
+    $site = projects_site($this->organization, 'Storefront', [], $this->environment, [$web], ['runtime' => 'php-fpm', 'limits' => ['memory_limit' => 512, 'cpus' => 1]]);
+    AgentServiceEventsReported::dispatch('agent', $this->organization->id, $web->id, [
+        ['kind' => 'oom_kill', 'source' => 'slice', 'name' => 'site_'.str_replace('-', '_', $site->slug), 'site' => null, 'project' => null, 'service' => null, 'instance' => null, 'count' => 1, 'at' => now()->toIso8601String()],
+    ]);
+
+    expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['subtitle' => 'Laravel · PHP 8.4 · 512 MB · 1 CPU', 'badges' => ['OOM killed']]);
 });
