@@ -21,4 +21,7 @@ enum InstanceStatus: string
     case Retired = 'retired';
 
     case Deleting = 'deleting';
+
+    /** A point-in-time restore's new instance: read-only, waiting for a decision (swap, keep, discard). */
+    case Inspecting = 'inspecting';
 }

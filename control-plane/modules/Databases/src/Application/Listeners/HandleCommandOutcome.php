@@ -6,6 +6,8 @@ use Falak\Databases\Application\Actions\ApplyDatabaseUser;
 use Falak\Databases\Application\Actions\ApplyInstance;
 use Falak\Databases\Application\Actions\CreateDatabase;
 use Falak\Databases\Application\Actions\SettleDrill;
+use Falak\Databases\Application\Actions\SettlePitr;
+use Falak\Databases\Application\Actions\TakeOverInstance;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Application\Jobs\PruneScheduleBackups;
 use Falak\Databases\Domain\Enums\BackupStatus;
@@ -13,7 +15,6 @@ use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Enums\RestoreStatus;
 use Falak\Databases\Domain\Models\Backup;
-use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
@@ -29,7 +30,6 @@ use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
-use Falak\Volumes\Contracts\AttachableType;
 use Falak\Volumes\Contracts\ServiceVolumes;
 use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -46,10 +46,13 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 {
     private const INSTANCE_TYPES = ['db.instance.create', 'db.instance.update', 'db.instance.restart', 'db.instance.delete', 'db.instance.password', 'db.instance.secrets', 'db.instance.upgrade'];
 
-    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', 'db.drill', ...self::INSTANCE_TYPES];
+    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', 'db.drill', 'db.pitr.base', 'db.pitr.restore', 'db.pitr.promote', ...self::INSTANCE_TYPES];
 
     /** Payload secrets dropped once a command settled: backup keys, a customer's age identity. */
     private const KEY_PATHS = ['encryption.key', 'encryption.identity'];
+
+    /** db.pitr.restore: every object's key, the identity, the copy's password and its certificate's key. */
+    private const PITR_RESTORE_PATHS = ['password', 'identity', 'base.encryption.key', 'segments.*.encryption.key', 'instance.tls.private_key'];
 
     public function __construct(
         private readonly ApplyDatabaseUser $applyUser,
@@ -59,6 +62,8 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
         private readonly AgentCommands $commands,
         private readonly AgentGateway $agents,
         private readonly SettleDrill $drills,
+        private readonly SettlePitr $pitr,
+        private readonly TakeOverInstance $takeOver,
         private readonly AuditLog $audit,
     ) {}
 
@@ -92,8 +97,8 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
             return;
         }
 
-        if (in_array($type, ['db.backup', 'db.restore', 'db.drill'], true)) {
-            if (! $this->agents->forgetSecrets($commandId, self::KEY_PATHS)) {
+        if (in_array($type, ['db.backup', 'db.restore', 'db.drill', 'db.pitr.base', 'db.pitr.restore'], true)) {
+            if (! $this->agents->forgetSecrets($commandId, $type === 'db.pitr.restore' ? self::PITR_RESTORE_PATHS : self::KEY_PATHS)) {
                 // Not settled yet as far as Fleet knows: the fleet sweep forgets them later.
                 Log::info('Command secrets left for the fleet sweep.', ['command_id' => $commandId]);
             }
@@ -105,6 +110,9 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
             'db.backup' => $this->backup($commandId, $succeeded, $error, $result ?? []),
             'db.restore' => $this->restore($commandId, $succeeded, $error, $result ?? []),
             'db.drill' => ($this->drills)($commandId, $succeeded, $error, $result ?? []),
+            'db.pitr.base' => $this->pitr->base($commandId, $succeeded, $error, $result ?? []),
+            'db.pitr.restore' => $this->pitr->restored($commandId, $succeeded, $error, $result ?? []),
+            'db.pitr.promote' => $this->pitr->promoted($key, $succeeded, $error),
         };
     }
 
@@ -165,6 +173,10 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
         }
 
         $instance->forceFill([...$observed, 'status' => InstanceStatus::Active, 'status_message' => null])->save();
+
+        if ($instance->pitr_enabled) {
+            $this->pitr->baseAfterTakeOver($instance);
+        }
 
         if ($instance->engine->isKeyValue()) {
             $instance->users()->update(['status' => ResourceStatus::Active, 'status_message' => null]);
@@ -308,43 +320,14 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
             return;
         }
 
-        DB::transaction(function () use ($source, $target) {
-            $hostPort = $source->host_port;
-            $hostname = $source->hostname;
+        ($this->takeOver)($source, $target,
+            "Replaced by {$target->label()}: read-only and stopped, its data volume kept. Delete it once you verified the upgraded database.",
+            now()->addHours((int) config('databases.retire_hours', 24)));
 
-            $source->forceFill([
-                'status' => InstanceStatus::Retired,
-                'status_message' => "Replaced by {$target->label()}: read-only and stopped, its data volume kept. Delete it once you verified the upgraded database.",
-                'replaced_by' => $target->id,
-                'host_port' => null,
-                'hostname' => "falak-db-{$source->id}",
-                'retire_at' => now()->addHours((int) config('databases.retire_hours', 24)),
-            ])->save();
-
-            Database::query()->where('database_instance_id', $source->id)->update(['database_instance_id' => $target->id, 'status' => ResourceStatus::Active]);
-            DatabaseUser::query()->where('database_instance_id', $source->id)->update(['database_instance_id' => $target->id, 'status' => ResourceStatus::Active]);
-            BackupSchedule::query()->where('database_instance_id', $source->id)->update(['database_instance_id' => $target->id]);
-
-            $target->forceFill([
-                'status' => InstanceStatus::Active,
-                'status_message' => null,
-                'hostname' => $hostname,
-                'host_port' => $hostPort,
-                'published_addresses' => $source->published_addresses,
-                'upgrade_of' => null,
-            ])->save();
-
-            foreach ($target->databases()->get() as $database) {
-                $this->volumes->releaseDatabase($database->id);
-            }
-
-            if (($primary = $target->databases()->reorder()->orderBy('created_at')->first()) !== null && $target->volume_id !== null) {
-                $this->volumes->attach($target->volume_id, AttachableType::Database, $primary->id, '/var/lib/falak/db');
-            }
-
-            // Publish on the old host port, keep the DNS name across recreations, and a certificate valid for that name.
-            ($this->applyInstance)($target, background: true, renewCertificate: true);
-        });
+        // Point-in-time recovery starts over on the new instance: its log continues from a base of its own.
+        if ($target->refresh()->pitr_enabled) {
+            $this->pitr->baseAfterTakeOver($target);
+        }
 
         $this->audit->record('databases.instance_upgrade_finished', 'database_instance', $target->id, ['name' => $target->name, 'version' => $target->version, 'replaced' => $source->id], $target->organization_id);
     }

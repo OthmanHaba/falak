@@ -35,7 +35,12 @@ use Illuminate\Support\Carbon;
  * @property ?array<string, int> $table_counts row count per table (Redis / Valkey: keys) when it was taken
  * @property ?string $drill_status the last drill of this backup (DrillStatus)
  * @property ?Carbon $verified_at when a drill last restored it successfully
- * @property string $trigger manual|scheduled
+ * @property string $trigger manual|scheduled|pitr
+ * @property string $type logical|base (a physical backup of the whole instance, for point-in-time recovery)
+ * @property ?string $log_start bases: postgres start_wal, mysql/mariadb the binlog the base starts in
+ * @property ?string $log_stop bases: postgres stop_wal
+ * @property ?Carbon $base_started_at bases: falak-db's start (the server's clock)
+ * @property ?Carbon $base_finished_at bases: falak-db's end, the earliest point it restores to
  * @property BackupStatus $status
  * @property ?int $size_bytes
  * @property ?int $uncompressed_bytes
@@ -54,6 +59,10 @@ use Illuminate\Support\Carbon;
 class Backup extends Model
 {
     use HasUlids;
+
+    public const LOGICAL = 'logical';
+
+    public const BASE = 'base';
 
     protected $table = 'databases_backups';
 
@@ -79,6 +88,8 @@ class Backup extends Model
             'finished_at' => 'datetime',
             'pruned_at' => 'datetime',
             'verified_at' => 'datetime',
+            'base_started_at' => 'datetime',
+            'base_finished_at' => 'datetime',
             'table_counts' => 'array',
         ];
     }
@@ -95,6 +106,11 @@ class Backup extends Model
     {
         return $this->status === BackupStatus::Succeeded && $this->sha256 !== null && $this->storage_provider_id !== null
             && ($this->encryption_mode === BackupKeys::CUSTOMER || ($this->encryption_mode === BackupKeys::CP && $this->wrapped_key !== null));
+    }
+
+    public function isBase(): bool
+    {
+        return $this->type === self::BASE;
     }
 
     public function isCustomerHeld(): bool

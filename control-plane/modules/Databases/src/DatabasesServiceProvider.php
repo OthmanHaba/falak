@@ -5,6 +5,7 @@ namespace Falak\Databases;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Databases\Application\Jobs\MaintainInstances;
+use Falak\Databases\Application\Jobs\MaintainPitr;
 use Falak\Databases\Application\Jobs\RunDueBackups;
 use Falak\Databases\Application\Jobs\RunDueDrills;
 use Falak\Databases\Application\Listeners\ConvergeInstanceNetwork;
@@ -22,17 +23,23 @@ use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Domain\Models\Drill;
+use Falak\Databases\Domain\Models\PitrSegment;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Domain\Policies\DatabasesPolicy;
 use Falak\Databases\Events\BackupFailed;
 use Falak\Databases\Events\BackupSucceeded;
 use Falak\Databases\Events\DrillFinished;
+use Falak\Databases\Events\PitrAlert;
 use Falak\Databases\Events\RestoreFinished;
 use Falak\Databases\Infrastructure\ActionDatabaseProvisioner;
+use Falak\Databases\Infrastructure\AgentRequests\PitrGapReported;
+use Falak\Databases\Infrastructure\AgentRequests\PitrShipped;
+use Falak\Databases\Infrastructure\AgentRequests\PitrUploadUrls;
 use Falak\Databases\Infrastructure\EloquentDatabaseConnections;
 use Falak\Databases\Infrastructure\EloquentDatabaseDirectory;
 use Falak\Databases\Infrastructure\ObjectStorageBackupStorage;
+use Falak\Fleet\Contracts\AgentRequests;
 use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
@@ -70,7 +77,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
 
     protected function bootModule(): void
     {
-        foreach ([DatabaseInstance::class, Database::class, DatabaseUser::class, StorageProvider::class, BackupSchedule::class, Backup::class, Restore::class, Drill::class] as $model) {
+        foreach ([DatabaseInstance::class, Database::class, DatabaseUser::class, StorageProvider::class, BackupSchedule::class, Backup::class, Restore::class, Drill::class, PitrSegment::class] as $model) {
             Gate::policy($model, DatabasesPolicy::class);
         }
 
@@ -88,6 +95,17 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         $types->register(RestoreFinished::ALERT_SUCCEEDED, 'Database restore finished', 'Databases', Severity::Info);
         $types->register(DrillFinished::ALERT_FAILED, 'Database restore drill failed', 'Databases', Severity::Critical);
         $types->register(DrillFinished::ALERT_PASSED, 'Database restore drills pass again', 'Databases', Severity::Info);
+        $types->register(PitrAlert::LAG, 'Point-in-time recovery lags (unshipped log older than 5 minutes)', 'Databases', Severity::Warning);
+        $types->register(PitrAlert::GAP, 'Gap in a point-in-time recovery timeline', 'Databases', Severity::Critical);
+        $types->register(PitrAlert::SPOOL_FULL, 'Point-in-time recovery spool above 20% of the volume', 'Databases', Severity::Critical);
+        $types->register(PitrAlert::BASE_FAILED, 'Point-in-time recovery base backup failed', 'Databases', Severity::Critical);
+        $types->register(PitrAlert::RECOVERED, 'Point-in-time recovery is fine again', 'Databases', Severity::Info);
+
+        // The agent's point-in-time recovery shipper (POST /agent/v1/requests/<type>).
+        $requests = $this->app->make(AgentRequests::class);
+        $requests->register('pitr.upload_urls', PitrUploadUrls::class);
+        $requests->register('pitr.shipped', PitrShipped::class);
+        $requests->register('pitr.gap', PitrGapReported::class);
 
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
@@ -104,6 +122,8 @@ class DatabasesServiceProvider extends ModuleServiceProvider
             $schedule->job(new RunDueBackups)->everyMinute()->name('databases:backups')->withoutOverlapping();
             $schedule->job(new RunDueDrills)->everyTenMinutes()->name('databases:drills')->withoutOverlapping();
             $schedule->job(new MaintainInstances)->everyTenMinutes()->name('databases:maintenance')->withoutOverlapping();
+            $schedule->job(new MaintainPitr)->everyMinute()->name('databases:pitr')->withoutOverlapping();
+            $schedule->job(new MaintainPitr(prune: true))->hourly()->name('databases:pitr-prune')->withoutOverlapping();
         });
     }
 }

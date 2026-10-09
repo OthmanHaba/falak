@@ -79,7 +79,7 @@ final class UpgradeInstance
             $target = new DatabaseInstance;
             $target->id = strtolower((string) Str::ulid());
             $target->forceFill([
-                ...collect($instance->getAttributes())->only(['organization_id', 'server_id', 'server_name', 'environment_id', 'name', 'engine', 'port', 'public_access', 'require_tls', 'memory_bytes', 'cpus', 'pitr_enabled'])->all(),
+                ...collect($instance->getAttributes())->only(['organization_id', 'server_id', 'server_name', 'environment_id', 'name', 'engine', 'port', 'public_access', 'require_tls', 'memory_bytes', 'cpus', 'pitr_enabled', 'pitr_storage_provider_id', 'pitr_encryption_mode', 'pitr_age_recipient', 'pitr_window_days', 'pitr_base_interval_days'])->all(),
                 'settings' => $instance->settings,
                 'root_password' => $instance->root_password,
                 'version' => $version,

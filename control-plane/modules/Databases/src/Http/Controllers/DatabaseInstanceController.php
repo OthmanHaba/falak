@@ -108,11 +108,11 @@ final class DatabaseInstanceController extends Controller
         $instance->load(['databases', 'users.grants.database', 'schedules.databases', 'schedules.storageProvider']);
 
         $backups = Backup::query()->with('storageProvider')
-            ->where('database_instance_id', $instance->id)
+            ->where('database_instance_id', $instance->id)->where('type', Backup::LOGICAL)
             ->latest()->orderByDesc('id')->limit(50)->get();
 
         $restores = Restore::query()->with('backup')
-            ->where('database_instance_id', $instance->id)
+            ->where('database_instance_id', $instance->id)->where('type', Restore::BACKUP)
             ->latest()->orderByDesc('id')->limit(20)->get();
 
         return Inertia::render('Databases/Show', [
@@ -123,6 +123,7 @@ final class DatabaseInstanceController extends Controller
             'schedules' => $instance->schedules->map(fn (BackupSchedule $schedule) => $this->presentSchedule($schedule))->values(),
             'backups' => $backups->map(fn (Backup $backup) => $this->presentBackup($backup))->values(),
             'restores' => $restores->map(fn (Restore $restore) => $this->presentRestore($restore))->values(),
+            'pitr' => $this->presentPitr($instance),
             'storageProviders' => $this->providers($organizationId),
             'restoreTargets' => $this->restoreTargets($instance),
             'options' => $this->instanceOptions($instance),

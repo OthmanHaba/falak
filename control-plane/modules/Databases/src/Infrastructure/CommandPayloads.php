@@ -60,8 +60,26 @@ final class CommandPayloads
                 'aliases' => [$instance->hostname],
                 'publish' => $publish !== [] ? $publish : null,
                 'tls' => $tls,
+                // The agent ships the spool of SQL instances with point-in-time recovery on (and empties it otherwise).
+                'pitr' => $instance->supportsPitr() ? ['enabled' => $instance->pitr_enabled && $instance->pitr_storage_provider_id !== null] : null,
             ], fn ($value) => $value !== null),
             'password' => $instance->root_password,
+        ];
+    }
+
+    /**
+     * db.pitr.base: a physical base backup of the whole instance to the presigned URL, encrypted like db.backup.
+     *
+     * @param  array<string, string>  $encryption
+     * @return array<string, mixed>
+     */
+    public static function pitrBase(DatabaseInstance $instance, #[\SensitiveParameter] array $encryption, string $uploadUrl): array
+    {
+        return [
+            'instance' => $instance->id,
+            'engine' => $instance->engine->protocol(),
+            'encryption' => $encryption,
+            'destination' => ['kind' => 'presigned_url', 'url' => $uploadUrl],
         ];
     }
 

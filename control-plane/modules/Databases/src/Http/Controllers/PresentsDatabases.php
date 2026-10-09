@@ -3,6 +3,8 @@
 namespace Falak\Databases\Http\Controllers;
 
 use Falak\Databases\Application\Actions\RestoreBackup;
+use Falak\Databases\Application\PitrTimeline;
+use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
@@ -53,6 +55,7 @@ trait PresentsDatabases
             'cpus' => $instance->cpus,
             'settings' => (object) ($instance->settings ?? []),
             'pitr_enabled' => $instance->pitr_enabled,
+            'restored_from' => $instance->restored_from,
             'volume_id' => $instance->volume_id,
             'tls_expires_at' => $instance->tls_expires_at?->toIso8601String(),
             'status' => $instance->status->value,
@@ -190,7 +193,11 @@ trait PresentsDatabases
             'error' => $backup->error,
             'prune_error' => $backup->prune_error,
             'command_id' => $backup->command_id,
-            'restorable' => $backup->isRestorable(),
+            'restorable' => $backup->isRestorable() && ! $backup->isBase(),
+            'type' => $backup->type,
+            'log_start' => $backup->log_start,
+            'base_started_at' => $backup->base_started_at?->toIso8601ZuluString('millisecond'),
+            'base_finished_at' => $backup->base_finished_at?->toIso8601ZuluString('millisecond'),
             'created_at' => $backup->created_at->toIso8601String(),
             'started_at' => $backup->started_at?->toIso8601String(),
             'finished_at' => $backup->finished_at?->toIso8601String(),
@@ -218,7 +225,9 @@ trait PresentsDatabases
     {
         return [
             'id' => $restore->id,
+            'type' => $restore->type,
             'backup_id' => $restore->backup_id,
+            'target_time' => $restore->target_time?->toIso8601ZuluString('millisecond'),
             'source_database' => $restore->backup->database_name,
             'database_name' => $restore->database_name,
             'status' => $restore->status->value,
@@ -229,6 +238,67 @@ trait PresentsDatabases
             'command_id' => $restore->command_id,
             'created_at' => $restore->created_at->toIso8601String(),
             'finished_at' => $restore->finished_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * An instance's point-in-time recovery: settings, the spool as the agent last reported it, the timeline (recovery
+     * ranges and gaps), recent bases, and its restores to a time with their read-only copies (connection details on the
+     * server only, row counts) while they wait for a decision.
+     *
+     * @return array<string, mixed>
+     */
+    protected function presentPitr(DatabaseInstance $instance): array
+    {
+        $bases = Backup::query()->with('storageProvider')->where('database_instance_id', $instance->id)->where('type', Backup::BASE)
+            ->latest()->orderByDesc('id')->limit(10)->get();
+        $restores = Restore::query()->where('source_instance_id', $instance->id)->where('type', Restore::PITR)->latest()->orderByDesc('id')->limit(10)->get();
+        $copies = DatabaseInstance::query()->whereIn('id', $restores->pluck('restored_instance_id')->filter()->all())->get()->keyBy('id');
+
+        return [
+            'supported' => $instance->supportsPitr(),
+            'enabled' => $instance->pitr_enabled,
+            'storage_provider_id' => $instance->pitr_storage_provider_id,
+            'encryption_mode' => $instance->pitr_encryption_mode,
+            'age_recipient' => $instance->pitr_age_recipient,
+            'window_days' => $instance->pitr_window_days,
+            'base_interval_days' => $instance->pitr_base_interval_days,
+            'next_base_at' => $instance->pitr_next_base_at?->toIso8601String(),
+            'last_shipped_at' => $instance->pitr_last_shipped_at?->toIso8601String(),
+            'report' => $instance->pitr_report,
+            // MySQL / MariaDB binlogs have whole seconds: a restore lands on the second before.
+            'second_precision' => $instance->engine->isMysqlFamily(),
+            'timeline' => $instance->supportsPitr() ? app(PitrTimeline::class)->for($instance) : null,
+            'bases' => $bases->map(fn (Backup $backup) => $this->presentBackup($backup))->values(),
+            'restores' => $restores->map(function (Restore $restore) use ($copies) {
+                /** @var ?DatabaseInstance $copy */
+                $copy = $copies->get((string) $restore->restored_instance_id);
+
+                return [
+                    'id' => $restore->id,
+                    'status' => $restore->status->value,
+                    'target_time' => $restore->target_time?->toIso8601ZuluString('millisecond'),
+                    'decision' => $restore->decision,
+                    'error' => $restore->error,
+                    'warnings' => $restore->warnings ?? [],
+                    'segments' => $restore->segments,
+                    'table_counts' => (object) ($restore->table_counts ?? []),
+                    'duration_ms' => $restore->duration_ms,
+                    'created_at' => $restore->created_at->toIso8601String(),
+                    'finished_at' => $restore->finished_at?->toIso8601String(),
+                    'copy' => $copy === null ? null : [
+                        'id' => $copy->id,
+                        'name' => $copy->name,
+                        'status' => $copy->status->value,
+                        'status_message' => $copy->status_message,
+                        'server_name' => $copy->server_name,
+                        // Published on the server's loopback only, on no network: reach it from the server (an SSH tunnel).
+                        'host' => '127.0.0.1',
+                        'port' => $copy->host_port,
+                        'username' => $copy->engine === Engine::PostgreSql ? 'postgres' : 'root',
+                    ],
+                ];
+            })->values(),
         ];
     }
 

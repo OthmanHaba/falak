@@ -12,8 +12,10 @@ use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
+use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Infrastructure\CommandPayloads;
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Volumes\Contracts\AttachableType;
 use Falak\Volumes\Contracts\ServiceVolumes;
@@ -30,6 +32,9 @@ use Illuminate\Validation\ValidationException;
  * SQL engines get a default database and a user with all privileges on it (named after the instance), created once the
  * container runs; Redis / Valkey get their keyspace (one Database row) and the `default` user. Both are pending until
  * db.instance.create succeeds.
+ *
+ * Point-in-time recovery is on by default for SQL instances in a production environment, with Falak-held keys and the
+ * organization's first storage provider (off when it has none); its first base is taken once the container runs.
  */
 final class CreateInstance
 {
@@ -39,6 +44,7 @@ final class CreateInstance
         private readonly ServiceVolumes $volumes,
         private readonly InstancePorts $ports,
         private readonly InstanceCertificates $certificates,
+        private readonly ProjectDirectory $projects,
         private readonly AuditLog $audit,
     ) {}
 
@@ -121,6 +127,7 @@ final class CreateInstance
                 'root_password' => Passwords::generate(),
                 'status' => InstanceStatus::Pending,
                 'created_by' => $actorId,
+                ...$this->pitrDefaults($organizationId, $engine, $data['environment_id'] ?? null),
             ])->save();
 
             $database = $instance->databases()->create([
@@ -186,6 +193,26 @@ final class CreateInstance
         );
 
         $instance->forceFill(['command_id' => $handle->id])->save();
+    }
+
+    /**
+     * PITR on for SQL instances of production environments when the organization has somewhere to ship to.
+     *
+     * @return array<string, mixed>
+     */
+    private function pitrDefaults(string $organizationId, Engine $engine, ?string $environmentId): array
+    {
+        $production = $environmentId !== null && ($this->projects->environment(strtolower($environmentId))?->isProduction ?? false);
+        $provider = $production && ! $engine->isKeyValue()
+            ? StorageProvider::query()->where('organization_id', $organizationId)->orderBy('created_at')->orderBy('id')->value('id')
+            : null;
+
+        return $provider === null ? [] : [
+            'pitr_enabled' => true,
+            'pitr_storage_provider_id' => $provider,
+            'pitr_window_days' => (int) config('databases.pitr.window_days', 7),
+            'pitr_base_interval_days' => (int) config('databases.pitr.base_interval_days', 7),
+        ];
     }
 
     public static function volumeName(DatabaseInstance $instance): string
