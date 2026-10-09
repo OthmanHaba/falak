@@ -33,6 +33,7 @@ final class Modules
         'Telemetry',
         'Insights',
         'Alerting',
+        'Security',
         'Terminal',
     ];
 
