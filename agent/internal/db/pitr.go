@@ -346,7 +346,15 @@ func (db *DB) pending(cfg pitrConfig) ([]spoolFile, error) {
 		if err != nil {
 			continue
 		}
-		out = append(out, spoolFile{Name: e.Name(), Path: filepath.Join(dir, e.Name()), Bytes: fi.Size(), Modified: fi.ModTime().UTC()})
+		modified := fi.ModTime()
+		// A binlog is spooled at the next rotation, maybe with the one after it (xtrabackup closes binlogs too): its
+		// end is when the server last wrote it, which its original in the data directory still tells.
+		if cfg.Engine != "postgres" {
+			if orig, err := os.Stat(filepath.Join(db.d.FS.P(db.volumeDir(cfg.VolumeID)), "data", e.Name())); err == nil && orig.ModTime().Before(modified) {
+				modified = orig.ModTime()
+			}
+		}
+		out = append(out, spoolFile{Name: e.Name(), Path: filepath.Join(dir, e.Name()), Bytes: fi.Size(), Modified: modified.UTC()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

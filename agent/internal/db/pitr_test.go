@@ -403,6 +403,25 @@ func TestShipperRotatesBinlogsAndReportsGapsOnce(t *testing.T) {
 	}
 }
 
+// Binlogs spooled together (one closed by xtrabackup, the next by the rotation) end when the server last wrote them.
+func TestShipperDatesBinlogsByTheirOriginal(t *testing.T) {
+	p := newPITRHarness(t, "mysql")
+	data := p.path(filepath.Join("/var/lib/falak/volumes", volID, "data"))
+	os.MkdirAll(data, 0o700)
+	p.spoolFiles(t, "binlog.000004", "binlog.000005")
+	closed := time.Now().Add(-time.Hour).Truncate(time.Second).UTC()
+	os.WriteFile(filepath.Join(data, "binlog.000004"), []byte("x"), 0o600)
+	os.Chtimes(filepath.Join(data, "binlog.000004"), closed, closed)
+	p.ship.RunOnce(context.Background())
+	ends := map[string]time.Time{}
+	for _, s := range p.cp.shipped {
+		ends[s.Name] = s.EndTime
+	}
+	if !ends["binlog.000004"].Equal(closed) || !ends["binlog.000005"].After(closed) {
+		t.Fatalf("end times %v", ends)
+	}
+}
+
 // An idle server's binlog does not grow: no new file every minute.
 func TestShipperSkipsTheRotationOfAnIdleBinlog(t *testing.T) {
 	p := newPITRHarness(t, "mysql")
