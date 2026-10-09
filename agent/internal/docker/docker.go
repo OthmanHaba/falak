@@ -78,12 +78,13 @@ func New(o Options) *Service {
 // Client exposes the Engine client (facts).
 func (s *Service) Client() *Client { return s.c }
 
-// Register adds docker.* and deploy.container.swap.
+// Register adds docker.* (docker.update changes live limits) and deploy.container.swap.
 func (s *Service) Register(reg *commands.Registry) {
 	reg.Register("docker.pull", commands.Typed(s.pull))
 	reg.Register("docker.run", commands.Typed(s.run))
 	reg.Register("docker.stop", commands.Typed(s.stop))
 	reg.Register("docker.prune", commands.Typed(s.prune))
+	reg.Register("docker.update", commands.Typed(s.update))
 	reg.Register("docker.compose.up", commands.Typed(s.composeUp))
 	reg.Register("docker.compose.down", commands.Typed(s.composeDown))
 	reg.Register("docker.compose.pull", commands.Typed(s.composePull))
@@ -156,22 +157,21 @@ type VolumeSpec struct {
 }
 
 type RunPayload struct {
-	Name          string            `json:"name"`
-	Image         string            `json:"image"`
-	Pull          string            `json:"pull,omitempty"`
-	Auth          *Auth             `json:"auth,omitempty"`
-	Env           map[string]string `json:"env,omitempty"`
-	Command       []string          `json:"command,omitempty"`
-	Entrypoint    []string          `json:"entrypoint,omitempty"`
-	User          string            `json:"user,omitempty"`
-	Ports         []PortSpec        `json:"ports,omitempty"`
-	Volumes       []VolumeSpec      `json:"volumes,omitempty"`
-	Network       string            `json:"network,omitempty"`
-	Networks      []NetworkJoin     `json:"networks,omitempty"`
-	Labels        map[string]string `json:"labels,omitempty"`
-	RestartPolicy string            `json:"restart_policy,omitempty"`
-	MemoryBytes   int64             `json:"memory_bytes,omitempty"`
-	CPUs          float64           `json:"cpus,omitempty"`
+	Name       string            `json:"name"`
+	Image      string            `json:"image"`
+	Pull       string            `json:"pull,omitempty"`
+	Auth       *Auth             `json:"auth,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Command    []string          `json:"command,omitempty"`
+	Entrypoint []string          `json:"entrypoint,omitempty"`
+	User       string            `json:"user,omitempty"`
+	Ports      []PortSpec        `json:"ports,omitempty"`
+	Volumes    []VolumeSpec      `json:"volumes,omitempty"`
+	Network    string            `json:"network,omitempty"`
+	Networks   []NetworkJoin     `json:"networks,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	// Limits: memory, CPUs, processes, restart policy, log caps and OOM preference.
+	Limits
 	// SecretFiles are mounted read-only at /run/secrets/<name> (never in the container's env, which docker inspect shows).
 	SecretFiles []SecretFile `json:"secret_files,omitempty"`
 	// Mask names the secret variables of env.
@@ -293,19 +293,16 @@ func (p RunPayload) createBody(hash string) CreateBody {
 		b.HostConfig.Binds = append(b.HostConfig.Binds, bind)
 	}
 	b.HostConfig.NetworkMode = p.Network
-	rp := p.RestartPolicy
-	if rp == "" {
-		rp = "unless-stopped"
-	}
-	b.HostConfig.RestartPolicy = RestartPolicy{Name: rp}
-	b.HostConfig.Memory = p.MemoryBytes
-	b.HostConfig.NanoCPUs = int64(p.CPUs * 1e9)
+	p.Limits.apply(&b.HostConfig)
 	return b
 }
 
 func (s *Service) run(ctx context.Context, p RunPayload, st commands.Stream) (any, error) {
 	if !containerNameRe.MatchString(p.Name) || p.Image == "" {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("name and image are required")}
+	}
+	if err := p.Limits.validate(); err != nil {
+		return nil, &commands.PayloadError{Err: err}
 	}
 	id, changed, err := s.ensureContainer(ctx, p, st)
 	return RunResult{Changed: changed, ContainerID: id}, err

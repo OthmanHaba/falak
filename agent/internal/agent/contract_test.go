@@ -34,7 +34,7 @@ var Catalogue = []string{
 	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore", "db.drill",
 	"net.firewall.apply", "net.wireguard.apply", "net.tunnel.apply",
 	"fn.release.apply", "fn.release.remove", "fn.run", "fn.status",
-	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
+	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune", "docker.update",
 	"telemetry.configure",
 	"volume.create", "volume.resize", "volume.delete", "volume.inventory", "volume.archive", "volume.restore", "volume.clone", "volume.browse", "volume.download", "volume.drill",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",
@@ -166,6 +166,8 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		"docker.compose.ps":      `{"project":"Shop!"}`,
 		"docker.compose.restart": `{"project":"shop","services":["a b"]}`,
 		"docker.compose.pull":    `{"project":"shop"}`,
+		"docker.update":          `{"site":"shop","project":"shop","service":"app","memory_bytes":1}`,
+		"docker.run":             `{"name":"web","image":"nginx","log":{"max_size_mb":0}}`,
 		"fn.release.apply":       `{"site":"hello","release":"r1","image":"i","entrypoint":"../index.ts","files":[{"path":"../index.ts","content":""}]}`,
 		"fn.status":              `{"site":"Hello World"}`,
 		"fn.run":                 `{"site":"hello","schedule":"../x"}`,
@@ -204,6 +206,7 @@ func TestComposeResultsValidate(t *testing.T) {
 		"docker.compose.ps":      docker.ComposePsResult{Services: []docker.ServiceStatus{svc}},
 		"docker.compose.restart": docker.ComposeRestartResult{Restarted: []string{"app"}},
 		"docker.compose.pull":    docker.ExitResult{ExitCode: 0},
+		"docker.update":          docker.UpdateResult{Changed: true, Containers: []string{"falak-shop-blue"}},
 	} {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
 		if err != nil {

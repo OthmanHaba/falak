@@ -53,5 +53,13 @@
       "name": "falak-env-01hzyenv000000000000000001",
       "environment": true
     }
-  ]
+  ],
+  "memory_reservation_bytes": 268435456,
+  "pids_limit": 512,
+  "log": {
+    "max_size_mb": 20,
+    "max_files": 3
+  },
+  "oom_score_adj": -500,
+  "restart_policy": "unless-stopped"
 }

@@ -41,6 +41,10 @@ type fakeEngine struct {
 	networks map[string][]string
 	// network name → labels
 	networkLabels map[string]map[string]string
+	// container name → docker.update bodies
+	updates map[string][]UpdateBody
+	// served by GET /events (then the stream ends)
+	events []EngineEvent
 }
 
 type fcont struct {
@@ -204,6 +208,14 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			c.running = true
 			w.WriteHeader(204)
+		case r.Method == "POST" && action == "update":
+			var b UpdateBody
+			json.NewDecoder(r.Body).Decode(&b)
+			if e.updates == nil {
+				e.updates = map[string][]UpdateBody{}
+			}
+			e.updates[c.name] = append(e.updates[c.name], b)
+			jsonOut(w, 200, map[string]any{"Warnings": []string{}})
 		case r.Method == "POST" && action == "restart":
 			e.restarts = append(e.restarts, c.name)
 			c.running = true
@@ -226,6 +238,17 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(204)
 		default:
 			jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
+		}
+	case r.Method == "GET" && p == "/events":
+		var f map[string][]string
+		json.Unmarshal([]byte(q.Get("filters")), &f)
+		if strings.Join(f["event"], ",") != "oom" || strings.Join(f["type"], ",") != "container" {
+			jsonOut(w, 400, map[string]string{"message": "unexpected filters " + q.Get("filters")})
+			return
+		}
+		w.WriteHeader(200)
+		for _, ev := range e.events {
+			json.NewEncoder(w).Encode(ev)
 		}
 	case r.Method == "GET" && p == "/networks":
 		var f map[string][]string
@@ -419,7 +442,7 @@ func TestPull(t *testing.T) {
 func TestRunIdempotent(t *testing.T) {
 	s, e, _, _, _ := newSvc(t)
 	p := RunPayload{Name: "redis", Image: "redis:7", Env: map[string]string{"B": "2", "A": "1"},
-		Ports: []PortSpec{{HostPort: 6379, ContainerPort: 6379}}, Volumes: []VolumeSpec{{Source: "/data/redis", Target: "/data", ReadOnly: true}}, CPUs: 0.5}
+		Ports: []PortSpec{{HostPort: 6379, ContainerPort: 6379}}, Volumes: []VolumeSpec{{Source: "/data/redis", Target: "/data", ReadOnly: true}}, Limits: Limits{CPUs: 0.5}}
 	fin, _ := exec1(t, s, "docker.run", p)
 	r := fin.Result.(RunResult)
 	if fin.Error != "" || !r.Changed {
