@@ -1,3 +1,4 @@
+import { type ResourceLimits } from '@/components/limits-fields';
 import { type EnvRow, type ProcessServer, type ProgramStatus } from '../types';
 
 export type ItemKind = 'web' | 'horizon' | 'octane' | 'worker' | 'daemon' | 'scheduler' | 'cron';
@@ -14,6 +15,8 @@ export interface WorkerConfig {
     max_jobs: number | null;
     max_time: number | null;
     memory: number;
+    /** Resource limits of its slice (shared by its processes). */
+    limits: ResourceLimits;
     env: EnvRow[];
     server_ids: string[];
 }
@@ -27,6 +30,7 @@ export interface DaemonConfig {
     restart: string;
     stop_signal: string;
     stop_timeout: number;
+    limits: ResourceLimits;
     env: EnvRow[];
     server_ids: string[];
 }

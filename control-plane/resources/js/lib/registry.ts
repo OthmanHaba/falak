@@ -243,6 +243,21 @@ export interface ServiceLayer {
  */
 export const CREATE_SERVICE_EVENT = 'falak:canvas-create';
 
+export interface ServerSectionProps {
+    serverId: string;
+}
+
+/**
+ * A block of the server page (below its services), e.g. Limits' capacity card. Modules register theirs in register.ts.
+ */
+export interface ServerSection {
+    id: string;
+    /** Lower comes first. */
+    order: number;
+    permission?: string;
+    component: ComponentType<ServerSectionProps>;
+}
+
 export interface CreateOptionProps {
     projectId: string;
     environmentSlug: string;
@@ -372,6 +387,7 @@ const serviceTabs = new Map<string, ServiceTab>();
 const serviceActions = new Map<string, ServiceAction>();
 const settingsSections = new Map<string, ServiceSettingsSection>();
 const createOptions = new Map<string, CreateOption>();
+const serverSections = new Map<string, ServerSection>();
 const serviceLayers = new Map<string, ServiceLayer>();
 
 export function registerServiceLayers(...layers: ServiceLayer[]): void {
@@ -469,6 +485,14 @@ export function registerCreateOptions(...options: CreateOption[]): void {
 
 export function createOptionsFor(ctx: Pick<ShellContext, 'can'>): CreateOption[] {
     return [...createOptions.values()].filter((option) => !option.permission || ctx.can(option.permission)).sort((a, b) => a.order - b.order);
+}
+
+export function registerServerSections(...sections: ServerSection[]): void {
+    sections.forEach((section) => serverSections.set(section.id, section));
+}
+
+export function serverSectionsFor(ctx: Pick<ShellContext, 'can'>): ServerSection[] {
+    return [...serverSections.values()].filter((section) => !section.permission || ctx.can(section.permission)).sort((a, b) => a.order - b.order);
 }
 
 export function navigationFor(ctx: ShellContext): ModuleNavItem[] {
