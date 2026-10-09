@@ -49,8 +49,8 @@ func TestApplyWritesUnitsAndSetsPropertiesLive(t *testing.T) {
 	shop := Slice{Name: "site_shop", MemoryMaxBytes: 256 << 20, CPUQuotaPercent: 50}
 	worker := Slice{Name: "worker_01j9z8y7x6w5v4t3s2r1q0p9na", TasksMax: 64}
 
-	changed, err := m.Apply(ctx, []Slice{shop, worker})
-	if err != nil || len(changed) != 2 {
+	changed, errs, err := m.Apply(ctx, []Slice{shop, worker})
+	if err != nil || len(changed) != 2 || len(errs) != 0 {
 		t.Fatalf("%v %v", changed, err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, UnitDir, "falak-site_shop.slice")); !strings.Contains(string(b), "MemoryMax=268435456") {
@@ -65,13 +65,14 @@ func TestApplyWritesUnitsAndSetsPropertiesLive(t *testing.T) {
 		t.Fatalf("got:\n%s", strings.Join(got, "\n"))
 	}
 
-	// Unchanged: nothing runs. A changed limit is set live on that slice only.
+	// Unchanged files: no reload, but every slice's limits are set again (idempotent; heals a lost runtime drop-in).
 	fr.Reset()
-	if changed, _ := m.Apply(ctx, []Slice{shop, worker}); len(changed) != 0 || len(fr.Lines()) != 0 {
+	if changed, _, _ := m.Apply(ctx, []Slice{shop, worker}); len(changed) != 0 || len(fr.Lines()) != 2 || strings.Contains(strings.Join(fr.Lines(), ""), "daemon-reload") {
 		t.Fatalf("%v %v", changed, fr.Lines())
 	}
+	fr.Reset()
 	shop.MemoryMaxBytes = 512 << 20
-	if changed, _ := m.Apply(ctx, []Slice{shop, worker}); strings.Join(changed, ",") != "site_shop" || len(fr.Lines()) != 2 || !strings.Contains(fr.Lines()[1], "falak-site_shop.slice MemoryMax=536870912") {
+	if changed, _, _ := m.Apply(ctx, []Slice{shop, worker}); strings.Join(changed, ",") != "site_shop" || len(fr.Lines()) != 3 || !strings.Contains(fr.Lines()[1], "falak-site_shop.slice MemoryMax=536870912") {
 		t.Fatalf("%v %v", changed, fr.Lines())
 	}
 
@@ -91,26 +92,62 @@ func TestApplyWritesUnitsAndSetsPropertiesLive(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsBadSlices(t *testing.T) {
-	m := &Manager{Runner: &runnertest.Fake{}, FS: hostfs.FS{Root: t.TempDir()}}
-	for _, bad := range [][]Slice{
-		{{Name: "site-shop"}},
-		{{Name: "../x"}},
-		{{Name: "a"}, {Name: "a"}},
-		{{Name: "a", MemoryMaxBytes: 10, MemoryHighBytes: 20}},
-		{{Name: "a", TasksMax: -1}},
-	} {
-		if _, err := m.Apply(context.Background(), bad); err == nil {
-			t.Errorf("%+v accepted", bad)
+func TestPartitionSkipsOnlyInvalidSlices(t *testing.T) {
+	valid, errs := Partition([]Slice{
+		{Name: "site_shop", MemoryMaxBytes: 64 << 20},
+		{Name: "site-shop"},
+		{Name: "../x"},
+		{Name: "site_shop"},
+		{Name: "site_blog", MemoryMaxBytes: 512 << 20, MemoryLowBytes: 1 << 30},
+		{Name: "worker_a", TasksMax: -1},
+		{Name: "worker_b", TasksMax: 10},
+	})
+	if len(valid) != 2 || valid[0].Name != "site_shop" || valid[1].Name != "worker_b" {
+		t.Fatalf("%+v", valid)
+	}
+	for _, name := range []string{"site-shop", "../x", "site_blog", "worker_a"} {
+		if errs[name] == "" {
+			t.Errorf("no error for %s: %v", name, errs)
 		}
+	}
+	if !strings.Contains(errs["site_shop"], "duplicate") {
+		t.Fatal(errs)
+	}
+}
+
+// A slice whose set-property fails gets its previous unit back (no unit file ahead of its live limits) and is
+// reported; the other slices are applied.
+func TestApplyRestoresTheUnitWhenSetPropertyFails(t *testing.T) {
+	root := t.TempDir()
+	fr := (&runnertest.Fake{}).On("systemctl set-property --runtime falak-site_bad.slice", runner.Result{ExitCode: 1, Stderr: []byte("Unit falak-site_bad.slice not found")})
+	m := &Manager{Runner: fr, FS: hostfs.FS{Root: root}}
+	fs := hostfs.FS{Root: root}
+	fs.MkdirAll(UnitDir, 0o755)
+	old := Render(Slice{Name: "site_bad", MemoryMaxBytes: 64 << 20})
+	fs.WriteFile(filepath.Join(UnitDir, Unit("site_bad")), []byte(old), 0o644)
+
+	changed, errs, err := m.Apply(context.Background(), []Slice{{Name: "site_bad", MemoryMaxBytes: 128 << 20}, {Name: "site_new", CPUQuotaPercent: 50}, {Name: "site_gone", TasksMax: 5}})
+	if err != nil || strings.Join(changed, ",") != "site_gone,site_new" || len(errs) != 1 || !strings.Contains(errs["site_bad"], "falak-site_bad.slice") {
+		t.Fatalf("%v %v %v", changed, errs, err)
+	}
+	if b, _ := fs.ReadFile(filepath.Join(UnitDir, Unit("site_bad"))); string(b) != old {
+		t.Fatalf("unit not restored:\n%s", b)
+	}
+	if l := fr.Lines(); l[len(l)-1] != "systemctl daemon-reload" {
+		t.Fatal(l)
 	}
 }
 
 func TestScopeCommand(t *testing.T) {
-	got := ScopeCommand(ScopeSpec{Slice: "worker_01j9z8y7x6w5v4t3s2r1q0p9na", Unit: "falak-proc-shop-worker-0", UID: 1001, GID: 1001, AsUser: true,
-		Command: []string{"php", "artisan", "queue:work"}, SystemdVersion: 255})
+	spec := ScopeSpec{Slice: "worker_01j9z8y7x6w5v4t3s2r1q0p9na", Unit: "falak-proc-shop-worker-0", UID: 1001, GID: 1001, AsUser: true,
+		Command: []string{"php", "artisan", "queue:work"}, SystemdVersion: 255, OomScoreAdj: -500}
+	got := ScopeCommand(spec)
+	// choom sets the OOM preference as root, before setpriv drops privileges.
 	want := "systemd-run --scope --quiet --collect --slice=falak-worker_01j9z8y7x6w5v4t3s2r1q0p9na.slice --unit=falak-proc-shop-worker-0.scope " +
-		"--property=OOMPolicy=continue -- setpriv --reuid=1001 --regid=1001 --init-groups -- php artisan queue:work"
+		"--property=OOMPolicy=continue -- choom -n -500 -- setpriv --reuid=1001 --regid=1001 --init-groups -- php artisan queue:work"
+	if strings.Join(spec.Tools(), ",") != "systemd-run,choom,setpriv" {
+		t.Fatal(spec.Tools())
+	}
 	if strings.Join(got, " ") != want {
 		t.Fatalf("%s", strings.Join(got, " "))
 	}
@@ -151,5 +188,32 @@ func TestWatchOOMReportsIncreases(t *testing.T) {
 	w.Once(add)
 	if len(got) != 1 || got[0].Name != "site_shop" || got[0].Count != 2 || got[0].Kind != resources.KindOOMKill || got[0].Source != resources.SourceSlice {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestLaunchFailureAndUserCanEnter(t *testing.T) {
+	for in, want := range map[string]bool{
+		"Failed to start transient scope unit: Unit falak-proc-x-0.scope already exists.\n": true,
+		"setpriv: setresuid failed: Operation not permitted":                                true,
+		"PHP Fatal error: Allowed memory size exhausted":                                    false,
+	} {
+		if LaunchFailure([]byte(in)) != want {
+			t.Errorf("%q", in)
+		}
+	}
+	dir, _ := os.MkdirTemp("/tmp", "cg")
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	locked := filepath.Join(dir, "locked")
+	os.Mkdir(locked, 0o700)
+	os.Mkdir(filepath.Join(locked, "app"), 0o755)
+	os.Chmod(dir, 0o755)
+	if err := UserCanEnter(filepath.Join(locked, "app"), 54321, 54321, nil); err == nil {
+		t.Fatal("entered a directory only its owner may enter")
+	}
+	if err := UserCanEnter(dir, 54321, 54321, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := UserCanEnter(filepath.Join(locked, "app"), 0, 0, nil); err != nil {
+		t.Fatal("root may enter anywhere")
 	}
 }

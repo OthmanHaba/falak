@@ -192,4 +192,6 @@ type ProcessStatus struct {
 	Restarts     int        `json:"restarts"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	LastExitCode *int       `json:"last_exit_code,omitempty"`
+	// LaunchError: the last start never ran the program (its slice's scope, a missing tool, its directory).
+	LaunchError string `json:"launch_error,omitempty"`
 }

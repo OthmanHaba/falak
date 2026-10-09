@@ -103,19 +103,25 @@ func Render(s Slice) string {
 	return b.String()
 }
 
-// Validate checks a desired set: valid names and limits, no duplicates.
-func Validate(desired []Slice) error {
+// Partition splits a desired set into the slices that can be applied and the errors of the others (by name): an
+// invalid slice (or a second one of a name) is skipped, never the whole set — one service's bad limits must not stop
+// every other service's.
+func Partition(desired []Slice) ([]Slice, map[string]string) {
+	valid := make([]Slice, 0, len(desired))
+	errs := map[string]string{}
 	seen := map[string]bool{}
 	for _, s := range desired {
-		if err := s.validate(); err != nil {
-			return err
+		switch err := s.validate(); {
+		case err != nil:
+			errs[s.Name] = err.Error()
+		case seen[s.Name]:
+			errs[s.Name] = fmt.Sprintf("duplicate slice %q", s.Name)
+		default:
+			seen[s.Name] = true
+			valid = append(valid, s)
 		}
-		if seen[s.Name] {
-			return fmt.Errorf("duplicate slice %q", s.Name)
-		}
-		seen[s.Name] = true
 	}
-	return nil
+	return valid, errs
 }
 
 // Manager converges the slice units.
@@ -126,38 +132,67 @@ type Manager struct {
 	mu sync.Mutex
 }
 
-// Apply writes the desired slices and applies changed limits live (set-property --runtime). Slices no longer
-// wanted are only removed by Prune, after the programs in them moved out.
-func (m *Manager) Apply(ctx context.Context, desired []Slice) ([]string, error) {
-	if err := Validate(desired); err != nil {
-		return nil, err
-	}
+// Apply writes the slices (Partition's valid ones) and sets every slice's limits live with set-property --runtime —
+// each time, so a runtime drop-in can never stay behind a unit file. A slice whose set-property fails gets its
+// previous unit file back and is reported in errs; the others are applied. changed lists the slices whose unit file
+// changed. Slices no longer wanted are only removed by Prune, after the programs in them moved out.
+func (m *Manager) Apply(ctx context.Context, desired []Slice) (changed []string, errs map[string]string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var changed []Slice
+	errs = map[string]string{}
+	type previous struct {
+		data    []byte
+		existed bool
+	}
+	before := map[string]previous{}
 	for _, s := range desired {
-		ch, err := m.FS.WriteFile(filepath.Join(UnitDir, Unit(s.Name)), []byte(Render(s)), 0o644)
+		path := filepath.Join(UnitDir, Unit(s.Name))
+		old, readErr := m.FS.ReadFile(path)
+		ch, err := m.FS.WriteFile(path, []byte(Render(s)), 0o644)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ch {
-			changed = append(changed, s)
+			before[s.Name] = previous{old, readErr == nil}
+			changed = append(changed, s.Name)
 		}
 	}
-	if len(changed) == 0 {
-		return []string{}, nil
+	restore := func(name string) {
+		path := filepath.Join(UnitDir, Unit(name))
+		if prev := before[name]; prev.existed {
+			_, _ = m.FS.WriteFile(path, prev.data, 0o644)
+		} else {
+			_, _ = m.FS.Remove(path)
+		}
 	}
-	if err := m.run(ctx, "systemctl", "daemon-reload"); err != nil {
-		return nil, err
+	if len(changed) > 0 {
+		if err := m.run(ctx, "systemctl", "daemon-reload"); err != nil {
+			for _, name := range changed {
+				restore(name)
+			}
+			return nil, nil, err
+		}
 	}
-	names := make([]string, 0, len(changed))
-	for _, s := range changed {
+	restored := false
+	applied := make([]string, 0, len(changed))
+	for _, s := range desired {
 		if err := m.run(ctx, "systemctl", append([]string{"set-property", "--runtime", Unit(s.Name)}, s.properties()...)...); err != nil {
-			return nil, fmt.Errorf("applying limits of %s: %w", Unit(s.Name), err)
+			errs[s.Name] = fmt.Sprintf("applying limits of %s: %v", Unit(s.Name), err)
+			if _, ok := before[s.Name]; ok {
+				restore(s.Name)
+				restored = true
+			}
+			continue
 		}
-		names = append(names, s.Name)
+		if _, ok := before[s.Name]; ok {
+			applied = append(applied, s.Name)
+		}
 	}
-	return names, nil
+	if restored {
+		_ = m.run(ctx, "systemctl", "daemon-reload")
+	}
+	sort.Strings(applied)
+	return applied, errs, nil
 }
 
 // Prune removes the managed slice units not in keep. A unit still active (a process outlived its program) only loses
@@ -217,6 +252,71 @@ type ScopeSpec struct {
 	Command []string
 	// SystemdVersion decides OOMPolicy= (scopes take it from systemd 253; older ones never stop a scope on OOM).
 	SystemdVersion int
+	// OomScoreAdj is set by choom (util-linux) while still root, before setpriv drops privileges (lowering it needs
+	// CAP_SYS_RESOURCE) and before the program runs: no window where a child keeps the old value. Scopes have no
+	// OOMScoreAdjust= property (it is an exec setting of services).
+	OomScoreAdj int
+}
+
+// ScopeTools are the binaries a scope launch needs (checked before launching, so a missing one is a launch error,
+// not an exit code of the program).
+func (s ScopeSpec) Tools() []string {
+	tools := []string{"systemd-run"}
+	if s.OomScoreAdj != 0 {
+		tools = append(tools, "choom")
+	}
+	if s.AsUser {
+		tools = append(tools, "setpriv")
+	}
+	return tools
+}
+
+// LaunchFailure reports whether a scope launch's first stderr bytes are systemd-run's, choom's or setpriv's own error
+// (the program never started) rather than the program's.
+func LaunchFailure(stderr []byte) bool {
+	for _, prefix := range []string{"Failed to start transient scope unit", "Failed to create bus connection", "Unknown assignment", "setpriv: ", "choom: "} {
+		if bytes.HasPrefix(stderr, []byte(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+// UserCanEnter reports whether uid (with gid and groups) may search every directory down to dir: the supervisor
+// changes into a program's directory as root before systemd-run, so it checks what the user could do itself.
+func UserCanEnter(dir string, uid, gid uint32, groups []uint32) error {
+	if uid == 0 || dir == "" {
+		return nil
+	}
+	inGroup := func(g uint32) bool {
+		if g == gid {
+			return true
+		}
+		for _, x := range groups {
+			if x == g {
+				return true
+			}
+		}
+		return false
+	}
+	path := "/"
+	for _, part := range append([]string{""}, strings.Split(strings.Trim(filepath.Clean(dir), "/"), "/")...) {
+		path = filepath.Join(path, part)
+		st, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		mode := st.Mode()
+		if !mode.IsDir() {
+			return fmt.Errorf("%s is not a directory", path)
+		}
+		owner, group := statOwner(st)
+		ok := mode&0o001 != 0 || (owner == uid && mode&0o100 != 0) || (owner != uid && inGroup(group) && mode&0o010 != 0)
+		if !ok {
+			return fmt.Errorf("user %d may not enter %s", uid, path)
+		}
+	}
+	return nil
 }
 
 // ScopeUnitRe is a scope name.
@@ -235,6 +335,9 @@ func ScopeCommand(s ScopeSpec) []string {
 		argv = append(argv, "--property=OOMPolicy=continue")
 	}
 	argv = append(argv, "--")
+	if s.OomScoreAdj != 0 {
+		argv = append(argv, "choom", "-n", strconv.Itoa(s.OomScoreAdj), "--")
+	}
 	if s.AsUser {
 		argv = append(argv, "setpriv", "--reuid="+strconv.FormatUint(uint64(s.UID), 10), "--regid="+strconv.FormatUint(uint64(s.GID), 10), "--init-groups", "--")
 	}

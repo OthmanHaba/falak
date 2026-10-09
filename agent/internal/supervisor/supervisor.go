@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,11 +34,15 @@ type Options struct {
 	Logger      *slog.Logger
 	// Slices converges proc.apply `slices` (nil: a payload with slices is refused).
 	Slices interface {
-		Apply(ctx context.Context, desired []cgroup.Slice) ([]string, error)
+		Apply(ctx context.Context, desired []cgroup.Slice) ([]string, map[string]string, error)
 		Prune(ctx context.Context, keep []cgroup.Slice) ([]string, error)
 	}
 	// Systemd runs systemctl for programs in slices (version, leftover scopes); default runner.Exec.
 	Systemd runner.Runner
+	// LookPath and CanEnter check a scope launch beforehand (tests replace them); default exec.LookPath and
+	// cgroup.UserCanEnter.
+	LookPath func(string) (string, error)
+	CanEnter func(dir string, uid, gid uint32, groups []uint32) error
 }
 
 // Supervisor owns all supervised programs.
@@ -80,6 +86,12 @@ func New(o Options) *Supervisor {
 	if o.Systemd == nil {
 		o.Systemd = runner.Exec{}
 	}
+	if o.LookPath == nil {
+		o.LookPath = exec.LookPath
+	}
+	if o.CanEnter == nil {
+		o.CanEnter = cgroup.UserCanEnter
+	}
 	return &Supervisor{opts: o, log: o.Logger.With("component", "supervisor"), programs: map[string]*program{}}
 }
 
@@ -118,6 +130,9 @@ type (
 		Unchanged []string `json:"unchanged"`
 		// Slices whose limits changed (applied live) or were removed.
 		Slices []string `json:"slices,omitempty"`
+		// SliceErrors are the slices that were skipped (invalid, or set-property failed), by name: their programs run
+		// without them.
+		SliceErrors map[string]string `json:"slice_errors,omitempty"`
 	}
 	RestartPayload struct {
 		Names []string `json:"names,omitempty"`
@@ -171,8 +186,36 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		p.Env = env
 		ready = append(ready, p)
 	}
+	s.stopOrphanScopes(ctx, ready)
 	_, err = s.apply(ctx, ready, waiting)
 	return err
+}
+
+// stopOrphanScopes stops the falak-proc-*.scope units no restored program instance owns: programs of an agent that
+// crashed run on in their scopes (outside the agent's cgroup), and a program removed meanwhile would never be stopped.
+// The scopes of restored programs are stopped by their own launch.
+func (s *Supervisor) stopOrphanScopes(ctx context.Context, restored []Program) {
+	if s.opts.Slices == nil {
+		return
+	}
+	res, err := s.opts.Systemd.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"list-units", "--type=scope", "--all", "--plain", "--no-legend", "--no-pager", "falak-proc-*"}})
+	if err != nil || res.ExitCode != 0 {
+		return
+	}
+	owned := map[string]bool{}
+	for _, p := range restored {
+		for i := 0; i < max(1, p.Numprocs); i++ {
+			owned["falak-proc-"+p.Name+"-"+itoa(i)+".scope"] = true
+		}
+	}
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !strings.HasSuffix(fields[0], ".scope") || !cgroup.ScopeUnitRe.MatchString(strings.TrimSuffix(fields[0], ".scope")) || owned[fields[0]] {
+			continue
+		}
+		s.log.Warn("stopping orphaned program scope", "unit", fields[0])
+		_, _ = s.opts.Systemd.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"stop", "--quiet", fields[0]}})
+	}
 }
 
 // WaitingSites lists the sites of programs waiting for their secrets.
@@ -212,33 +255,58 @@ func (s *Supervisor) Apply(ctx context.Context, desired []Program) (ApplyResult,
 // ApplyWithSlices converges the slices first (new limits apply live, programs moving into a slice find it ready),
 // then the programs, then removes the slices nothing uses any more.
 func (s *Supervisor) ApplyWithSlices(ctx context.Context, desired []Program, slices []cgroup.Slice) (ApplyResult, error) {
-	if err := cgroup.Validate(slices); err != nil {
-		return ApplyResult{}, &commands.PayloadError{Err: err}
+	// Invalid slices are skipped and reported, never the whole set: one service's bad limits must not stop the others.
+	valid, errs := cgroup.Partition(slices)
+	if s.opts.Slices == nil && len(valid) > 0 {
+		for _, sl := range valid {
+			errs[sl.Name] = "slices are not supported on this host"
+		}
+		valid = nil
 	}
-	declared := map[string]bool{}
-	for _, sl := range slices {
-		declared[sl.Name] = true
-	}
-	for _, p := range desired {
-		if p.Slice != "" && !declared[p.Slice] {
-			return ApplyResult{}, &commands.PayloadError{Err: fmt.Errorf("program %s: slice %q is not in slices", p.Name, p.Slice)}
+	var changed []string
+	if s.opts.Slices != nil && len(valid) > 0 {
+		var applyErrs map[string]string
+		var err error
+		if changed, applyErrs, err = s.opts.Slices.Apply(ctx, valid); err != nil {
+			return ApplyResult{}, fmt.Errorf("slices: %w", err)
+		}
+		for name, e := range applyErrs {
+			errs[name] = e
 		}
 	}
-	if s.opts.Slices == nil {
-		if len(slices) > 0 {
-			return ApplyResult{}, fmt.Errorf("slices are not supported on this host")
+	usable := map[string]bool{}
+	for _, sl := range valid {
+		if _, failed := errs[sl.Name]; !failed {
+			usable[sl.Name] = true
 		}
-		return s.Apply(ctx, desired)
 	}
-	changed, err := s.opts.Slices.Apply(ctx, slices)
-	if err != nil {
-		return ApplyResult{}, fmt.Errorf("slices: %w", err)
+	// A program whose slice is missing or failed runs without it (its limits are reported as not applied).
+	programs := make([]Program, len(desired))
+	for i, p := range desired {
+		if p.Slice != "" && !usable[p.Slice] {
+			if _, known := errs[p.Slice]; !known {
+				errs[p.Slice] = fmt.Sprintf("slice %q is not in slices", p.Slice)
+			}
+			s.log.Warn("program runs without its slice", "program", p.Name, "slice", p.Slice, "err", errs[p.Slice])
+			p.Slice = ""
+		}
+		programs[i] = p
 	}
-	res, err := s.Apply(ctx, desired)
-	if err != nil {
+	res, err := s.Apply(ctx, programs)
+	if len(errs) > 0 {
+		res.SliceErrors = errs
+	}
+	if err != nil || s.opts.Slices == nil {
 		return res, err
 	}
-	removed, err := s.opts.Slices.Prune(ctx, slices)
+	// Units of slices that failed keep their file (and last good limits) until they are fixed or dropped.
+	keep := append([]cgroup.Slice(nil), valid...)
+	for name := range errs {
+		if cgroup.NameRe.MatchString(name) {
+			keep = append(keep, cgroup.Slice{Name: name})
+		}
+	}
+	removed, err := s.opts.Slices.Prune(ctx, keep)
 	res.Slices = append(changed, removed...)
 	if len(res.Slices) == 0 {
 		res.Slices = nil

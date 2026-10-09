@@ -9,6 +9,7 @@ import (
 
 	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // FPMPoolPayload is runtime.fpm.pool.
@@ -220,19 +221,37 @@ func (rt *Runtime) ownFPM(ctx context.Context, st commands.Stream, p FPMPoolPayl
 		}
 	}
 	name := ownFPMUnit(p.Pool)
+	var startErr error
 	switch {
 	case unitChanged:
 		for _, args := range [][]string{{"daemon-reload"}, {"enable", name}, {"restart", name}} {
-			if err := rt.run(ctx, st, "systemctl", args...); err != nil {
-				return nil, err
+			if startErr = rt.run(ctx, st, "systemctl", args...); startErr != nil {
+				break
 			}
 		}
 	case confChanged:
-		if err := rt.run(ctx, st, "systemctl", "reload-or-restart", name); err != nil {
-			return nil, err
+		startErr = rt.run(ctx, st, "systemctl", "reload-or-restart", name)
+	}
+	if startErr != nil {
+		// The site must keep being served: its pool goes back into the shared master.
+		if err := rt.rollbackOwnFPM(ctx, st, p, shared, svc); err != nil {
+			return nil, fmt.Errorf("own php-fpm master for %s failed (%w) and moving the pool back failed: %v", p.Pool, startErr, err)
 		}
+		return nil, fmt.Errorf("own php-fpm master for %s failed to start, the pool runs in the shared php%s-fpm again (without limits): %w", p.Pool, p.PHPVersion, startErr)
 	}
 	return ListenResult{Changed: confChanged || unitChanged || movedOut, Listen: p.Listen}, nil
+}
+
+// rollbackOwnFPM removes a pool's own master that failed to start and puts the pool back into the shared master.
+func (rt *Runtime) rollbackOwnFPM(ctx context.Context, st commands.Stream, p FPMPoolPayload, shared, svc string) error {
+	_, _ = rt.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"disable", "--now", ownFPMUnit(p.Pool)}})
+	_, _ = rt.d.FS.Remove("/etc/systemd/system/" + ownFPMUnit(p.Pool))
+	_, _ = rt.d.FS.Remove(ownFPMConf(p.Pool))
+	_ = rt.run(ctx, st, "systemctl", "daemon-reload")
+	if _, err := rt.d.FS.WriteFile(shared, []byte(RenderPool(p, rt.d.EdgeUser)), 0o644); err != nil {
+		return err
+	}
+	return rt.run(ctx, st, "systemctl", "reload", svc)
 }
 
 // removeOwnFPM stops and removes a pool's own master (its pool goes back to the shared one, or away).

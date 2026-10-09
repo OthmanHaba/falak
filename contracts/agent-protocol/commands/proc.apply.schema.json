@@ -176,7 +176,7 @@
     "slices": {
       "type": "array",
       "maxItems": 1000,
-      "description": "The full desired set of Falak slices (resource limits of programs and of sites' own PHP-FPM masters). Written to /etc/systemd/system/falak-<name>.slice and applied live (systemctl set-property --runtime) before the programs converge; managed slices not listed are removed afterwards (an active one only loses its limits).",
+      "description": "The full desired set of Falak slices (resource limits of programs and of sites' own PHP-FPM masters). Written to /etc/systemd/system/falak-<name>.slice and applied live (systemctl set-property --runtime) before the programs converge; managed slices not listed are removed afterwards (an active one only loses its limits). An invalid slice is skipped and reported in the result's slice_errors, never the whole set.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -260,6 +260,13 @@
             "type": "string"
           },
           "description": "Slices whose limits changed (applied live) or that were removed"
+        },
+        "slice_errors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Slices skipped (invalid limits, a duplicate, set-property failed, or not declared), by name: their programs run without them and a failed slice keeps its previous unit. The other slices and every program are applied."
         }
       }
     }

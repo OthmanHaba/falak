@@ -3,10 +3,13 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -31,6 +34,9 @@ type instance struct {
 	restarts  int
 	startedAt time.Time
 	lastExit  *int
+	// launchErr: the last start never ran the program (a scope that could not be created, a missing tool, a
+	// directory the user may not enter), as opposed to the program exiting.
+	launchErr string
 	loop      bool          // restart loop active
 	stopCh    chan struct{} // closed to request stop
 	done      chan struct{} // closed when the loop exited
@@ -175,10 +181,15 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 			return 127, false
 		}
 	}
-	argv, cred := in.sup.launch(spec, in.idx, cred)
+	argv, cred, err := in.sup.launch(spec, in.idx, cred)
+	if err != nil {
+		return in.launchFailed(errW, err)
+	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = spec.Cwd
-	cmd.Stdout, cmd.Stderr = maskOut, maskErr
+	// The first stderr bytes of a scope launch tell systemd-run's / choom's / setpriv's own errors from the program's.
+	sniff := &headWriter{max: 512}
+	cmd.Stdout, cmd.Stderr = maskOut, io.MultiWriter(maskErr, sniff)
 	cmd.WaitDelay = 2 * time.Second
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	env := []string{
@@ -204,12 +215,11 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 	cmd.Env = env
 
 	if err := cmd.Start(); err != nil {
-		in.log.Error("start failed", "err", err)
-		_, _ = errW.Write([]byte("falak: start failed: " + err.Error() + "\n"))
-		return 127, false
+		return in.launchFailed(errW, err)
 	}
 	pid := cmd.Process.Pid
-	if spec.OomScoreAdj != 0 {
+	// In a slice choom set it already (as root, before the program ran).
+	if spec.OomScoreAdj != 0 && spec.Slice == "" {
 		if err := cgroup.SetOOMScoreAdj(pid, spec.OomScoreAdj); err != nil {
 			in.log.Warn("set oom_score_adj", "err", err)
 		}
@@ -217,6 +227,7 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 	in.mu.Lock()
 	in.pid = pid
 	in.startedAt = time.Now()
+	in.launchErr = ""
 	in.mu.Unlock()
 
 	exited := make(chan error, 1)
@@ -230,10 +241,15 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 			in.setState(StateRunning)
 			continue
 		case err := <-exited:
+			code := exitCode(cmd, err)
 			in.mu.Lock()
 			in.pid = 0
+			if spec.Slice != "" && code != 0 && cgroup.LaunchFailure(sniff.Bytes()) {
+				in.launchErr = strings.TrimSpace(firstLine(sniff.Bytes()))
+				in.log.Error("program did not start in its slice", "err", in.launchErr)
+			}
 			in.mu.Unlock()
-			return exitCode(cmd, err), false
+			return code, false
 		case <-stopCh:
 			in.setState(StateStopping)
 			sig := signals[spec.StopSignal]
@@ -278,7 +294,7 @@ func (in *instance) status() ProcessStatus {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	st := ProcessStatus{Name: in.spec.Name, Instance: in.idx, PID: in.pid, State: in.state,
-		Restarts: in.restarts, LastExitCode: in.lastExit}
+		Restarts: in.restarts, LastExitCode: in.lastExit, LaunchError: in.launchErr}
 	if !in.startedAt.IsZero() {
 		t := in.startedAt.UTC()
 		st.StartedAt = &t
@@ -289,15 +305,61 @@ func (in *instance) status() ProcessStatus {
 // launch is the argv a program instance starts with. In a slice it is wrapped in a transient scope of that slice
 // (cgroup.ScopeCommand): systemd-run runs as root and setpriv drops to the user, so no credential is set on the
 // child; a leftover scope of the same name (the agent crashed while it ran) is stopped first.
-func (s *Supervisor) launch(spec Program, idx int, cred *syscall.Credential) ([]string, *syscall.Credential) {
+func (s *Supervisor) launch(spec Program, idx int, cred *syscall.Credential) ([]string, *syscall.Credential, error) {
 	if spec.Slice == "" {
-		return spec.Command, cred
+		return spec.Command, cred, nil
 	}
 	unit := "falak-proc-" + spec.Name + "-" + itoa(idx)
-	_, _ = s.opts.Systemd.Run(context.Background(), runner.Cmd{Name: "systemctl", Args: []string{"stop", "--quiet", unit + ".scope"}})
-	sp := cgroup.ScopeSpec{Slice: spec.Slice, Unit: unit, Command: spec.Command, SystemdVersion: s.systemdVersion()}
+	sp := cgroup.ScopeSpec{Slice: spec.Slice, Unit: unit, Command: spec.Command, SystemdVersion: s.systemdVersion(), OomScoreAdj: spec.OomScoreAdj}
 	if cred != nil {
 		sp.AsUser, sp.UID, sp.GID = true, cred.Uid, cred.Gid
+		// The agent enters the directory as root (systemd-run runs as root): only where the user could itself.
+		if err := s.opts.CanEnter(spec.Cwd, cred.Uid, cred.Gid, cred.Groups); err != nil {
+			return nil, nil, fmt.Errorf("working directory: %w", err)
+		}
 	}
-	return cgroup.ScopeCommand(sp), nil
+	for _, tool := range sp.Tools() {
+		if _, err := s.opts.LookPath(tool); err != nil {
+			return nil, nil, fmt.Errorf("%s is not installed: %w", tool, err)
+		}
+	}
+	_, _ = s.opts.Systemd.Run(context.Background(), runner.Cmd{Name: "systemctl", Args: []string{"stop", "--quiet", unit + ".scope"}})
+	return cgroup.ScopeCommand(sp), nil, nil
+}
+
+// launchFailed records a start that never ran the program.
+func (in *instance) launchFailed(errW *lineWriter, err error) (int, bool) {
+	in.log.Error("launch failed", "err", err)
+	_, _ = errW.Write([]byte("falak: launch failed: " + err.Error() + "\n"))
+	in.mu.Lock()
+	in.launchErr = err.Error()
+	in.mu.Unlock()
+	return 127, false
+}
+
+// headWriter keeps the first max bytes written.
+type headWriter struct {
+	mu  sync.Mutex
+	max int
+	buf []byte
+}
+
+func (h *headWriter) Write(p []byte) (int, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if room := h.max - len(h.buf); room > 0 {
+		h.buf = append(h.buf, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
+}
+
+func (h *headWriter) Bytes() []byte {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]byte(nil), h.buf...)
+}
+
+func firstLine(b []byte) string {
+	line, _, _ := strings.Cut(string(b), "\n")
+	return line
 }
