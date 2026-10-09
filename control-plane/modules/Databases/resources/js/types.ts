@@ -330,6 +330,8 @@ export interface PitrRestoreRow {
     id: string;
     status: RestoreStatus;
     target_time: string | null;
+    /** Recovered to the end of the shipped log (target_time: how far it reached). */
+    to_latest: boolean;
     decision: PitrDecision | null;
     error: string | null;
     warnings: string[];

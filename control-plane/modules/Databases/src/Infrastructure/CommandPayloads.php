@@ -78,6 +78,8 @@ final class CommandPayloads
         return [
             'instance' => $instance->id,
             'engine' => $instance->engine->protocol(),
+            // The agent turns shipping on itself before the base starts (the update saying so may come later).
+            'volume_id' => $instance->volume_id,
             'encryption' => $encryption,
             'destination' => ['kind' => 'presigned_url', 'url' => $uploadUrl],
         ];

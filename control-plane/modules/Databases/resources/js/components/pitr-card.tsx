@@ -171,14 +171,12 @@ function RestoreToTime({ instance, pitr }: { instance: DatabaseInstance; pitr: P
     const inRange = iso !== null && inRecoveryRange(pitr.timeline, iso);
 
     // Posted as JSON, not an Inertia form visit: a validation error never flashes the age identity into the session.
-    const submit: FormEventHandler = async (event) => {
-        event.preventDefault();
-        if (!iso) return;
+    const restoreTo = async (target: string) => {
         setBusy(true);
         setErrors({});
         try {
             await requestJson(`/databases/instances/${instance.id}/pitr/restore`, 'POST', {
-                target_time: iso,
+                target_time: target,
                 ...(customer ? { identity: identity.trim() } : {}),
             });
             router.reload();
@@ -188,6 +186,11 @@ function RestoreToTime({ instance, pitr }: { instance: DatabaseInstance; pitr: P
             setIdentity('');
             setBusy(false);
         }
+    };
+
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
+        if (iso) void restoreTo(iso);
     };
 
     return (
@@ -225,9 +228,20 @@ function RestoreToTime({ instance, pitr }: { instance: DatabaseInstance; pitr: P
                     </div>
                 )}
             </div>
-            <Button type="submit" disabled={busy || !iso || !inRange || (customer && !AGE_IDENTITY.test(identity.trim()))}>
-                Restore to this time
-            </Button>
+            <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={busy || !iso || !inRange || (customer && !AGE_IDENTITY.test(identity.trim()))}>
+                    Restore to this time
+                </Button>
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || (customer && !AGE_IDENTITY.test(identity.trim()))}
+                    onClick={() => void restoreTo('latest')}
+                    title="Everything shipped so far"
+                >
+                    Restore to the latest point
+                </Button>
+            </div>
         </form>
     );
 }
@@ -257,7 +271,8 @@ function AwaitingDecision({ restore, canRestore }: { restore: PitrRestoreRow; ca
         <div className="space-y-3 rounded-md border border-amber-500/50 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-medium">
-                    Restored to {restore.target_time ? utc(restore.target_time) : '—'} <span className="text-muted-foreground">(read-only)</span>
+                    {restore.to_latest ? 'Restored to the latest point' : 'Restored to'} {restore.target_time ? utc(restore.target_time) : '—'}{' '}
+                    <span className="text-muted-foreground">(read-only)</span>
                 </h3>
                 <StatusBadge status={restore.status} />
             </div>
@@ -271,9 +286,10 @@ function AwaitingDecision({ restore, canRestore }: { restore: PitrRestoreRow; ca
                         {copy.port !== null && <CopyButton value={`${copy.host}:${copy.port}`} label="Copy the address" />}
                     </p>
                     <p className="text-muted-foreground text-xs">
-                        Reachable from the server only (an SSH tunnel), as <span className="font-mono">{copy.username}</span> or any user of this
-                        database, with the same passwords.
+                        Reachable from the server only (an SSH tunnel). Inspect it as <span className="font-mono">{copy.username}</span>, an account
+                        that can only read.
                     </p>
+                    {canRestore && <InspectionPassword restoreId={restore.id} />}
                 </div>
             )}
             <RowCounts counts={restore.table_counts} />
@@ -310,6 +326,38 @@ function AwaitingDecision({ restore, canRestore }: { restore: PitrRestoreRow; ca
                 </DialogContent>
             </Dialog>
         </div>
+    );
+}
+
+/** The copy's read-only account's password, fetched on demand (never part of the page). */
+function InspectionPassword({ restoreId }: { restoreId: string }) {
+    const [password, setPassword] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const reveal = async () => {
+        try {
+            const res = await requestJson<{ data: { password: string } }>(`/databases/pitr-restores/${restoreId}/inspection`, 'POST', {});
+            setPassword(res.data.password);
+        } catch (e) {
+            setError(errorMessage(e));
+        }
+    };
+
+    if (password) {
+        return (
+            <p className="text-xs">
+                Password: <span className="font-mono">{password}</span> <CopyButton value={password} label="Copy the password" />
+            </p>
+        );
+    }
+
+    return (
+        <>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void reveal()}>
+                Reveal the password
+            </Button>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+        </>
     );
 }
 

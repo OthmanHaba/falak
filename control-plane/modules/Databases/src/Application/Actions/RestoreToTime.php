@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Application\InstanceCertificates;
 use Falak\Databases\Application\InstancePorts;
+use Falak\Databases\Application\Passwords;
 use Falak\Databases\Application\PitrTimeline;
 use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
@@ -46,26 +47,35 @@ final class RestoreToTime
         private readonly AuditLog $audit,
     ) {}
 
+    /** The copy's read-only account, for inspection (the source's accounts can write once it is promoted). */
+    public const INSPECTION_USER = 'falak_inspect';
+
     /**
+     * $target null: the latest point (everything shipped). A target at or after the end of the newest range is the
+     * latest point too: the copy is recovered to the end of the shipped log, not to a time there is no log for.
+     *
      * @throws ValidationException
      */
-    public function __invoke(DatabaseInstance $source, CarbonImmutable $target, ?string $actorId = null, #[\SensitiveParameter] ?string $identity = null): Restore
+    public function __invoke(DatabaseInstance $source, ?CarbonImmutable $target, ?string $actorId = null, #[\SensitiveParameter] ?string $identity = null): Restore
     {
         if (! $source->supportsPitr()) {
             throw ValidationException::withMessages(['target_time' => 'Point-in-time recovery is for PostgreSQL, MySQL and MariaDB.']);
         }
 
         // MySQL / MariaDB binlogs have whole seconds: replay stops before the first event at or after T.
-        $target = $source->engine->isMysqlFamily() ? $target->startOfSecond() : $target;
+        $target = $target !== null && $source->engine->isMysqlFamily() ? $target->startOfSecond() : $target;
         $plan = $this->timeline->plan($source, $target);
 
         if ($plan === null) {
             $range = $this->timeline->for($source);
 
-            throw ValidationException::withMessages(['target_time' => $range['from'] === null
+            throw ValidationException::withMessages(['target_time' => $range['from'] === null || $target === null
                 ? 'There is no recovery point yet: PITR needs a base backup and the log shipped after it.'
                 : "{$target->toIso8601ZuluString()} is not in a recovery range (from {$range['from']} to {$range['to']}, gaps excepted)."]);
         }
+
+        $latest = $plan['latest'];
+        $target = $plan['to'];
 
         $base = $plan['base'];
         $segments = $plan['segments'];
@@ -92,20 +102,23 @@ final class RestoreToTime
                     $this->encryption((string) $base->encryption_mode, $base->wrapped_key, $base->organization_id, $base->id)),
                 'segments' => array_map(fn (PitrSegment $segment) => ['name' => $segment->name, ...$this->object($segment->storageProvider, $segment->object_key, $segment->sha256,
                     $segment->plaintext_sha256, (int) $segment->size_bytes, (int) $segment->plaintext_bytes,
-                    $this->encryption($segment->encryption_mode, $segment->wrapped_key, $segment->organization_id, $segment->id))], $segments),
+                    $this->encryption($segment->encryption_mode, $segment->wrapped_key, $segment->organization_id, $segment->id, $segment->database_instance_id))], $segments),
             ];
         } catch (DecryptionFailed) {
             throw ValidationException::withMessages(['target_time' => 'A key of the base or of a segment can\'t be opened (it belongs to another organization or was changed).']);
         }
 
-        $restore = DB::transaction(function () use ($source, $target, $base, $segments, $objects, $actorId, $identity, $customer) {
+        $inspection = Passwords::generate();
+
+        $restore = DB::transaction(function () use ($source, $target, $latest, $base, $segments, $objects, $actorId, $identity, $customer, $inspection) {
             DatabaseInstance::query()->where('server_id', $source->server_id)->lockForUpdate()->get(['id']);
 
             $copy = new DatabaseInstance;
             $copy->id = strtolower((string) Str::ulid());
             $copy->forceFill([
                 ...collect($source->getAttributes())->only(['organization_id', 'server_id', 'server_name', 'engine', 'version', 'image', 'image_digest', 'port', 'memory_bytes', 'cpus'])->all(),
-                'settings' => $source->settings,
+                // Read-only in the engine's config too (it survives a restart), no scheduled events while it is inspected.
+                'settings' => [...(array) ($source->settings ?? []), 'read_only' => true, 'event_scheduler' => false],
                 // The restored data keeps the source's accounts and their passwords.
                 'root_password' => $source->root_password,
                 'name' => substr($source->name, 0, 30).'-pitr-'.substr($copy->id, -5),
@@ -135,6 +148,8 @@ final class RestoreToTime
                 'restored_instance_id' => $copy->id,
                 'server_id' => $source->server_id,
                 'target_time' => $target,
+                'to_latest' => $latest,
+                'inspection_password' => $inspection,
                 'segments' => count($segments),
                 'status' => RestoreStatus::Pending,
                 'requested_by' => $actorId,
@@ -150,7 +165,9 @@ final class RestoreToTime
                 'identity' => $customer ? $identity : null,
                 'base' => $objects['base'],
                 'segments' => $objects['segments'],
-                'target_time' => $target->utc()->format('Y-m-d\TH:i:s.u\Z'),
+                // The latest point: no target, everything shipped is replayed.
+                'target_time' => $latest ? null : $target->utc()->format('Y-m-d\TH:i:s.u\Z'),
+                'inspection' => ['username' => self::INSPECTION_USER, 'password' => $inspection],
                 'databases' => $source->databases()->where('status', ResourceStatus::Active)->pluck('name')->values()->all(),
             ], fn ($value) => $value !== null), (int) config('databases.timeouts.pitr_restore', 21600), "db.pitr.restore:{$restore->id}", 'target_time');
 
@@ -163,6 +180,7 @@ final class RestoreToTime
         $this->audit->record('databases.pitr_restore_requested', 'database_instance', $source->id, [
             'restore_id' => $restore->id,
             'target_time' => $target->toIso8601ZuluString(),
+            'latest' => $latest,
             'base_id' => $base->id,
             'segments' => count($segments),
             'new_instance_id' => $restore->restored_instance_id,
@@ -195,10 +213,10 @@ final class RestoreToTime
      *
      * @throws DecryptionFailed
      */
-    private function encryption(string $mode, ?string $wrapped, string $organizationId, string $id): array
+    private function encryption(string $mode, ?string $wrapped, string $organizationId, string $id, ?string $instanceId = null): array
     {
         return $mode === BackupKeys::CUSTOMER
             ? ['mode' => 'age', 'key_id' => $id]
-            : $this->keys->opening(BackupKeys::CP, $wrapped, $organizationId, $id);
+            : $this->keys->opening(BackupKeys::CP, $wrapped, $organizationId, $id, instanceId: $instanceId);
     }
 }

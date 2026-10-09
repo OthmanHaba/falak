@@ -149,64 +149,85 @@ before encryption (v0.10.0-rc.1 and earlier) keep their rows but are no longer r
 Per SQL instance (PostgreSQL, MySQL, MariaDB): on by default for instances created in a production environment when the
 organization has a storage provider (the oldest), off elsewhere. The instance's card on its page sets it: the storage
 provider, who holds the keys (`cp`, default, or `customer` with an age recipient), the window (days of recovery points
-kept, default 7) and how often a base backup is taken (default every 7 days). Plan: `docs/plans/V0_10_PRODUCTION.md` §5.
+kept, default 7) and how often a base backup is taken (default every 7 days). Turning it off or shortening the window
+leaves less to restore from: that takes the restore permission (admins). Plan: `docs/plans/V0_10_PRODUCTION.md` §5.
 
 **What is stored.** *Base backups*: `falak-db backup physical` (pg_basebackup `-Ft -X none`; xtrabackup / mariadb-backup
 xbstream), FKB1 like any backup, a row of `databases_backups` with `type = base`, where in the log it starts
 (`log_start`: postgres `start_wal`, mysql/mariadb the binlog being written when it started) and falak-db's start and end
 on the server's clock. One is taken when PITR is turned on, every `base_interval_days`, after a gap and on demand
-(db.pitr.base). *Segments*: every WAL segment (postgres `archive_command`, at least every 60 s) and every binlog
+(db.pitr.base, which turns shipping on itself before it starts: the WAL it needs is never emptied from the spool by
+an update that has not arrived yet). *Segments*: every WAL segment (postgres `archive_command`, at least every 60 s) and every binlog
 (`falak-db binlog-rotate` every 60 s, skipped while the binlog did not grow), one FKB1 object each
 (`databases_pitr_segments`), so the RPO is about a minute.
 
-**Shipping (no storage credentials on servers).** The agent lists the spool's completed files (never `.` files: they
-are falak-db's) and asks the control plane for upload URLs in batches (`POST /agent/v1/requests/pitr.upload_urls`,
+**Shipping (no storage credentials on servers).** The engine's user owns `<volume>/spool/<kind>` (a database superuser can
+get a shell as that user), so the root agent never resolves spool paths by name: `<volume>/spool` stays root's, and the
+agent opens `spool/<kind>` beneath the volume component by component refusing symlinks (`os.Root`), takes only regular
+files with one link, opens them `O_NOFOLLOW` (checking it is the file it listed) and deletes with `unlinkat`. It lists
+the spool's completed files (never `.` files: they are falak-db's) and asks the control plane for upload URLs in batches (`POST /agent/v1/requests/pitr.upload_urls`,
 mTLS). The control plane answers only for instances of the agent's own server and organization with PITR on: a
-presigned PUT URL and the segment's encryption — `cp`: a fresh data key per segment, kept sealed on its row (AAD
-`("backup", organization, segment id)`), sent in this reply only; `customer`: the age recipient (the agent generates
+presigned PUT URL and the segment's encryption — `cp`: a data key per segment, kept sealed on its row (AAD
+`("pitr-segment", organization, instance, segment id)`), sent in the reply (asked again before it shipped, the same row
+and key come back: never two keys for one file); `customer`: the age recipient (the agent generates
 the key; a customer-held instance without a valid recipient ships nothing rather than fall back). The agent encrypts,
 uploads and reports each segment (`pitr.shipped`: stored size and SHA-256, the content's SHA-256 and size, its end
-time); it deletes a spool file only once the control plane acknowledged its id (or answered that it already has that
-very file). If the control plane or the storage is unreachable nothing is deleted: the spool grows on the instance's
+time); the control plane acknowledges a segment only once a HEAD finds the object with that size and (up to 64 MiB)
+its SHA-256 is the reported one, and the agent deletes a spool file only once its id is acknowledged (or the control
+plane answered that it already has that very file). At most 2000 segments per instance may be handed out unshipped;
+agent requests are limited to 120 per minute per agent and type. If the control plane or the storage is unreachable nothing is deleted: the spool grows on the instance's
 volume, the agent backs off with jitter and the heartbeat reports the spool (`databases[].pitr`: size, volume size,
 unshipped files and the oldest one's age, the last error).
 
 **Gaps.** `binlog-rotate` exit 4 (binlogs purged before they were spooled, or the numbering reset) is reported once
 (`pitr.gap`): it is recorded, alerted, and a base is taken at once; after a reset, spooling starts again
-(`--restart`) once that base exists. Recovery never crosses a gap.
+(`--restart`) once that base exists. A reset starts a new log **epoch**: binlogs numbered again never chain with the
+old ones. A gap already recorded is not recorded again; at most 10 per instance and hour. Recovery never crosses a gap.
 
-**Timeline.** A base restores to any time from its end to the end of the last segment shipped after it, unless a gap
-comes first. The card shows the window's recoverable ranges (green), the gaps (red), the last segment's age ("12 s
+**Timeline.** A base restores to any time from its end to the end of its **chain**: from the segment it starts in, each
+segment the next of the one before (postgres: the next WAL segment of the timeline, 16 MiB segments, or a newer timeline
+whose history was shipped; binlogs: the next number, in the base's epoch). A segment that never arrived ends the chain
+and shows as a gap, and so does a reported gap. The card shows the window's recoverable ranges (green), the gaps (red), the last segment's age ("12 s
 ago") and the spool. Segment and base times are the server's clock (a binlog ends when the server last wrote it).
 
 **Retention.** Hourly: everything the oldest in-window base needs is kept (the newest base finished before the window
 starts, every segment from its start on); older bases and segments are deleted from storage, then their rows. Segments
-whose upload was never reported go after a day. An instance with PITR off keeps nothing once its window has passed.
+whose upload was never reported go a day after they were last asked for. An instance with PITR off keeps its history
+the same way until its window has passed, then all of it goes; a deleted instance's history goes at once (and the
+hourly pass retries what the storage refused).
 
 **Restore to a time** (`databases.restore`, admins; db.pitr.restore). The running instance is never touched: a **new
 instance** (the source's image digest, a new volume sized for the base and the log, published on `127.0.0.1` only, on
 no Docker network, the source's accounts and passwords) gets the newest base before T and the segments after it up to
-the first one ending at or after T. The agent checks the new volume's free space, downloads every segment, checks its
+the first one ending at or after T. **Latest point**: "Restore to the latest point" (or a T at the end of the newest
+range) replays the whole chain, with no target. The agent checks the new volume's free space, downloads every segment, checks its
 stored SHA-256 and decrypts it into `<volume>/spool/replay` under its name only once its trailer and content SHA-256
 verified; then the base, checked and authenticated as a whole before `falak-db restore physical` (a one-off container)
 sees a byte. PostgreSQL: `falak-db recover --wal-dir … --target-time T`, then the instance starts and replays to T;
-MySQL / MariaDB: the instance starts on the prepared base and `falak-db recover --binlog-dir … --target-time T`
-replays the binlogs (T rounded **down to the second**: binlog timestamps have whole seconds). The copy ends read-only
-(`falak-db readonly on`) and every table of each database is counted. Customer-held keys: the age identity is asked
+when postgres finds no commit after T in the shipped WAL ("recovery ended before configured recovery target was
+reached"), everything there happened before T: the agent recovers to the WAL's end instead and the restore says so.
+MySQL / MariaDB: the instance starts on the prepared base (writable, its event scheduler off) and `falak-db recover
+--binlog-dir … --target-time T` replays the binlogs (T rounded **down to the second**: binlog timestamps have whole
+seconds). The copy ends read-only **in its config** (settings `read_only`: postgres `default_transaction_read_only`,
+MySQL `super_read_only` + `read_only`, MariaDB `read_only`; no scheduled events), so a restart keeps it read-only, and
+people inspect it as `falak_inspect`, an account that can only `SELECT` (its password is revealed to admins from the
+card, sealed on the restore, never in the page). Every table of each database is counted. Customer-held keys: the age identity is asked
 once, posted as JSON (never flashed into the session), sent in that command only and forgotten when it settled, with
 every segment's key (`segments.*.encryption.key`).
 
 **The decision** (the restore waits, `awaiting_decision`; the card shows the copy's address and row counts):
 
-- **Swap**: the copy becomes writable and takes over the instance (name, DNS name, host port, databases, users,
+- **Swap**: the copy becomes writable (its read-only settings and `falak_inspect` dropped) and takes over the instance (name, DNS name, host port, databases, users,
   schedules, PITR settings, like a major upgrade's takeover); the old one is stopped and **kept**, with its volume,
-  until someone deletes it. The copy's PITR history starts with a base of its own.
+  until someone deletes it, with PITR off (its agent ships nothing more). The copy's PITR history starts with a base of
+  its own.
 - **Keep as a new database**: the copy becomes writable, a database of its own in the source's environment (on the
   canvas), with rows for the databases and users it holds.
 - **Discard**: the copy's container and volume are deleted (also what happens to the copy of a failed restore).
 
-MySQL `super_read_only` (MariaDB `read_only`) is not persisted: a copy that restarts while it waits is writable again.
-MariaDB's `read_only` holds back the application's accounts but not those with `READ ONLY ADMIN` (root).
+MariaDB's `read_only` holds back the application's accounts but not those with `READ ONLY ADMIN` (root), and a
+PostgreSQL session can turn `default_transaction_read_only` off for itself: inspect as `falak_inspect`, which can only
+read whatever it sets.
 
 **Alerts.** `pitr.lag` (the oldest unshipped segment older than 5 minutes while the instance is up), `pitr.gap`,
 `pitr.spool_full` (the spool above 20% of the volume), `pitr.base_failed` (critical except lag), each once per instance

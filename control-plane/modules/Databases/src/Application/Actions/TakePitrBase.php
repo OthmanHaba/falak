@@ -82,6 +82,7 @@ final class TakePitrBase
             'age_recipient' => $customer ? $instance->pitr_age_recipient : null,
             'cipher' => 'aes-256-gcm',
             'type' => Backup::BASE,
+            'pitr_epoch' => $instance->pitr_epoch,
             'trigger' => 'pitr',
             'status' => BackupStatus::Pending,
             'requested_by' => $actorId,

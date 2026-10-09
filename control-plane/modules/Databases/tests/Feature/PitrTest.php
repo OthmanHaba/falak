@@ -22,6 +22,7 @@ use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Kernel\Security\BackupKeys;
+use Falak\Kernel\Security\DecryptionFailed;
 use Falak\Projects\Contracts\Data\EnvironmentData;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Illuminate\Support\Carbon;
@@ -55,11 +56,38 @@ beforeEach(function () {
 
 afterEach(fn () => Carbon::setTestNow());
 
+/** A fake bucket (Http::fake): objects by key; HEAD gives the size, GET the content, DELETE removes. */
+function pitr_bucket(object $test): void
+{
+    $test->bucket = new ArrayObject;
+    $test->deleted = new ArrayObject;
+    $bucket = $test->bucket;
+    $deleted = $test->deleted;
+    Http::fake(function ($request) use ($bucket, $deleted) {
+        $key = rawurldecode(ltrim((string) parse_url($request->url(), PHP_URL_PATH), '/'));
+
+        return match ($request->method()) {
+            'HEAD' => isset($bucket[$key]) ? Http::response('', 200, ['Content-Length' => (string) strlen($bucket[$key])]) : Http::response('', 404),
+            'GET' => isset($bucket[$key]) ? Http::response($bucket[$key]) : Http::response('', 404),
+            'DELETE' => (function () use ($bucket, $deleted, $key) {
+                $deleted[] = $key;
+                unset($bucket[$key]);
+
+                return Http::response('', 204);
+            })(),
+            default => Http::response('', 200),
+        };
+    });
+}
+
 /** PITR on (without going through the agent), with an agent enrolled for the instance's server. */
 function pitr_on(object $test, array $attributes = []): DatabaseInstance
 {
     $test->engine->forceFill(['pitr_enabled' => true, 'pitr_storage_provider_id' => $test->provider->id, ...$attributes])->save();
     $test->enrolled ??= fleet_enroll($test->organization->id, $test->server->id);
+    if (! isset($test->bucket)) {
+        pitr_bucket($test);
+    }
     $test->headers ??= fleet_mtls($test->enrolled['fingerprint']);
 
     return $test->engine;
@@ -72,8 +100,11 @@ function pitr_ship(object $test, string $name, string $endTime, ?DatabaseInstanc
     $sha = hash('sha256', $name.$endTime);
     $slot = $test->postJson('/agent/v1/requests/pitr.upload_urls', ['instance' => $instance->id, 'kind' => $kind, 'segments' => [['name' => $name, 'bytes' => 16, 'sha256' => $sha]]], $test->headers)
         ->assertOk()->json('segments.0');
+    // What the agent PUT to the presigned URL.
+    $stored = "FKB1 {$name} {$endTime}";
+    $test->bucket[PitrSegment::query()->findOrFail($slot['id'])->object_key] = $stored;
     $test->postJson('/agent/v1/requests/pitr.shipped', ['instance' => $instance->id, 'kind' => $kind, 'segments' => [[
-        'id' => $slot['id'], 'name' => $name, 'size_bytes' => 64, 'sha256' => str_repeat('c', 64), 'plaintext_bytes' => 16, 'plaintext_sha256' => $sha, 'end_time' => $endTime,
+        'id' => $slot['id'], 'name' => $name, 'size_bytes' => strlen($stored), 'sha256' => hash('sha256', $stored), 'plaintext_bytes' => 16, 'plaintext_sha256' => $sha, 'end_time' => $endTime,
     ]]], $test->headers)->assertOk()->assertJson(['acknowledged' => [$slot['id']]]);
 
     return PitrSegment::query()->findOrFail($slot['id']);
@@ -90,7 +121,7 @@ function pitr_base(object $test, string $started, string $finished, ?string $log
         'storage_provider_id' => $test->provider->id, 'object_key' => "acme/pitr/base/{$backup->id}.tar.zst.fkb", 'compression' => Compression::Zstd,
         'encryption_mode' => $mode, 'wrapped_key' => $mode === 'cp' ? app(BackupKeys::class)->generate($test->organization->id, $backup->id)[1] : null,
         'age_recipient' => $mode === 'customer' ? PITR_RECIPIENT : null, 'cipher' => 'aes-256-gcm',
-        'type' => Backup::BASE, 'trigger' => 'pitr', 'status' => BackupStatus::Succeeded, 'size_bytes' => 1000, 'uncompressed_bytes' => 4000,
+        'type' => Backup::BASE, 'pitr_epoch' => $test->engine->pitr_epoch, 'trigger' => 'pitr', 'status' => BackupStatus::Succeeded, 'size_bytes' => 1000, 'uncompressed_bytes' => 4000,
         'sha256' => str_repeat('a', 64), 'plaintext_sha256' => str_repeat('b', 64), 'log_start' => $logStart,
         'base_started_at' => Carbon::parse($started), 'base_finished_at' => Carbon::parse($finished), 'created_at' => Carbon::parse($finished),
     ])->save();
@@ -137,6 +168,11 @@ it('lets developers configure PITR but only admins restore, and never Redis', fu
     [, $developer] = [null, actingAsMember(Role::Developer, $this->organization)];
     $this->put("/databases/instances/{$this->engine->id}/pitr", ['enabled' => true, 'storage_provider_id' => $this->provider->id])->assertSessionHasNoErrors();
     $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => '2026-10-09T11:00:00Z'])->assertForbidden();
+    // Less history (off, a shorter window) is what restoring needs: admins only.
+    $this->put("/databases/instances/{$this->engine->id}/pitr", ['enabled' => true, 'window_days' => 3, 'base_interval_days' => 1])->assertForbidden();
+    $this->put("/databases/instances/{$this->engine->id}/pitr", ['enabled' => false])->assertForbidden();
+    $this->put("/databases/instances/{$this->engine->id}/pitr", ['enabled' => true, 'window_days' => 14])->assertSessionHasNoErrors();
+    expect($this->engine->refresh()->pitr_enabled)->toBeTrue()->and($this->engine->pitr_window_days)->toBe(14);
 
     $redis = databases_instance($this->organization, 'redis', $this->server);
     actingAsMember(Role::Admin, $this->organization);
@@ -173,7 +209,7 @@ it('hands upload URLs only to the agent of the instance\'s own server and organi
         ->and($reply['url'])->toStartWith('https://')->toContain(rawurlencode($segment->id) === $segment->id ? $segment->id : '')
         ->and($reply['encryption']['mode'])->toBe('cp')->and($reply['encryption']['key_id'])->toBe($segment->id)
         // The data key travels in the reply only; the row keeps it sealed for this organization and segment.
-        ->and(app(BackupKeys::class)->unwrap($segment->wrapped_key, $this->organization->id, $segment->id))->toBe(base64_decode($reply['encryption']['key']))
+        ->and(app(BackupKeys::class)->unwrap($segment->wrapped_key, $this->organization->id, $segment->id, $this->engine->id))->toBe(base64_decode($reply['encryption']['key']))
         ->and(json_encode($reply))->not->toContain('super-secret-access-key-value')
         ->and($segment->shipped_at)->toBeNull();
 
@@ -197,7 +233,7 @@ it('hands upload URLs only to the agent of the instance\'s own server and organi
     $this->engine->forceFill(['pitr_enabled' => true, 'pitr_encryption_mode' => 'customer', 'pitr_age_recipient' => null])->save();
     $this->postJson('/agent/v1/requests/pitr.upload_urls', $ask($this->engine->id), $this->headers)->assertStatus(409)->assertJson(['error' => 'bad_recipient']);
     $this->engine->forceFill(['pitr_age_recipient' => PITR_RECIPIENT])->save();
-    $reply = $this->postJson('/agent/v1/requests/pitr.upload_urls', $ask($this->engine->id), $this->headers)->assertOk()->json('segments.0');
+    $reply = $this->postJson('/agent/v1/requests/pitr.upload_urls', [...$ask($this->engine->id), 'segments' => [['name' => '000000010000000000000009', 'bytes' => 1, 'sha256' => str_repeat('f', 64)]]], $this->headers)->assertOk()->json('segments.0');
     expect($reply['encryption'])->toBe(['mode' => 'age', 'key_id' => $reply['id'], 'recipient' => PITR_RECIPIENT])
         ->and(PitrSegment::query()->findOrFail($reply['id'])->wrapped_key)->toBeNull();
 });
@@ -206,8 +242,23 @@ it('acknowledges only the segments it handed out, and answers a file it already 
     pitr_on($this);
     $sha = str_repeat('d', 64);
     $slot = $this->postJson('/agent/v1/requests/pitr.upload_urls', ['instance' => $this->engine->id, 'kind' => 'wal', 'segments' => [['name' => '000000010000000000000004', 'bytes' => 16, 'sha256' => $sha]]], $this->headers)->json('segments.0');
-    $item = ['id' => $slot['id'], 'name' => '000000010000000000000004', 'size_bytes' => 64, 'sha256' => str_repeat('c', 64), 'plaintext_bytes' => 16, 'plaintext_sha256' => $sha, 'end_time' => '2026-10-09T11:59:30.250Z'];
+    $stored = 'FKB1 encrypted segment';
+    $item = ['id' => $slot['id'], 'name' => '000000010000000000000004', 'size_bytes' => strlen($stored), 'sha256' => hash('sha256', $stored), 'plaintext_bytes' => 16, 'plaintext_sha256' => $sha, 'end_time' => '2026-10-09T11:59:30.250Z'];
     $ack = fn (array $segment) => $this->postJson('/agent/v1/requests/pitr.shipped', ['instance' => $this->engine->id, 'kind' => 'wal', 'segments' => [$segment]], $this->headers);
+
+    // Asked again before it shipped: the same row and key, never a second one.
+    $again = $this->postJson('/agent/v1/requests/pitr.upload_urls', ['instance' => $this->engine->id, 'kind' => 'wal', 'segments' => [['name' => '000000010000000000000004', 'bytes' => 16, 'sha256' => $sha]]], $this->headers)->json('segments.0');
+    expect($again['id'])->toBe($slot['id'])->and($again['encryption']['key'])->toBe($slot['encryption']['key'])
+        ->and(PitrSegment::query()->count())->toBe(1);
+
+    // Not in the storage yet, or not what the agent says: not acknowledged (it keeps the file and uploads it again).
+    $ack($item)->assertOk()->assertJson(['acknowledged' => []]);
+    $key = PitrSegment::query()->findOrFail($slot['id'])->object_key;
+    $this->bucket[$key] = 'something else entirely';
+    $ack($item)->assertOk()->assertJson(['acknowledged' => []]);
+    $this->bucket[$key] = strrev($stored); // the same size, another content
+    $ack($item)->assertOk()->assertJson(['acknowledged' => []]);
+    $this->bucket[$key] = $stored;
 
     // Another content, another name, an id of nothing: not acknowledged (the agent keeps the file).
     $ack([...$item, 'plaintext_sha256' => str_repeat('e', 64)])->assertOk()->assertJson(['acknowledged' => []]);
@@ -217,7 +268,7 @@ it('acknowledges only the segments it handed out, and answers a file it already 
 
     $ack($item)->assertOk()->assertJson(['acknowledged' => [$slot['id']]]);
     $segment = PitrSegment::query()->findOrFail($slot['id']);
-    expect($segment->shipped_at)->not->toBeNull()->and($segment->sha256)->toBe(str_repeat('c', 64))
+    expect($segment->shipped_at)->not->toBeNull()->and($segment->sha256)->toBe(hash('sha256', $stored))
         ->and($segment->end_time->toIso8601ZuluString('millisecond'))->toBe('2026-10-09T11:59:30.250Z')
         ->and($this->engine->refresh()->pitr_last_shipped_at)->not->toBeNull();
 
@@ -300,14 +351,15 @@ it('builds the timeline from the bases and segments, with gaps ending a range', 
 });
 
 it('keeps everything the oldest in-window base needs and prunes the rest from storage', function () {
-    Http::fake(['*' => Http::response('', 204)]);
     pitr_on($this, ['pitr_window_days' => 2]);
-    $old = pitr_base($this, '2026-10-05 00:00:00', '2026-10-05 00:01:00');      // before the one covering the window start: pruned
-    $covering = pitr_base($this, '2026-10-06 00:00:00', '2026-10-06 00:01:00'); // newest before the window (Oct 7 12:00): kept
-    $recent = pitr_base($this, '2026-10-08 00:00:00', '2026-10-08 00:01:00');
+    $old = pitr_base($this, '2026-10-05 00:00:00', '2026-10-05 00:01:00', '000000010000000000000001'); // before the one covering the window start: pruned
+    $covering = pitr_base($this, '2026-10-06 00:00:00', '2026-10-06 00:01:00');                     // newest before the window (Oct 7 12:00): kept
+    $recent = pitr_base($this, '2026-10-08 00:00:00', '2026-10-08 00:01:00', '000000010000000000000005');
     $gone = pitr_ship($this, '000000010000000000000001', '2026-10-05T12:00:00Z');
     $needed = pitr_ship($this, '000000010000000000000003', '2026-10-06T00:02:00Z');
-    $fresh = pitr_ship($this, '000000010000000000000009', '2026-10-09T11:00:00Z');
+    pitr_ship($this, '000000010000000000000004', '2026-10-07T23:00:00Z');
+    pitr_ship($this, '000000010000000000000005', '2026-10-08T00:02:00Z');
+    $fresh = pitr_ship($this, '000000010000000000000006', '2026-10-09T11:00:00Z');
 
     app(PrunePitr::class)($this->engine);
 
@@ -352,7 +404,7 @@ it('restores to a time into a new read-only instance, then swaps it in keeping t
         ->and($this->agents->last('volume.create'))->not->toBeNull();
     // Each object opens with its own key.
     $first = PitrSegment::query()->where('name', '000000010000000000000003')->firstOrFail();
-    expect(base64_decode($command['payload']['segments'][0]['encryption']['key']))->toBe(app(BackupKeys::class)->unwrap($first->wrapped_key, $this->organization->id, $first->id));
+    expect(base64_decode($command['payload']['segments'][0]['encryption']['key']))->toBe(app(BackupKeys::class)->unwrap($first->wrapped_key, $this->organization->id, $first->id, $this->engine->id));
 
     // One at a time.
     $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => '2026-10-09T08:40:00Z'])->assertStatus(422);
@@ -374,7 +426,7 @@ it('restores to a time into a new read-only instance, then swaps it in keeping t
     $old = ['name' => $this->engine->name, 'hostname' => $this->engine->hostname, 'host_port' => $this->engine->host_port];
     $this->postJson("/databases/pitr-restores/{$restore->id}/decision", ['decision' => 'swap'])->assertOk();
     $promote = $this->agents->last('db.pitr.promote');
-    expect($promote['payload'])->toBe(['instance' => $copy->id, 'engine' => 'postgres', 'stop' => $this->engine->id])
+    expect($promote['payload'])->toBe(['instance' => $copy->id, 'engine' => 'postgres', 'stop' => $this->engine->id, 'inspection_user' => 'falak_inspect'])
         ->and($restore->refresh()->status)->toBe(RestoreStatus::Running);
     $this->agents->succeed($promote['handle'], ['changed' => true]);
 
@@ -385,7 +437,8 @@ it('restores to a time into a new read-only instance, then swaps it in keeping t
         ->and($copy->host_port)->toBe($old['host_port'])->and($copy->pitr_enabled)->toBeTrue()
         ->and($source->status)->toBe(InstanceStatus::Retired)->and($source->replaced_by)->toBe($copy->id)
         // Kept: stopped with its volume, its container is not removed later.
-        ->and($source->retire_at)->toBeNull()->and($source->volume_id)->not->toBeNull()
+        ->and($source->retire_at)->toBeNull()->and($source->volume_id)->not->toBeNull()->and($source->pitr_enabled)->toBeFalse()
+        ->and($copy->settings)->toBe($source->settings)
         ->and(Database::query()->findOrFail($this->db->id)->database_instance_id)->toBe($copy->id)
         ->and(DatabaseUser::query()->findOrFail($this->appUser->id)->database_instance_id)->toBe($copy->id)
         ->and($schedule->refresh()->database_instance_id)->toBe($copy->id)
@@ -409,7 +462,7 @@ it('keeps a restored copy as a new database on the canvas, or discards it', func
 
     $restore = $restoreTo();
     $this->postJson("/databases/pitr-restores/{$restore->id}/decision", ['decision' => 'keep'])->assertOk();
-    expect($this->agents->last('db.pitr.promote')['payload'])->toBe(['instance' => $restore->restored_instance_id, 'engine' => 'postgres']);
+    expect($this->agents->last('db.pitr.promote')['payload'])->toBe(['instance' => $restore->restored_instance_id, 'engine' => 'postgres', 'inspection_user' => 'falak_inspect']);
     $this->agents->succeed($this->agents->last('db.pitr.promote')['handle'], ['changed' => true]);
     $copy = DatabaseInstance::query()->findOrFail($restore->restored_instance_id);
     expect($copy->status)->toBe(InstanceStatus::Active)->and($copy->environment_id)->toBe($this->engine->environment_id)
@@ -497,4 +550,159 @@ it('takes due base backups', function () {
     $this->engine->forceFill(['pitr_next_base_at' => now()->subMinute()])->save();
     (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class));
     expect($this->agents->dispatched('db.pitr.base'))->toHaveCount(1);
+});
+
+it('ends a range at a missing WAL segment and shows the hole', function () {
+    pitr_on($this);
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    pitr_ship($this, '000000010000000000000003', '2026-10-09T08:01:00Z');
+    pitr_ship($this, '000000010000000000000004', '2026-10-09T09:00:00Z');
+    // 05 never arrived (the spool lost it): 06 can't be replayed.
+    pitr_ship($this, '000000010000000000000006', '2026-10-09T10:00:00Z');
+
+    $timeline = app(PitrTimeline::class)->for($this->engine);
+    expect($timeline['ranges'])->toHaveCount(1)->and($timeline['ranges'][0]['to'])->toBe('2026-10-09T09:00:00.000Z')
+        ->and(collect($timeline['gaps'])->pluck('detail')->join(' '))->toContain('000000010000000000000004');
+    expect(app(PitrTimeline::class)->plan($this->engine, Carbon::parse('2026-10-09 09:30:00')->toImmutable())['latest'])->toBeTrue()
+        ->and(array_map(fn ($s) => $s->name, app(PitrTimeline::class)->plan($this->engine, null)['segments']))->toBe(['000000010000000000000003', '000000010000000000000004']);
+
+    // A base whose first segment never arrived has no range at all.
+    pitr_base($this, '2026-10-09 11:00:00', '2026-10-09 11:00:30', '000000010000000000000007');
+    pitr_ship($this, '000000010000000000000008', '2026-10-09T11:30:00Z');
+    expect(app(PitrTimeline::class)->for($this->engine)['ranges'])->toHaveCount(1);
+});
+
+it('keeps binlogs numbered again after a reset apart (epochs)', function () {
+    pitr_on($this);
+    [, , $mysql] = databases_service($this->organization, 'mysql', 'orders', $this->server);
+    $mysql->forceFill(['pitr_enabled' => true, 'pitr_storage_provider_id' => $this->provider->id])->save();
+    $this->engine = $mysql;
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30', 'binlog.000004');
+    pitr_ship($this, 'binlog.000004', '2026-10-09T08:01:00Z', kind: 'binlog');
+    pitr_ship($this, 'binlog.000005', '2026-10-09T08:30:00Z', kind: 'binlog');
+
+    // The binlogs were reset: a new epoch, a new base, the numbering starts over.
+    $reset = ['instance' => $mysql->id, 'kind' => 'binlog', 'gaps' => [['kind' => 'reset', 'from' => 'binlog.000005', 'to' => 'binlog.000001', 'detail' => 'reset']]];
+    $this->postJson('/agent/v1/requests/pitr.gap', $reset, $this->headers)->assertOk();
+    // Reported again (the agent retried): recorded once.
+    $this->postJson('/agent/v1/requests/pitr.gap', $reset, $this->headers)->assertOk();
+    $mysql->refresh();
+    expect($mysql->pitr_epoch)->toBe(1)->and(PitrGap::query()->where('database_instance_id', $mysql->id)->count())->toBe(1);
+    $this->engine = $mysql;
+    pitr_base($this, '2026-10-09 09:00:00', '2026-10-09 09:00:30', 'binlog.000004');
+    $new4 = pitr_ship($this, 'binlog.000004', '2026-10-09T09:05:00Z', kind: 'binlog');
+    pitr_ship($this, 'binlog.000005', '2026-10-09T09:30:00Z', kind: 'binlog');
+
+    expect($new4->epoch)->toBe(1);
+    $plan = app(PitrTimeline::class)->plan($mysql, Carbon::parse('2026-10-09 09:10:00')->toImmutable());
+    expect($plan['segments'][0]->id)->toBe($new4->id)->and(collect($plan['segments'])->every(fn ($s) => $s->epoch === 1))->toBeTrue();
+    $old = app(PitrTimeline::class)->plan($mysql, Carbon::parse('2026-10-09 08:10:00')->toImmutable());
+    expect(collect($old['segments'])->every(fn ($s) => $s->epoch === 0))->toBeTrue();
+});
+
+it('restores to the latest point, and treats a target at the end of the log as the latest', function () {
+    pitr_on($this);
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    pitr_ship($this, '000000010000000000000003', '2026-10-09T08:01:00Z');
+    pitr_ship($this, '000000010000000000000004', '2026-10-09T09:00:00Z');
+
+    $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => 'latest'])->assertStatus(202);
+    $command = $this->agents->last('db.pitr.restore');
+    $restore = Restore::query()->latest('id')->firstOrFail();
+    expect($command['payload'])->not->toHaveKey('target_time')
+        ->and(array_column($command['payload']['segments'], 'name'))->toBe(['000000010000000000000003', '000000010000000000000004'])
+        ->and($restore->to_latest)->toBeTrue()->and($restore->target_time->toIso8601ZuluString())->toBe('2026-10-09T09:00:00Z')
+        // The copy is read-only in its config; people inspect it through a read-only account.
+        ->and($command['payload']['instance']['settings'])->toMatchArray(['read_only' => true, 'event_scheduler' => false])
+        ->and($command['payload']['inspection']['username'])->toBe('falak_inspect')
+        ->and(databases_schema_errors($command))->toBe([]);
+    $this->agents->fail($command['handle'], 'x');
+
+    $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => '2026-10-09T09:00:00Z'])->assertStatus(202);
+    expect($this->agents->last('db.pitr.restore')['payload'])->not->toHaveKey('target_time');
+});
+
+it('shows the copy\'s read-only account to whoever may restore, and never in the page', function () {
+    pitr_on($this);
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    pitr_ship($this, '000000010000000000000003', '2026-10-09T09:00:00Z');
+    $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => '2026-10-09T08:30:00Z'])->assertStatus(202);
+    $command = $this->agents->last('db.pitr.restore');
+    $password = $command['payload']['inspection']['password'];
+    $restore = Restore::query()->firstOrFail();
+    $this->postJson("/databases/pitr-restores/{$restore->id}/inspection")->assertStatus(422);
+    $this->agents->succeed($command['handle'], ['container_id' => 'c9', 'health' => 'healthy', 'recovered_to' => 'x', 'segments' => 1, 'downloaded_bytes' => 1, 'table_counts' => []]);
+
+    expect($this->agents->commands[$command['handle']->id]['payload']['inspection']['password'])->toBe('[forgotten]')
+        ->and((string) DB::table('databases_restores')->value('inspection_password'))->not->toContain($password);
+    $this->postJson("/databases/pitr-restores/{$restore->id}/inspection")->assertOk()->assertJson(['data' => ['username' => 'falak_inspect', 'password' => $password]]);
+    $this->get("/databases/instances/{$this->engine->id}")->assertDontSee($password);
+
+    actingAsMember(Role::Developer, $this->organization);
+    $this->postJson("/databases/pitr-restores/{$restore->id}/inspection")->assertForbidden();
+});
+
+it('binds segment keys to their instance', function () {
+    pitr_on($this);
+    $segment = pitr_ship($this, '000000010000000000000003', '2026-10-09T09:00:00Z');
+    expect(fn () => app(BackupKeys::class)->unwrap($segment->wrapped_key, $this->organization->id, $segment->id))->toThrow(DecryptionFailed::class)
+        ->and(fn () => app(BackupKeys::class)->unwrap($segment->wrapped_key, $this->organization->id, $segment->id, strtolower((string) Str::ulid())))->toThrow(DecryptionFailed::class);
+});
+
+it('caps the segments handed out but never shipped, and rate-limits gaps', function () {
+    config(['databases.pitr.max_pending' => 2, 'databases.pitr.gaps_per_hour' => 2]);
+    pitr_on($this);
+    $ask = fn (string $name) => $this->postJson('/agent/v1/requests/pitr.upload_urls', ['instance' => $this->engine->id, 'kind' => 'wal', 'segments' => [['name' => $name, 'bytes' => 1, 'sha256' => hash('sha256', $name)]]], $this->headers);
+    $ask('000000010000000000000001')->assertOk();
+    $ask('000000010000000000000002')->assertOk();
+    $ask('000000010000000000000003')->assertStatus(409)->assertJson(['error' => 'too_many_pending']);
+    // Asked again: still answered (no new row).
+    $ask('000000010000000000000001')->assertOk();
+
+    $gap = fn (string $from) => $this->postJson('/agent/v1/requests/pitr.gap', ['instance' => $this->engine->id, 'kind' => 'wal', 'gaps' => [['kind' => 'missing', 'from' => $from, 'detail' => 'lost']]], $this->headers);
+    $gap('a')->assertOk();
+    $gap('b')->assertOk();
+    $gap('c')->assertStatus(409)->assertJson(['error' => 'too_many_gaps']);
+});
+
+it('prunes unshipped segments a day after they were last asked for', function () {
+    pitr_on($this);
+    $ask = fn () => $this->postJson('/agent/v1/requests/pitr.upload_urls', ['instance' => $this->engine->id, 'kind' => 'wal', 'segments' => [['name' => '000000010000000000000001', 'bytes' => 1, 'sha256' => str_repeat('a', 64)]]], $this->headers);
+    $id = $ask()->json('segments.0.id');
+    $this->travel(30)->hours();
+    PitrSegment::query()->whereKey($id)->update(['updated_at' => now()]); // asked again just now
+    app(PrunePitr::class)($this->engine);
+    expect(PitrSegment::query()->find($id))->not->toBeNull();
+    $this->travel(25)->hours();
+    app(PrunePitr::class)($this->engine);
+    expect(PitrSegment::query()->find($id))->toBeNull();
+});
+
+it('keeps the history of an instance that turned PITR off until its window passed', function () {
+    pitr_on($this, ['pitr_window_days' => 2]);
+    $base = pitr_base($this, '2026-10-08 08:00:00', '2026-10-08 08:00:30');
+    $segment = pitr_ship($this, '000000010000000000000003', '2026-10-08T09:00:00Z');
+    $this->engine->forceFill(['pitr_enabled' => false])->save();
+
+    app(PrunePitr::class)($this->engine);
+    expect($base->refresh()->status)->toBe(BackupStatus::Succeeded)->and(PitrSegment::query()->find($segment->id))->not->toBeNull();
+
+    $this->travel(3)->days();
+    app(PrunePitr::class)($this->engine);
+    expect($base->refresh()->status)->toBe(BackupStatus::Pruned)->and(PitrSegment::query()->find($segment->id))->toBeNull();
+});
+
+it('forgets a deleted instance\'s history, objects first', function () {
+    pitr_on($this);
+    $base = pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    $this->bucket[$base->object_key] = 'base';
+    $segment = pitr_ship($this, '000000010000000000000003', '2026-10-09T09:00:00Z');
+
+    $this->delete("/databases/instances/{$this->engine->id}", ['confirm' => $this->engine->name])->assertSessionHasNoErrors();
+    $this->agents->succeed($this->agents->last('db.instance.delete')['handle'], ['changed' => true]);
+
+    expect(DatabaseInstance::query()->find($this->engine->id))->toBeNull()
+        ->and(PitrSegment::query()->find($segment->id))->toBeNull()
+        ->and($base->refresh()->status)->toBe(BackupStatus::Pruned)
+        ->and(iterator_to_array($this->deleted))->toContain($segment->object_key, $base->object_key);
 });

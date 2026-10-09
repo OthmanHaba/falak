@@ -53,6 +53,7 @@ use Illuminate\Support\Carbon;
  * @property ?Carbon $pitr_next_base_at
  * @property ?Carbon $pitr_last_shipped_at the last segment the agent reported uploaded
  * @property ?array<string, mixed> $pitr_report the heartbeat's spool report (spool_bytes, volume_bytes, pending, oldest_pending_at, error, at)
+ * @property int $pitr_epoch incremented by a binlog reset: segments and bases of another epoch never chain
  * @property ?string $restored_from a point-in-time restore's new instance: the instance it was restored from
  * @property string $root_password superuser / root / Redis `default` password; sealed at rest
  * @property ?string $next_root_password a rotation the agent has not confirmed yet
@@ -104,6 +105,7 @@ class DatabaseInstance extends Model
             'settings' => 'array',
             'pitr_enabled' => 'boolean',
             'pitr_window_days' => 'integer',
+            'pitr_epoch' => 'integer',
             'pitr_base_interval_days' => 'integer',
             'pitr_next_base_at' => 'datetime',
             'pitr_last_shipped_at' => 'datetime',

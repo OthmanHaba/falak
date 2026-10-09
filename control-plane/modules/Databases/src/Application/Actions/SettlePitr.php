@@ -148,6 +148,8 @@ final class SettlePitr
             $restore->forceFill([
                 'status' => RestoreStatus::AwaitingDecision,
                 'table_counts' => self::counts($result['table_counts'] ?? null),
+                // Recovered to the end of the shipped log (the latest point, or no commit after the target in it).
+                'to_latest' => $restore->to_latest || ($result['recovered_to_end'] ?? false) === true,
                 'bytes' => isset($result['downloaded_bytes']) ? (int) $result['downloaded_bytes'] : null,
                 'duration_ms' => isset($result['duration_ms']) ? (int) $result['duration_ms'] : null,
                 'warnings' => array_values(array_slice(array_filter((array) ($result['warnings'] ?? []), 'is_string'), 0, 10)) ?: null,
@@ -196,12 +198,16 @@ final class SettlePitr
                 null,
                 [
                     'name' => $source->name,
+                    'settings' => $source->settings,
                     'environment_id' => $source->environment_id,
                     'public_access' => $source->public_access,
                     'require_tls' => $source->require_tls,
                     'allowed_sources' => $source->allowed_sources,
                     ...collect($source->getAttributes())->only(['pitr_enabled', 'pitr_storage_provider_id', 'pitr_encryption_mode', 'pitr_age_recipient', 'pitr_window_days', 'pitr_base_interval_days'])->all(),
                 ]);
+
+            // The replaced one ships nothing more (the agent dropped its pitr.json when it stopped it).
+            $source->forceFill(['pitr_enabled' => false])->save();
 
             // The restored instance's history starts here: a base of its own (its log goes on from the restore).
             if ($copy->refresh()->pitr_enabled) {
@@ -222,7 +228,9 @@ final class SettlePitr
     private function keep(DatabaseInstance $copy, ?DatabaseInstance $source): void
     {
         $created = DB::transaction(function () use ($copy, $source) {
-            $copy->forceFill(['status' => InstanceStatus::Active, 'status_message' => null, 'restored_from' => null, 'environment_id' => $source?->environment_id])->save();
+            // Its own settings again: the inspection ones (read-only, no events) are gone with db.pitr.promote.
+            $copy->forceFill(['status' => InstanceStatus::Active, 'status_message' => null, 'restored_from' => null, 'environment_id' => $source?->environment_id,
+                'settings' => $source?->settings ?? self::withoutInspection($copy->settings)])->save();
             $created = [];
 
             if ($source === null) {
@@ -276,6 +284,17 @@ final class SettlePitr
         } catch (Throwable $e) {
             $copy->forceFill(['status_message' => 'Not removed: '.$e->getMessage()])->save();
         }
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $settings
+     * @return ?array<string, mixed>
+     */
+    private static function withoutInspection(?array $settings): ?array
+    {
+        $settings = array_diff_key((array) $settings, ['read_only' => true, 'event_scheduler' => true]);
+
+        return $settings !== [] ? $settings : null;
     }
 
     private static function sha(mixed $value): ?string

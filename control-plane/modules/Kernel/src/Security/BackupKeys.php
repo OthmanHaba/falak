@@ -31,25 +31,33 @@ final class BackupKeys
 
     public function __construct(private readonly Sealer $sealer) {}
 
-    public static function aad(string $organizationId, string $backupId): string
+    /**
+     * The AAD a data key is sealed under. A point-in-time recovery segment's names its instance too
+     * ("pitr-segment", organization, instance, segment): a key opens only for that segment of that instance.
+     */
+    public static function aad(string $organizationId, string $backupId, ?string $instanceId = null): string
     {
-        return Sealer::aad('backup', $organizationId, $backupId);
+        return $instanceId === null
+            ? Sealer::aad('backup', $organizationId, $backupId)
+            : Sealer::aad('pitr-segment', $organizationId, $instanceId, $backupId);
     }
 
     /**
      * A new data key for a backup: the payload's `encryption` object (with the raw key) and the sealed envelope to keep
      * on the backup row.
      *
+     * $instanceId: a point-in-time recovery segment's instance (bound into the AAD).
+     *
      * @return array{0: array{mode: string, key_id: string, key: string}, 1: string}
      */
-    public function generate(string $organizationId, string $backupId): array
+    public function generate(string $organizationId, string $backupId, ?string $instanceId = null): array
     {
         $key = random_bytes(Aead::KEY_BYTES);
 
         try {
             return [
                 ['mode' => self::CP, 'key_id' => $backupId, 'key' => base64_encode($key)],
-                $this->sealer->seal($key, self::aad($organizationId, $backupId), $organizationId),
+                $this->sealer->seal($key, self::aad($organizationId, $backupId, $instanceId), $organizationId),
             ];
         } finally {
             sodium_memzero($key);
@@ -61,9 +69,9 @@ final class BackupKeys
      *
      * @throws DecryptionFailed when the envelope belongs to another backup or organization, or was changed
      */
-    public function unwrap(string $wrappedKey, string $organizationId, string $backupId): string
+    public function unwrap(string $wrappedKey, string $organizationId, string $backupId, ?string $instanceId = null): string
     {
-        $key = $this->sealer->open($wrappedKey, self::aad($organizationId, $backupId), $organizationId);
+        $key = $this->sealer->open($wrappedKey, self::aad($organizationId, $backupId, $instanceId), $organizationId);
 
         if (strlen($key) !== Aead::KEY_BYTES) {
             throw new DecryptionFailed('The backup key is not 32 bytes.');
@@ -77,7 +85,7 @@ final class BackupKeys
      *
      * @return array{mode: string, key_id: string, key?: string, identity?: string}
      */
-    public function opening(string $mode, ?string $wrappedKey, string $organizationId, string $backupId, #[\SensitiveParameter] ?string $identity = null): array
+    public function opening(string $mode, ?string $wrappedKey, string $organizationId, string $backupId, #[\SensitiveParameter] ?string $identity = null, ?string $instanceId = null): array
     {
         if ($mode === self::CUSTOMER) {
             $identity = trim((string) $identity);
@@ -93,7 +101,7 @@ final class BackupKeys
             throw new DecryptionFailed('The backup has no key.');
         }
 
-        $key = $this->unwrap($wrappedKey, $organizationId, $backupId);
+        $key = $this->unwrap($wrappedKey, $organizationId, $backupId, $instanceId);
 
         try {
             return ['mode' => self::CP, 'key_id' => $backupId, 'key' => base64_encode($key)];

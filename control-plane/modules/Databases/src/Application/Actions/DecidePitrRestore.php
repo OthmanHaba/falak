@@ -63,6 +63,7 @@ final class DecidePitrRestore
                 'instance' => $copy->id,
                 'engine' => $copy->engine->protocol(),
                 'stop' => $decision === 'swap' ? $source?->id : null,
+                'inspection_user' => RestoreToTime::INSPECTION_USER,
             ]), (int) config('databases.timeouts.ddl', 300), "db.pitr.promote:{$restore->id}:{$decision}", 'decision');
 
             $restore->forceFill(['status' => RestoreStatus::Running, 'decision' => $decision, 'decided_at' => now(), 'decided_by' => $actorId, 'command_id' => $handle->id])->save();

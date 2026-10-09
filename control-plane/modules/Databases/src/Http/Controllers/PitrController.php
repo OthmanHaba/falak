@@ -7,6 +7,7 @@ use Falak\Databases\Application\Actions\ConfigurePitr;
 use Falak\Databases\Application\Actions\DecidePitrRestore;
 use Falak\Databases\Application\Actions\RestoreToTime;
 use Falak\Databases\Application\Actions\TakePitrBase;
+use Falak\Databases\Domain\Enums\RestoreStatus;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Kernel\Http\Controller;
@@ -42,6 +43,14 @@ final class PitrController extends Controller
             'base_interval_days' => ['nullable', 'integer', 'min:1', 'max:35'],
         ]);
 
+        // Less history (PITR off, a shorter window) is what restoring needs: admins only.
+        $shrinks = ($instance->pitr_enabled && ! $data['enabled'])
+            || (isset($data['window_days']) && (int) $data['window_days'] < $instance->pitr_window_days);
+
+        if ($shrinks) {
+            $this->authorize('restore', $instance);
+        }
+
         $configure($instance, $data, $request->user()?->getAuthIdentifier());
 
         return $request->wantsJson() && $request->header('X-Inertia') === null
@@ -68,8 +77,9 @@ final class PitrController extends Controller
     }
 
     /**
-     * POST /databases/instances/{instance}/pitr/restore {target_time, identity?} (JSON) — a new read-only instance at the
-     * time. The answer names the restore; the instance page shows it until a decision.
+     * POST /databases/instances/{instance}/pitr/restore {target_time | "latest", identity?} (JSON) — a new read-only
+     * instance at the time, or at the latest point (everything shipped). The answer names the restore; the instance page
+     * shows it until a decision.
      */
     public function restore(Request $request, DatabaseInstance $instance, RestoreToTime $restore): JsonResponse
     {
@@ -82,14 +92,28 @@ final class PitrController extends Controller
         ]);
 
         try {
-            $target = CarbonImmutable::parse($data['target_time'])->utc();
+            $target = $data['target_time'] === 'latest' ? null : CarbonImmutable::parse($data['target_time'])->utc();
         } catch (Throwable) {
-            throw ValidationException::withMessages(['target_time' => 'Give the time as RFC 3339 (2026-10-09T12:30:00Z).']);
+            throw ValidationException::withMessages(['target_time' => 'Give the time as RFC 3339 (2026-10-09T12:30:00Z), or "latest".']);
         }
 
         $result = $restore($instance, $target, $request->user()?->getAuthIdentifier(), $data['identity'] ?? null);
 
         return response()->json(['data' => ['id' => $result->id, 'restored_instance_id' => $result->restored_instance_id]], 202);
+    }
+
+    /**
+     * POST /databases/pitr-restores/{restore}/inspection — the copy's read-only account (JSON), for whoever may restore.
+     */
+    public function inspection(Restore $restore): JsonResponse
+    {
+        $this->authorize('restore', $restore);
+
+        if ($restore->type !== Restore::PITR || $restore->status !== RestoreStatus::AwaitingDecision || $restore->inspection_password === null) {
+            throw ValidationException::withMessages(['restore' => 'This restore has no copy to inspect.']);
+        }
+
+        return response()->json(['data' => ['username' => RestoreToTime::INSPECTION_USER, 'password' => $restore->inspection_password]]);
     }
 
     /**

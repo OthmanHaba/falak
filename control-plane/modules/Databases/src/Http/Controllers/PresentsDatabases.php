@@ -3,6 +3,7 @@
 namespace Falak\Databases\Http\Controllers;
 
 use Falak\Databases\Application\Actions\RestoreBackup;
+use Falak\Databases\Application\Actions\RestoreToTime;
 use Falak\Databases\Application\PitrTimeline;
 use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\InstanceStatus;
@@ -278,6 +279,8 @@ trait PresentsDatabases
                     'id' => $restore->id,
                     'status' => $restore->status->value,
                     'target_time' => $restore->target_time?->toIso8601ZuluString('millisecond'),
+                    // Recovered to the end of the shipped log (target_time: how far it reached).
+                    'to_latest' => $restore->to_latest,
                     'decision' => $restore->decision,
                     'error' => $restore->error,
                     'warnings' => $restore->warnings ?? [],
@@ -295,7 +298,8 @@ trait PresentsDatabases
                         // Published on the server's loopback only, on no network: reach it from the server (an SSH tunnel).
                         'host' => '127.0.0.1',
                         'port' => $copy->host_port,
-                        'username' => $copy->engine === Engine::PostgreSql ? 'postgres' : 'root',
+                        // The read-only account (its password: POST pitr-restores/{restore}/inspection).
+                        'username' => RestoreToTime::INSPECTION_USER,
                     ],
                 ];
             })->values(),

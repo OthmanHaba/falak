@@ -116,6 +116,12 @@ return [
         'upload_url_ttl' => 3600,
         // A failed base backup is tried again after this many minutes.
         'base_retry_minutes' => 60,
+        // Segments handed out but never reported shipped, per instance: beyond, pitr.upload_urls refuses.
+        'max_pending' => 2000,
+        // pitr.shipped reads back objects up to this size to compare their SHA-256 (larger ones: the size only).
+        'verify_max_bytes' => 64 * 1024 ** 2,
+        // pitr.gap reports per instance and hour.
+        'gaps_per_hour' => 10,
     ],
 
     // Presigned URL lifetimes (seconds). The upload URL must outlive queueing + the dump itself.

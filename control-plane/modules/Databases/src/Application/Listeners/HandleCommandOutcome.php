@@ -9,6 +9,7 @@ use Falak\Databases\Application\Actions\SettleDrill;
 use Falak\Databases\Application\Actions\SettlePitr;
 use Falak\Databases\Application\Actions\TakeOverInstance;
 use Falak\Databases\Application\AgentCommands;
+use Falak\Databases\Application\Jobs\ForgetPitrHistory;
 use Falak\Databases\Application\Jobs\PruneScheduleBackups;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\InstanceStatus;
@@ -52,7 +53,7 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
     private const KEY_PATHS = ['encryption.key', 'encryption.identity'];
 
     /** db.pitr.restore: every object's key, the identity, the copy's password and its certificate's key. */
-    private const PITR_RESTORE_PATHS = ['password', 'identity', 'base.encryption.key', 'segments.*.encryption.key', 'instance.tls.private_key'];
+    private const PITR_RESTORE_PATHS = ['password', 'identity', 'base.encryption.key', 'segments.*.encryption.key', 'instance.tls.private_key', 'inspection.password'];
 
     public function __construct(
         private readonly ApplyDatabaseUser $applyUser,
@@ -233,6 +234,8 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
         }
 
         $instance->delete();
+        // Its point-in-time recovery history can't restore anything any more.
+        ForgetPitrHistory::dispatch($instance->id);
         $this->audit->record('databases.instance_deleted', 'database_instance', $instance->id, ['name' => $instance->name, 'server_id' => $instance->server_id, 'volume_deleted' => $instance->delete_volume], $instance->organization_id);
 
         foreach ($databases as $database) {

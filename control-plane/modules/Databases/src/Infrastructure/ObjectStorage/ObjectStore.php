@@ -109,11 +109,38 @@ final class ObjectStore
     }
 
     /**
+     * The stored size of an object (HEAD), null when there is none.
+     *
+     * @throws StorageRequestFailed
+     */
+    public function size(string $key): ?int
+    {
+        $url = $this->url($key);
+        $headers = $this->signer()->signHeaders('HEAD', $url);
+        $response = $this->send(fn () => $this->http->withHeaders($headers)->timeout($this->timeout)->head($url), 'HEAD', $key, allowNotFound: true);
+
+        return $response->status() === 404 ? null : (int) $response->header('Content-Length');
+    }
+
+    /**
+     * The SHA-256 of an object's content (GET; for small objects: it is held in memory).
+     *
+     * @throws StorageRequestFailed
+     */
+    public function sha256(string $key): string
+    {
+        $url = $this->url($key);
+        $headers = $this->signer()->signHeaders('GET', $url);
+
+        return hash('sha256', $this->send(fn () => $this->http->withHeaders($headers)->timeout($this->timeout)->get($url), 'GET', $key)->body());
+    }
+
+    /**
      * @param  callable(): Response  $request
      *
      * @throws StorageRequestFailed
      */
-    private function send(callable $request, string $method, string $key, bool $allowNotFound = false): void
+    private function send(callable $request, string $method, string $key, bool $allowNotFound = false): Response
     {
         if ($refusal = $this->guard->refusal($this->url($key), $this->allowPrivate)) {
             throw new StorageRequestFailed($refusal);
@@ -126,7 +153,7 @@ final class ObjectStore
         }
 
         if ($response->successful() || ($allowNotFound && $response->status() === 404)) {
-            return;
+            return $response;
         }
 
         $code = null;

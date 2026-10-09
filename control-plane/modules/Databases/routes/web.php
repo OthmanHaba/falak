@@ -35,6 +35,7 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
     Route::post('instances/{instance}/pitr/base', [PitrController::class, 'base'])->middleware('throttle:10,1')->name('pitr.base');
     Route::post('instances/{instance}/pitr/restore', [PitrController::class, 'restore'])->middleware('throttle:10,1')->name('pitr.restore');
     Route::post('pitr-restores/{restore}/decision', [PitrController::class, 'decide'])->name('pitr.decide');
+    Route::post('pitr-restores/{restore}/inspection', [PitrController::class, 'inspection'])->middleware('throttle:30,1')->name('pitr.inspection');
 
     Route::get('databases/{database}', [DatabasePanelController::class, 'show'])->name('databases.show');
     Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');

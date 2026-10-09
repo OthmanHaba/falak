@@ -127,7 +127,9 @@ have their spool shipped by the agent (`agent/internal/db/pitr.go`, docs/BACKUPS
   segments: [{name, bytes, sha256}]}` → `{segments: [{name, id, url, encryption} | {name, id, shipped: true}]}`: a URL
   and a key or recipient per segment, `encryption.key_id` = the segment id), FKB1 + PUT, then `pitr.shipped`
   (`{instance, kind, segments: [{id, name, size_bytes, sha256, plaintext_bytes, plaintext_sha256, end_time}]}` →
-  `{acknowledged: [id]}`). A spool file is deleted only once acknowledged. Refusals: `unknown_instance` (not this
+  `{acknowledged: [id]}`: only once a HEAD finds the object with the reported size and, up to 64 MiB, SHA-256). A spool
+  file is deleted only once acknowledged; the spool is read beneath the volume without following symlinks. Refusals:
+  `too_many_pending`, `too_many_gaps`, `unknown_instance` (not this
   server's, or the wrong kind), `pitr_disabled`, `bad_recipient`. Failures back off with jitter; the heartbeat reports
   `databases[].pitr`.
 - `db.pitr.base`: `falak-db backup physical` like `db.backup` (result: `started_at`, `finished_at`, `start_wal`,

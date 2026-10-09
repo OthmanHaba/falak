@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $sha256 the stored file's
  * @property ?int $plaintext_bytes
  * @property string $plaintext_sha256 the spool file's
+ * @property int $epoch the instance's log epoch when it was asked for (binlogs are numbered again after a reset)
  * @property ?Carbon $end_time when falak-db spooled it (the server's clock)
  * @property ?Carbon $shipped_at
  * @property Carbon $created_at
@@ -57,6 +58,7 @@ class PitrSegment extends Model
     {
         return [
             'size_bytes' => 'integer',
+            'epoch' => 'integer',
             'plaintext_bytes' => 'integer',
             'end_time' => 'datetime',
             'shipped_at' => 'datetime',

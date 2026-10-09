@@ -3,6 +3,7 @@
 namespace Falak\Databases\Domain\Models;
 
 use Falak\Databases\Domain\Enums\RestoreStatus;
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property ?string $decision pitr: swap|keep|discard
  * @property ?Carbon $decided_at
  * @property ?string $decided_by
+ * @property bool $to_latest pitr: recovered to the end of the shipped log
+ * @property ?string $inspection_password pitr: the copy's read-only account (sealed)
  * @property RestoreStatus $status
  * @property ?int $bytes
  * @property ?int $duration_ms
@@ -48,6 +51,9 @@ class Restore extends Model
     /** @var list<string> */
     protected $guarded = [];
 
+    /** @var list<string> */
+    protected $hidden = ['inspection_password'];
+
     /**
      * @return array<string, string>
      */
@@ -63,6 +69,8 @@ class Restore extends Model
             'segments' => 'integer',
             'table_counts' => 'array',
             'decided_at' => 'datetime',
+            'to_latest' => 'boolean',
+            'inspection_password' => Sealed::class,
         ];
     }
 

@@ -40,6 +40,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $log_start bases: postgres start_wal, mysql/mariadb the binlog the base starts in
  * @property ?string $log_stop bases: postgres stop_wal
  * @property ?Carbon $base_started_at bases: falak-db's start (the server's clock)
+ * @property ?int $pitr_epoch bases: the instance's log epoch when it was taken
  * @property ?Carbon $base_finished_at bases: falak-db's end, the earliest point it restores to
  * @property BackupStatus $status
  * @property ?int $size_bytes
@@ -90,6 +91,7 @@ class Backup extends Model
             'verified_at' => 'datetime',
             'base_started_at' => 'datetime',
             'base_finished_at' => 'datetime',
+            'pitr_epoch' => 'integer',
             'table_counts' => 'array',
         ];
     }

@@ -5,7 +5,9 @@ namespace Falak\Databases\Application\Jobs;
 use Carbon\CarbonImmutable;
 use Falak\Databases\Application\Actions\PrunePitr;
 use Falak\Databases\Application\Actions\TakePitrBase;
+use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\InstanceStatus;
+use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Events\PitrAlert;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -57,6 +60,21 @@ final class MaintainPitr implements ShouldQueue
                 $prune($instance);
             } catch (Throwable $e) {
                 Log::warning('PITR pruning failed.', ['instance_id' => $instance->id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        // History of deleted instances whose removal did not finish (storage unreachable then).
+        $orphans = collect([
+            ...DB::table('databases_pitr_segments')->distinct()->pluck('database_instance_id')->all(),
+            ...DB::table('databases_backups')->where('type', Backup::BASE)->whereIn('status', [BackupStatus::Succeeded->value, BackupStatus::Failed->value])
+                ->distinct()->pluck('database_instance_id')->all(),
+        ])->filter()->unique()->diff(DatabaseInstance::query()->pluck('id'))->values();
+
+        foreach ($orphans as $instanceId) {
+            try {
+                $prune->forget((string) $instanceId);
+            } catch (Throwable $e) {
+                Log::warning('Forgetting a deleted instance\'s PITR history failed.', ['instance_id' => $instanceId, 'error' => $e->getMessage()]);
             }
         }
     }

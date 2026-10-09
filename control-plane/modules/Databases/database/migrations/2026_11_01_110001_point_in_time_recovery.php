@@ -27,6 +27,8 @@ return new class extends Migration
             $table->json('pitr_report')->nullable();
             // A point-in-time restore's new instance names the instance it was restored from (until a decision).
             $table->ulid('restored_from')->nullable()->index();
+            // Binlogs are numbered again after a reset: segments and bases carry the epoch they belong to.
+            $table->unsignedInteger('pitr_epoch')->default(0);
         });
 
         Schema::table('databases_backups', function (Blueprint $table) {
@@ -38,6 +40,7 @@ return new class extends Migration
             $table->string('log_stop', 64)->nullable();
             $table->timestamp('base_started_at', 6)->nullable();
             $table->timestamp('base_finished_at', 6)->nullable();
+            $table->unsignedInteger('pitr_epoch')->nullable();
         });
 
         // One shipped WAL segment or binlog (an FKB1 object of its own).
@@ -59,11 +62,12 @@ return new class extends Migration
             $table->unsignedBigInteger('plaintext_bytes')->nullable();
             // The spool file's SHA-256 (asked for before the upload; authenticated in the file's trailer).
             $table->char('plaintext_sha256', 64);
+            $table->unsignedInteger('epoch')->default(0);
             // When falak-db spooled it (the server's clock): the segment holds nothing later.
             $table->timestamp('end_time', 6)->nullable()->index();
             $table->timestamp('shipped_at')->nullable();
             $table->timestamps();
-            $table->unique(['database_instance_id', 'kind', 'name', 'plaintext_sha256'], 'databases_pitr_segments_unique');
+            $table->unique(['database_instance_id', 'kind', 'epoch', 'name', 'plaintext_sha256'], 'databases_pitr_segments_unique');
         });
 
         // A break in the log chain (binlog-rotate exit 4): recovery can't cross it; the next base starts a new range.
@@ -94,6 +98,10 @@ return new class extends Migration
             $table->string('decision', 8)->nullable();
             $table->timestamp('decided_at')->nullable();
             $table->ulid('decided_by')->nullable();
+            // pitr: recovered to the end of the shipped log (the latest point), not to a target inside it.
+            $table->boolean('to_latest')->default(false);
+            // pitr: the read-only account of the inspection copy (sealed), shown to whoever may restore.
+            $table->text('inspection_password')->nullable();
         });
     }
 
@@ -102,7 +110,7 @@ return new class extends Migration
         Schema::table('databases_restores', function (Blueprint $table) {
             $table->dropIndex(['source_instance_id']);
             $table->dropIndex(['restored_instance_id']);
-            $table->dropColumn(['type', 'target_time', 'source_instance_id', 'restored_instance_id', 'segments', 'table_counts', 'decision', 'decided_at', 'decided_by']);
+            $table->dropColumn(['type', 'target_time', 'source_instance_id', 'restored_instance_id', 'segments', 'table_counts', 'decision', 'decided_at', 'decided_by', 'to_latest', 'inspection_password']);
         });
 
         Schema::dropIfExists('databases_pitr_gaps');
@@ -110,7 +118,7 @@ return new class extends Migration
 
         Schema::table('databases_backups', function (Blueprint $table) {
             $table->dropIndex(['type']);
-            $table->dropColumn(['type', 'log_start', 'log_stop', 'base_started_at', 'base_finished_at']);
+            $table->dropColumn(['type', 'log_start', 'log_stop', 'base_started_at', 'base_finished_at', 'pitr_epoch']);
         });
 
         Schema::table('databases_instances', function (Blueprint $table) {
@@ -118,7 +126,7 @@ return new class extends Migration
             $table->dropIndex(['pitr_next_base_at']);
             $table->dropIndex(['restored_from']);
             $table->dropColumn(['pitr_storage_provider_id', 'pitr_encryption_mode', 'pitr_age_recipient', 'pitr_window_days', 'pitr_base_interval_days',
-                'pitr_next_base_at', 'pitr_last_shipped_at', 'pitr_report', 'restored_from']);
+                'pitr_next_base_at', 'pitr_last_shipped_at', 'pitr_report', 'restored_from', 'pitr_epoch']);
         });
     }
 };
