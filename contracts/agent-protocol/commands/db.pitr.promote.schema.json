@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.pitr.promote.schema.json",
+  "title": "db.pitr.promote — a restored instance the user keeps becomes writable (`falak-db readonly off`); with stop (a swap), the instance it replaces is stopped (kept, with its volume)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "instance",
+    "engine"
+  ],
+  "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "engine": {
+      "enum": [
+        "postgres",
+        "mysql",
+        "mariadb"
+      ]
+    },
+    "stop": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "health": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

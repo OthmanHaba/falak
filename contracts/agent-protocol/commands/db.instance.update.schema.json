@@ -138,6 +138,19 @@
               "type": "string"
             }
           }
+        },
+        "pitr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "description": "point-in-time recovery: the agent ships the instance's spool (WAL / binlogs) through presigned URLs it asks the control plane for (pitr.upload_urls). Kept in /etc/falak/db/<id>/pitr.json; not part of the container (changing it touches nothing). Without it (or disabled) the spool is emptied: nobody ships it",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },

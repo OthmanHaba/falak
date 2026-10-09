@@ -29,7 +29,21 @@
           "id": { "type": "string", "pattern": "^[0-9a-z]{26}$" },
           "state": { "enum": ["running", "exited", "created", "restarting", "paused", "dead", "missing"] },
           "health": { "enum": ["healthy", "unhealthy", "starting", "none"] },
-          "secrets_missing": { "type": "boolean" }
+          "secrets_missing": { "type": "boolean" },
+          "pitr": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["spool_bytes", "pending"],
+            "properties": {
+              "spool_bytes": { "type": "integer", "minimum": 0 },
+              "volume_bytes": { "type": "integer", "minimum": 0 },
+              "pending": { "type": "integer", "minimum": 0 },
+              "oldest_pending_at": { "type": "string", "format": "date-time" },
+              "last_shipped_at": { "type": "string", "format": "date-time" },
+              "error": { "type": "string" }
+            },
+            "description": "Instances with point-in-time recovery on: the spool's size (all of <volume>/spool), the volume's size, the unshipped segments and when the oldest was spooled (its age is the shipping lag), the last acknowledged upload and the last shipping error."
+          }
         }
       },
       "description": "Database containers on the server (label falak.db.instance), every heartbeat; omitted when there are none. secrets_missing: the instance's password file is gone (a reboot emptied /run/falak/secrets) and its container cannot start; the control plane answers with db.instance.secrets."

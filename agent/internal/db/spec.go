@@ -32,6 +32,8 @@ type InstanceSpec struct {
 	Aliases []string `json:"aliases,omitempty"`
 	Publish *Publish `json:"publish,omitempty"`
 	TLS     *TLS     `json:"tls,omitempty"`
+	// PITR: the spool is shipped (point-in-time recovery). Not part of the container: changing it touches nothing.
+	PITR *PITRSpec `json:"pitr,omitempty"`
 }
 
 // Publish is where else the engine's port is published: private / WireGuard addresses, or every address when Public.
@@ -222,7 +224,7 @@ func repository(ref string) string {
 // The password lives in the secrets directory (db.instance.password rotates it).
 func (s InstanceSpec) hash() string {
 	q := s
-	q.TLS, q.Settings, q.MemoryBytes, q.CPUs = nil, nil, 0, 0
+	q.TLS, q.Settings, q.MemoryBytes, q.CPUs, q.PITR = nil, nil, 0, 0, nil
 	if s.Publish != nil {
 		p := *s.Publish
 		p.AllowedSources = nil

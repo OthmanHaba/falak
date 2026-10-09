@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.pitr.base.schema.json",
+  "title": "db.pitr.base — a physical base backup for point-in-time recovery (`falak-db backup physical`: pg_basebackup -Ft -X none, xtrabackup / mariadb-backup xbstream) through zstd and AES-256-GCM (FKB1) to a presigned URL; mysql/mariadb close the binlog being written first, and after a binlog reset spooling restarts (`binlog-rotate --restart`)",
+  "x-falak-forget-secrets": [
+    "encryption.key"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "instance",
+    "engine",
+    "encryption",
+    "destination"
+  ],
+  "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "engine": {
+      "enum": [
+        "postgres",
+        "mysql",
+        "mariadb"
+      ]
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "const": "presigned_url"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size_bytes",
+        "sha256",
+        "location",
+        "plaintext_sha256",
+        "encryption",
+        "key_id",
+        "cipher",
+        "compression",
+        "started_at",
+        "finished_at"
+      ],
+      "properties": {
+        "size_bytes": {
+          "type": "integer",
+          "description": "the stored (encrypted) file's size"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the stored (encrypted) file's SHA-256"
+        },
+        "location": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "uncompressed_bytes": {
+          "type": "integer",
+          "description": "the dump's size (a Redis / Valkey restore gets it back as uncompressed_bytes)"
+        },
+        "plaintext_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the plaintext's SHA-256 (authenticated in the file's trailer)"
+        },
+        "encryption": {
+          "enum": [
+            "cp",
+            "age"
+          ]
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "cipher": {
+          "const": "aes-256-gcm"
+        },
+        "compression": {
+          "const": "zstd"
+        },
+        "started_at": {
+          "type": "string",
+          "description": "falak-db's start (the server's clock, like the segments' end times)"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "start_wal": {
+          "type": "string",
+          "pattern": "^[0-9A-F]{24}$",
+          "description": "postgres: the first WAL segment the base needs"
+        },
+        "stop_wal": {
+          "type": "string",
+          "pattern": "^[0-9A-F]{24}$",
+          "description": "postgres: the last WAL segment the base needs (in the spool when the backup returned)"
+        },
+        "start_binlog": {
+          "type": "string",
+          "description": "mysql/mariadb: the binlog being written when the base started (closed just before it)"
+        }
+      }
+    },
+    "encryption": {
+      "description": "FKB1 (docs/BACKUPS.md): zstd, then AES-256-GCM in 64 KiB segments with a random 32-byte data key per backup. cp: the control plane generated the key (wrapped under the organization's key on its side) and sends it here; age: the agent generates it and stores it in the file's header, encrypted to the customer's X25519 recipient (the control plane never sees it)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "recipient"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "recipient": {
+              "type": "string",
+              "pattern": "^age1[02-9ac-hj-np-z]{58}$",
+              "description": "the customer's age X25519 recipient (public key)"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

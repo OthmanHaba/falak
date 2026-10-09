@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/requests/pitr.gap.schema.json",
+  "title": "POST /agent/v1/requests/pitr.gap — `falak-db binlog-rotate` exited 4: the log chain is broken, recovery can't cross it until a new base backup",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "instance",
+    "kind",
+    "gaps"
+  ],
+  "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "kind": {
+      "enum": [
+        "wal",
+        "binlog"
+      ]
+    },
+    "gaps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "detail"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "missing",
+              "reset"
+            ]
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
+      }
+    }
+  }
+}

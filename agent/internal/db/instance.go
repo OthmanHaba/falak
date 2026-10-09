@@ -103,6 +103,9 @@ func (db *DB) apply(ctx context.Context, p InstancePayload, st commands.Stream) 
 	if err != nil {
 		return nil, err
 	}
+	if err := db.writePITR(s); err != nil {
+		return nil, fmt.Errorf("pitr: %w", err)
+	}
 	if s.Network != "" {
 		if err := db.ensureNetwork(ctx, s.Network); err != nil {
 			return nil, err
