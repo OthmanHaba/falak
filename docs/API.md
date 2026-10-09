@@ -132,6 +132,19 @@ agents get the plan directly. `202` `{"data": {"status", "status_message", "stag
 (`status_message` starts with "Re-provisioning stopped."); it never goes to `needs_attention`. `422` while the server is
 being deleted. Rate limited to 10/min.
 
+### `GET /api/v1/servers/{server}/capacity` — `servers.view`
+What every service on the server may use against what it has (the agent's facts): each site, compose service,
+worker, daemon, database instance and function with its effective limits (memory in MB, `null` = unlimited), the
+totals, and `overcommitted` (memory limits or reservations over the RAM, CPU limits over the cores) with warnings.
+A function counts `max_instances` × its memory and CPUs; a database instance reserves its whole memory.
+```json
+{"data": {"server": {"id": "…", "name": "app-1", "memory_mb": 2048, "cpus": 2},
+          "totals": {"memory_limit_mb": 2176, "memory_reservation_mb": 1280, "cpus": 3.5},
+          "unlimited": {"memory": 0, "cpus": 1}, "overcommitted": {"memory": true, "reservations": false, "cpus": true},
+          "items": [{"kind": "database", "id": "…", "name": "app", "memory_limit_mb": 1024, "memory_reservation_mb": 1024, "cpus": 1.5, "url": "/databases/…"}],
+          "warnings": ["Memory limits add up to 2176 MB, more than the server's 2 GB: …"]}}
+```
+
 ## Sites
 
 ### `GET /api/v1/sites` · `GET /api/v1/sites/{site}` — `sites.view`
@@ -242,6 +255,21 @@ Laravel toggles, each optional (unchanged when omitted): `scheduler`, `horizon`,
 cannot be set. `422` for a Laravel toggle on a non-Laravel site, an unavailable server, or no free port.
 ```json
 {"data": {"scheduler": true, "horizon": false, "octane": true, "maintenance": false, "octane_server": "frankenphp", "octane_port": 8412}}
+```
+
+### Resource limits — `GET|PUT /api/v1/sites/{site}/limits` · `PUT /api/v1/sites/{site}/compose/services/{service}/limits` — `sites.view` / `sites.manage`
+`{"limits": {…}}` with any of `memory_limit` (MB, ≥ 32), `memory_reservation` (MB, at most the limit), `cpus`
+(cores, decimal), `pids_limit`, `restart_policy` (`always|unless-stopped|on-failure`), `max_restarts` (on-failure
+only), `log_max_size` (MB per file), `log_max_files`, `oom` (`protect` = killed last | `normal`); `null` or `{}`
+clears them. Memory and CPUs are bounded by the smallest server of the site (`422` otherwise). Docker sites and
+compose services get them as container limits, classic sites as a systemd slice (PHP-FPM in its own master, Octane,
+the web process). `applied` says how they took effect: `live` (docker update / set-property), `redeploy` (log caps,
+the OOM preference and removed limits need a new container) or `none`. Outside production, unset values take the
+environment's defaults (`effective`; `config/limits.php`). Compose projects are limited per service; static and
+function sites have no limits here; FrankenPHP sites only take `restart_policy`, `max_restarts`, log caps and `oom`.
+Workers and daemons take the same `limits` object in their forms.
+```json
+{"data": {"limits": {"memory_limit": 512, "cpus": 1}, "effective": {"memory_limit": 512, "cpus": 1, "pids_limit": 512}, "applied": "live"}}
 ```
 
 ### `GET /api/v1/sites/{site}/logs` — `telemetry.view`
