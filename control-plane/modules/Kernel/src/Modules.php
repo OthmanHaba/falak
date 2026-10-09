@@ -15,6 +15,7 @@ final class Modules
         'Providers',
         'Fleet',
         'Servers',
+        'Limits',
         'SourceControl',
         'Sites',
         'Edge',

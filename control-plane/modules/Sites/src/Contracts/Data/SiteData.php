@@ -2,6 +2,8 @@
 
 namespace Falak\Sites\Contracts\Data;
 
+use Falak\Limits\Contracts\LimitDefaults;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Framework;
@@ -20,6 +22,9 @@ final readonly class SiteData
      * @param  ?ComposeConfig  $compose  compose runtime only
      * @param  ?int  $containerPort  docker runtime: the port the app listens on inside its container
      * @param  ?string  $rootDirectory  repository subfolder the app lives in (monorepos; null = the repository root)
+     * @param  ResourceLimits  $limits  the site's own limits (its container, or its slice on hosts); environment defaults
+     *                                  apply on top ({@see LimitDefaults})
+     * @param  array<string, ResourceLimits>  $composeLimits  compose runtime: the own limits of each service by name
      */
     public function __construct(
         public string $id,
@@ -52,6 +57,8 @@ final readonly class SiteData
         public ?ComposeConfig $compose = null,
         public ?int $containerPort = null,
         public ?string $rootDirectory = null,
+        public ResourceLimits $limits = new ResourceLimits,
+        public array $composeLimits = [],
     ) {}
 
     /** Docker runtime: the in-container port (sites from before container_port listen on their host port). */

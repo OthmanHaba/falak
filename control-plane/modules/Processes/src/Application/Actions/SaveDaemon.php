@@ -3,6 +3,7 @@
 namespace Falak\Processes\Application\Actions;
 
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Limits\Contracts\LimitValidator;
 use Falak\Processes\Application\EnvInput;
 use Falak\Processes\Application\ServerConverger;
 use Falak\Processes\Domain\Models\Daemon;
@@ -16,6 +17,7 @@ final class SaveDaemon
     public function __construct(
         private readonly ServerConverger $converger,
         private readonly AuditLog $audit,
+        private readonly LimitValidator $limits,
     ) {}
 
     /**
@@ -36,6 +38,10 @@ final class SaveDaemon
             'stop_timeout' => (int) $data['stop_timeout'],
             'env' => EnvInput::merge($data['env'] ?? [], $daemon->exists ? ($daemon->env ?? []) : []),
             'server_ids' => ($data['server_ids'] ?? null) ?: null,
+            // Bounded by the servers it runs on.
+            'limits' => array_key_exists('limits', $data)
+                ? ($this->limits->validate(is_array($data['limits']) ? $data['limits'] : null, ($data['server_ids'] ?? null) ?: $site->serverIds())->toArray() ?: null)
+                : $daemon->limits,
         ]);
 
         $created = ! $daemon->exists;

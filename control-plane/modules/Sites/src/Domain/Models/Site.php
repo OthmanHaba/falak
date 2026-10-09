@@ -2,6 +2,7 @@
 
 namespace Falak\Sites\Domain\Models;
 
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Data\ComposeConfig;
@@ -51,6 +52,8 @@ use Illuminate\Support\Carbon;
  * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int, health_check_path?: ?string}> $public_services
  * @property ?array{slug: string, version: string, source: string} $template
  * @property ?string $health_check_path
+ * @property ?array<string, mixed> $limits resource limits (Limits' ResourceLimits JSON)
+ * @property ?array<string, array<string, mixed>> $compose_limits resource limits per compose service
  * @property string $deploy_script
  * @property LaravelSettings $laravel
  * @property bool $test_domain_enabled
@@ -88,6 +91,8 @@ class Site extends Model
             'compose_adjustments' => 'array',
             'public_services' => 'array',
             'template' => 'array',
+            'limits' => 'array',
+            'compose_limits' => 'array',
         ];
     }
 
@@ -297,6 +302,8 @@ class Site extends Model
             compose: $this->composeConfig(),
             containerPort: $this->container_port,
             rootDirectory: $this->root_directory,
+            limits: ResourceLimits::fromArray($this->limits),
+            composeLimits: array_map(fn ($limits) => ResourceLimits::fromArray((array) $limits), $this->compose_limits ?? []),
         );
     }
 }

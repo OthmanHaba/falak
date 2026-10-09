@@ -7,6 +7,7 @@ use Falak\Sites\Http\Controllers\DeployScriptController;
 use Falak\Sites\Http\Controllers\EnvironmentController;
 use Falak\Sites\Http\Controllers\SiteCommandController;
 use Falak\Sites\Http\Controllers\SiteController;
+use Falak\Sites\Http\Controllers\SiteLimitsController;
 use Falak\Sites\Http\Controllers\SiteSettingsController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,9 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::post('sites/{site}/targets/{target}/retry', [SiteSettingsController::class, 'retryTarget'])->name('sites.targets.retry');
     Route::put('sites/{site}/shared-paths', [SiteSettingsController::class, 'sharedPaths'])->name('sites.shared-paths.update');
     Route::put('sites/{site}/laravel', [SiteSettingsController::class, 'laravel'])->name('sites.laravel.update');
+    Route::get('sites/{site}/limits', [SiteLimitsController::class, 'show'])->name('sites.limits');
+    Route::put('sites/{site}/limits', [SiteLimitsController::class, 'update'])->name('sites.limits.update');
+    Route::put('sites/{site}/compose/services/{service}/limits', [SiteLimitsController::class, 'update'])->where('service', '[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}')->name('sites.compose.limits.update');
 
     Route::get('sites/{site}/environment', [EnvironmentController::class, 'show'])->name('sites.environment');
     Route::put('sites/{site}/environment', [EnvironmentController::class, 'update'])->name('sites.environment.update');

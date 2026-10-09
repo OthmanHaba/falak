@@ -12,6 +12,8 @@ use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Limits\Contracts\LimitDefaults;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Contracts\VariableReferences;
@@ -48,6 +50,7 @@ final class StepPayloads
         private readonly VolumeMounts $mounts,
         private readonly ServiceVolumes $volumes,
         private readonly ProjectDirectory $projects,
+        private readonly LimitDefaults $limits,
     ) {}
 
     /** @var array<string, list<string>> site id => variables the last resolve filled from the secret store */
@@ -238,9 +241,16 @@ final class StepPayloads
 
         $files = $this->composeFiles($site, $release, $releaseId, $serverId, $deployment);
         $network = $this->environmentNetwork($site->id);
+        $defaults = $this->limits->forSite($site->id);
+        $limits = [];
 
-        if ($network !== null && ($override = self::environmentOverride((string) $release['yaml'], $network)) !== null) {
-            // After compose.yaml (files are passed with -f in order): the services start on the environment's network.
+        foreach (self::serviceNames((string) $release['yaml']) as $service) {
+            $limits[$service] = ($site->composeLimits[$service] ?? new ResourceLimits)->withDefaults($defaults);
+        }
+
+        if (($override = self::falakOverride((string) $release['yaml'], $network, $limits)) !== null) {
+            // After compose.yaml (files are passed with -f in order): the services start on the environment's network,
+            // with their limits.
             array_splice($files['files'], 1, 0, [['name' => 'compose.falak.yaml', 'content' => $override]]);
         }
 
@@ -258,12 +268,17 @@ final class StepPayloads
     }
 
     /**
-     * compose.falak.yaml: the environment's network as an external network of every service (but those with a
-     * network_mode), so containers start on it and reach the environment's databases by name from their first
-     * healthcheck. Compose merges a service's networks with the file's: a service on its implicit `default` network
-     * keeps it.
+     * compose.falak.yaml, generated per deploy (null when there is nothing to add):
+     *
+     *  - the environment's network as an external network of every service (but those with a network_mode), so
+     *    containers start on it and reach the environment's databases by name from their first healthcheck. Compose
+     *    merges a service's networks with the file's: a service on its implicit `default` network keeps it;
+     *  - each service's resource limits ({@see ResourceLimits::composeService()}: mem_limit / cpus / pids_limit and
+     *    their deploy.resources twins, mem_reservation, restart, logging, oom_score_adj), replacing the file's own.
+     *
+     * @param  array<string, ResourceLimits>  $limits  effective limits by service name
      */
-    public static function environmentOverride(string $yaml, string $network): ?string
+    public static function falakOverride(string $yaml, ?string $network, array $limits = []): ?string
     {
         try {
             $doc = Yaml::parse($yaml);
@@ -274,14 +289,42 @@ final class StepPayloads
         $services = [];
 
         foreach ((array) (is_array($doc) ? ($doc['services'] ?? []) : []) as $name => $service) {
-            if (! is_array($service) || isset($service['network_mode'])) {
+            if (! is_array($service)) {
                 continue;
             }
 
-            $services[(string) $name] = ['networks' => [...(empty($service['networks']) ? ['default' => (object) []] : []), $network => (object) []]];
+            $override = ($limits[(string) $name] ?? null)?->composeService() ?? [];
+
+            if ($network !== null && ! isset($service['network_mode'])) {
+                $override['networks'] = [...(empty($service['networks']) ? ['default' => (object) []] : []), $network => (object) []];
+            }
+
+            if ($override !== []) {
+                $services[(string) $name] = $override;
+            }
         }
 
-        return $services === [] ? null : Yaml::dump(['services' => $services, 'networks' => [$network => ['external' => true]]], 4, 2, Yaml::DUMP_OBJECT_AS_MAP);
+        if ($services === []) {
+            return null;
+        }
+
+        $networks = $network !== null && array_filter($services, fn (array $service) => isset($service['networks'])) !== [] ? ['networks' => [$network => ['external' => true]]] : [];
+
+        return Yaml::dump(['services' => $services, ...$networks], 6, 2, Yaml::DUMP_OBJECT_AS_MAP);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function serviceNames(string $yaml): array
+    {
+        try {
+            $doc = Yaml::parse($yaml);
+        } catch (ParseException) {
+            return [];
+        }
+
+        return array_values(array_map('strval', array_keys(array_filter((array) (is_array($doc) ? ($doc['services'] ?? []) : []), 'is_array'))));
     }
 
     /**
@@ -904,6 +947,9 @@ final class StepPayloads
             ]),
             'secret_files' => $files ?: null,
             'mask' => $mask ?: null,
+            // Memory, CPUs, processes, restart policy, log caps and OOM preference (the environment's defaults under the
+            // site's own).
+            ...$this->limits->effective($site->limits, $site->id)->docker(),
         ], fn ($v) => $v !== null);
     }
 
