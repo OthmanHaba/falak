@@ -35,6 +35,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/resources"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/runtime"
+	"github.com/OthmanHaba/falak/agent/internal/security"
 	"github.com/OthmanHaba/falak/agent/internal/supervisor"
 	"github.com/OthmanHaba/falak/agent/internal/system"
 	"github.com/OthmanHaba/falak/agent/internal/telemetry"
@@ -141,6 +142,8 @@ func Build(d Deps) *Components {
 	vols := volumes.New(volumes.Deps{Runner: d.Runner, FS: d.FS, HTTP: d.HTTP, Docker: docker.NewClient(cfg.DockerSock), Logger: log.With("component", "volumes"),
 		Root: filepath.Join(cfg.StateDir, "volumes"), SitesRoot: cfg.SitesRoot, BindAllow: cfg.BindAllow()})
 	vols.Register(reg)
+	security.New(security.Deps{Runner: d.Runner, FS: d.FS, Logger: log.With("component", "security"), SitesRoot: cfg.SitesRoot, RunDir: cfg.RunDir,
+		StateDir: cfg.StateDir}).Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 

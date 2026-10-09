@@ -1,0 +1,1 @@
+{"managed_keys": {"falak": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGkq1Qk0bJ0m7xYk6o8y2e8b5gKq0bJ8m1e3Yx5qZ8Vw othman@laptop"], "root": []}, "expected_ports": ["tcp/22", "tcp/80", "tcp/443", "udp/443", "udp/51820"], "known_users": ["falak", "shop"], "ssh_port": 22}

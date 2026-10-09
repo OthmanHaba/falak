@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/security.undo.schema.json",
+  "title": "security.undo — restore a fix's backup exactly (files, modes, owners, sysctl values), then reload what it changed; backups older than 7 days are pruned",
+  "x-falak-redeliverable": false,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fix_id",
+    "backup_id"
+  ],
+  "properties": {
+    "fix_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+      "description": "A fix of the agent's compiled-in allowlist (ssh.harden, updates.unattended, updates.install, updates.reboot, fail2ban.sshd, docker.tcp_off, kernel.sysctl, files.secret_permissions, time.sync)"
+    },
+    "backup_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fix_id",
+        "backup_id",
+        "restored"
+      ],
+      "properties": {
+        "fix_id": {
+          "type": "string"
+        },
+        "backup_id": {
+          "type": "string"
+        },
+        "restored": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
