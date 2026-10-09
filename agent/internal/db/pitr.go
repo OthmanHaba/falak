@@ -132,7 +132,7 @@ func (s *Shipper) RunOnce(ctx context.Context) {
 			return
 		}
 		if !cfg.Enabled {
-			s.db.clearSpool(cfg)
+			s.db.clearSpool(id)
 			continue
 		}
 		s.instance(ctx, id, cfg)
@@ -226,7 +226,7 @@ func (s *Shipper) rotate(ctx context.Context, id string, cfg pitrConfig, force b
 		name, size := st.rotatedName, st.rotatedSize
 		s.mu.Unlock()
 		if name != "" {
-			if fi, err := os.Stat(filepath.Join(s.db.d.FS.P(s.db.volumeDir(cfg.VolumeID)), "data", name)); err == nil && fi.Size() == size {
+			if fi, ok := s.db.dataFileInfo(cfg.VolumeID, name); ok && fi.Size() == size {
 				return nil
 			}
 		}
@@ -238,7 +238,7 @@ func (s *Shipper) rotate(ctx context.Context, id string, cfg pitrConfig, force b
 	s.mu.Lock()
 	st.rotatedName = res.Current
 	st.rotatedSize = -1
-	if fi, serr := os.Stat(filepath.Join(s.db.d.FS.P(s.db.volumeDir(cfg.VolumeID)), "data", res.Current)); serr == nil && res.Current != "" {
+	if fi, ok := s.db.dataFileInfo(cfg.VolumeID, res.Current); ok {
 		st.rotatedSize = fi.Size()
 	}
 	s.mu.Unlock()
@@ -321,40 +321,35 @@ func contains(list []string, s string) bool {
 // spoolFile is a completed file in an instance's spool.
 type spoolFile struct {
 	Name     string
-	Path     string
 	Bytes    int64
 	Modified time.Time
+	// info is the Lstat of the listed file: what is opened later must be the same file.
+	info os.FileInfo
 }
 
-// pending lists the completed spool files of a kind, oldest first (WAL and binlog names sort in their order).
+// pending lists the completed spool files of a kind, oldest first (WAL and binlog names sort in their order). The
+// spool is read through a handle that never follows symlinks (spoolfs.go); dot-files are falak-db's own.
 func (db *DB) pending(cfg pitrConfig) ([]spoolFile, error) {
-	dir := filepath.Join(db.d.FS.P(db.volumeDir(cfg.VolumeID)), "spool", spoolKind(cfg.Engine))
-	entries, err := os.ReadDir(dir)
+	dir, err := db.openSpool(cfg.VolumeID, spoolKind(cfg.Engine))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	var out []spoolFile
-	for _, e := range entries {
-		// Dot-files are falak-db's own (temporary files, .binlog-last): never shipped, never deleted.
-		if strings.HasPrefix(e.Name(), ".") || !e.Type().IsRegular() || !segmentRe.MatchString(e.Name()) {
-			continue
-		}
-		fi, err := e.Info()
-		if err != nil {
-			continue
-		}
-		modified := fi.ModTime()
+	defer dir.Close()
+	out, err := spoolEntries(dir)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
 		// A binlog is spooled at the next rotation, maybe with the one after it (xtrabackup closes binlogs too): its
 		// end is when the server last wrote it, which its original in the data directory still tells.
 		if cfg.Engine != "postgres" {
-			if orig, err := os.Stat(filepath.Join(db.d.FS.P(db.volumeDir(cfg.VolumeID)), "data", e.Name())); err == nil && orig.ModTime().Before(modified) {
-				modified = orig.ModTime()
+			if orig, ok := db.dataFileInfo(cfg.VolumeID, out[i].Name); ok {
+				out[i].Modified = modTimeBefore(out[i].Modified, orig.ModTime().UTC())
 			}
 		}
-		out = append(out, spoolFile{Name: e.Name(), Path: filepath.Join(dir, e.Name()), Bytes: fi.Size(), Modified: modified.UTC()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -389,6 +384,11 @@ func (s *Shipper) shipBatch(ctx context.Context, id string, cfg pitrConfig) (int
 	if err != nil || len(files) == 0 {
 		return 0, err
 	}
+	dir, err := s.db.openSpool(cfg.VolumeID, spoolKind(cfg.Engine))
+	if err != nil {
+		return 0, err
+	}
+	defer dir.Close()
 	var batch []spoolFile
 	var size int64
 	for _, f := range files {
@@ -406,7 +406,7 @@ func (s *Shipper) shipBatch(ctx context.Context, id string, cfg pitrConfig) (int
 	asks := make([]ask, 0, len(batch))
 	sums := map[string]string{}
 	for _, f := range batch {
-		sum, err := fileSHA256(f.Path)
+		sum, err := spoolSHA256(dir, f)
 		if err != nil {
 			return 0, err
 		}
@@ -437,16 +437,16 @@ func (s *Shipper) shipBatch(ctx context.Context, id string, cfg pitrConfig) (int
 			done = append(done, f)
 			continue
 		}
-		seg, err := s.db.uploadSegment(ctx, f, slot, sums[f.Name])
+		seg, err := s.db.uploadSegment(ctx, dir, f, slot, sums[f.Name])
 		if err != nil {
 			// What uploaded so far is still reported: a later pass retries the rest.
-			_, _ = s.ack(ctx, id, kind, shipped, ids, done)
+			_, _ = s.ack(ctx, id, cfg, shipped, ids, done)
 			return 0, fmt.Errorf("%s: %w", f.Name, err)
 		}
 		shipped = append(shipped, seg)
 		ids[seg.ID] = f
 	}
-	removed, err := s.ack(ctx, id, kind, shipped, ids, done)
+	removed, err := s.ack(ctx, id, cfg, shipped, ids, done)
 	if err != nil {
 		return 0, err
 	}
@@ -462,13 +462,14 @@ func (s *Shipper) shipBatch(ctx context.Context, id string, cfg pitrConfig) (int
 
 // ack reports the uploaded segments (pitr.shipped) and deletes the spool files the control plane acknowledged, plus
 // those it already had, and returns how many went. A file is never deleted on any other grounds.
-func (s *Shipper) ack(ctx context.Context, id, kind string, shipped []shippedSegment, ids map[string]spoolFile, done []spoolFile) (int, error) {
+func (s *Shipper) ack(ctx context.Context, id string, cfg pitrConfig, shipped []shippedSegment, ids map[string]spoolFile, done []spoolFile) (int, error) {
+	kind := spoolKind(cfg.Engine)
 	if len(shipped) > 0 {
 		var reply struct {
 			Acknowledged []string `json:"acknowledged"`
 		}
 		if err := s.cp.Request(ctx, "pitr.shipped", map[string]any{"instance": id, "kind": kind, "segments": shipped}, &reply); err != nil {
-			s.removeAcked(done)
+			s.removeAcked(cfg, done)
 			return len(done), fmt.Errorf("pitr.shipped: %w", err)
 		}
 		for _, segID := range reply.Acknowledged {
@@ -481,21 +482,23 @@ func (s *Shipper) ack(ctx context.Context, id, kind string, shipped []shippedSeg
 		st.lastShipped = s.Now()
 		s.mu.Unlock()
 	}
-	s.removeAcked(done)
+	s.removeAcked(cfg, done)
 	return len(done), nil
 }
 
-func (s *Shipper) removeAcked(files []spoolFile) {
+func (s *Shipper) removeAcked(cfg pitrConfig, files []spoolFile) {
+	names := make([]string, 0, len(files))
 	for _, f := range files {
-		if err := os.Remove(f.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			s.db.d.Logger.Warn("removing a shipped spool file", "file", f.Path, "err", err)
-		}
+		names = append(names, f.Name)
+	}
+	if err := s.db.removeSpoolFiles(cfg, names); err != nil {
+		s.db.d.Logger.Warn("removing shipped spool files", "err", err)
 	}
 }
 
 // uploadSegment encrypts one spool file (FKB1, with the segment's own key or the customer's recipient) into the
 // staging directory and PUTs it to its presigned URL.
-func (db *DB) uploadSegment(ctx context.Context, f spoolFile, slot uploadSlot, plainSum string) (shippedSegment, error) {
+func (db *DB) uploadSegment(ctx context.Context, dir *os.Root, f spoolFile, slot uploadSlot, plainSum string) (shippedSegment, error) {
 	if err := slot.Encryption.Check(true); err != nil {
 		return shippedSegment{}, fmt.Errorf("encryption: %w", err)
 	}
@@ -513,7 +516,7 @@ func (db *DB) uploadSegment(ctx context.Context, f spoolFile, slot uploadSlot, p
 		return shippedSegment{}, err
 	}
 	defer os.Remove(tmp.Name())
-	in, err := os.Open(f.Path)
+	in, err := openSpoolFile(dir, f)
 	if err != nil {
 		tmp.Close()
 		return shippedSegment{}, err
@@ -550,8 +553,8 @@ func (db *DB) uploadSegment(ctx context.Context, f spoolFile, slot uploadSlot, p
 		PlaintextSHA256: plainSum, EndTime: f.Modified}, nil
 }
 
-func fileSHA256(path string) (string, error) {
-	f, err := os.Open(path)
+func spoolSHA256(dir *os.Root, sf spoolFile) (string, error) {
+	f, err := openSpoolFile(dir, sf)
 	if err != nil {
 		return "", err
 	}
@@ -631,12 +634,23 @@ func (db *DB) savePITRState(id string, st pitrState) error {
 
 // clearSpool empties the spool of an instance without PITR: postgres archives every segment into it whatever happens,
 // and nobody wants them. falak-db's dot-files stay.
-func (db *DB) clearSpool(cfg pitrConfig) {
+//
+// It holds the instance's lock and reads pitr.json again under it: a db.pitr.base turns PITR on before it starts
+// (under the same lock), so the WAL a base needs is never emptied away.
+func (db *DB) clearSpool(id string) {
+	defer db.lock(id)()
+	cfg, ok := db.pitrConfigs()[id]
+	if !ok || cfg.Enabled {
+		return
+	}
 	for _, kind := range []string{spoolWAL, spoolBinlog} {
-		files, _ := db.pending(pitrConfig{Engine: map[string]string{spoolWAL: "postgres", spoolBinlog: "mysql"}[kind], VolumeID: cfg.VolumeID})
+		c := pitrConfig{Engine: map[string]string{spoolWAL: "postgres", spoolBinlog: "mysql"}[kind], VolumeID: cfg.VolumeID}
+		files, _ := db.pending(c)
+		names := make([]string, 0, len(files))
 		for _, f := range files {
-			_ = os.Remove(f.Path)
+			names = append(names, f.Name)
 		}
+		_ = db.removeSpoolFiles(c, names)
 	}
 }
 

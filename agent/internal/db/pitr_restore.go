@@ -278,7 +278,10 @@ func (db *DB) PITRRestore(ctx context.Context, p PITRRestorePayload, st commands
 		return nil, fmt.Errorf("the new volume %s is not empty", s.VolumeID)
 	}
 	staging, replay := filepath.Join(vol, restoreStagingDir), filepath.Join(vol, "spool", replayDir)
-	for _, d := range []string{data, filepath.Join(vol, "spool"), staging, replay} {
+	if err := ensureRootSpool(filepath.Join(vol, "spool")); err != nil {
+		return nil, err
+	}
+	for _, d := range []string{data, staging, replay} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return nil, err
 		}

@@ -301,7 +301,7 @@ func TestShipperNeverDeletesUnacknowledgedFiles(t *testing.T) {
 	// The control plane already has a file (its acknowledgment was lost): it is deleted without a new upload.
 	p.store.failPut = nil
 	for id, seg := range map[string]string{"x1": "000000010000000000000001", "x2": "000000010000000000000002", "x3": "000000010000000000000003"} {
-		if sum, err := fileSHA256(filepath.Join(p.spool, seg)); err == nil {
+		if sum, err := testFileSHA256(filepath.Join(p.spool, seg)); err == nil {
 			p.cp.have[seg+sum] = id
 		}
 	}
@@ -419,6 +419,67 @@ func TestShipperDatesBinlogsByTheirOriginal(t *testing.T) {
 	}
 	if !ends["binlog.000004"].Equal(closed) || !ends["binlog.000005"].After(closed) {
 		t.Fatalf("end times %v", ends)
+	}
+}
+
+func testFileSHA256(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// The engine's user owns spool/<kind>: whatever it plants there (symlinks, hard links) must never make the agent read,
+// upload or delete a file outside the spool.
+func TestShipperRefusesSymlinksInTheSpool(t *testing.T) {
+	outside := t.TempDir()
+	secretFile := filepath.Join(outside, "shadow")
+	os.WriteFile(secretFile, []byte("root:secret"), 0o600)
+
+	// A symlinked file and a hard link next to a real segment: only the real one ships, the others stay untouched.
+	p := newPITRHarness(t, "postgres")
+	p.spoolFiles(t, "000000010000000000000001")
+	os.Symlink(secretFile, filepath.Join(p.spool, "000000010000000000000002"))
+	hard := filepath.Join(outside, "hard")
+	os.WriteFile(hard, []byte("other"), 0o600)
+	if err := os.Link(hard, filepath.Join(p.spool, "000000010000000000000003")); err != nil {
+		t.Log("no hard links here:", err)
+	}
+	p.ship.RunOnce(context.Background())
+	if len(p.cp.shipped) != 1 {
+		t.Fatalf("shipped %d segments", len(p.cp.shipped))
+	}
+	for _, s := range p.cp.shipped {
+		if s.Name != "000000010000000000000001" {
+			t.Fatalf("shipped %s", s.Name)
+		}
+	}
+	if b, err := os.ReadFile(secretFile); err != nil || string(b) != "root:secret" {
+		t.Fatalf("the symlink's target was touched: %q %v", b, err)
+	}
+	if _, err := os.Stat(hard); err != nil {
+		t.Fatalf("the hard link's file was touched: %v", err)
+	}
+
+	// spool/wal itself a symlink to a host directory: refused, nothing there is listed, shipped or deleted, even with
+	// PITR off (the spool is emptied then).
+	p2 := newPITRHarness(t, "postgres")
+	os.RemoveAll(p2.spool)
+	victim := filepath.Join(outside, "etc")
+	os.MkdirAll(victim, 0o755)
+	os.WriteFile(filepath.Join(victim, "000000010000000000000009"), []byte("host file"), 0o644)
+	os.Symlink(victim, p2.spool)
+	if _, err := p2.db.pending(p2.db.pitrConfigs()[instID]); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("pending through a symlinked spool: %v", err)
+	}
+	p2.ship.RunOnce(context.Background())
+	s := spec()
+	p2.db.writePITR(s) // off: the spool is emptied
+	p2.ship.RunOnce(context.Background())
+	if _, err := os.Stat(filepath.Join(victim, "000000010000000000000009")); err != nil || len(p2.cp.shipped) != 0 {
+		t.Fatalf("a host file was shipped or deleted: %v, %d shipped", err, len(p2.cp.shipped))
 	}
 }
 
