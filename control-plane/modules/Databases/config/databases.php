@@ -92,6 +92,9 @@ return [
         'upgrade' => 4 * 3600,
         // A restore drill: pull, download, restore and check (the agent removes the container whatever happens).
         'drill' => 2 * 3600,
+        // A physical base backup of a whole instance, and a point-in-time restore (download, unpack, replay).
+        'pitr_base' => 4 * 3600,
+        'pitr_restore' => 6 * 3600,
     ],
 
     // Restore drills (docs/BACKUPS.md): the throwaway instance's memory limit (the instance's own when smaller, the
@@ -100,6 +103,25 @@ return [
         'memory_bytes' => (int) env('FALAK_DRILL_MEMORY_BYTES', 512 * 1024 ** 2),
         'cpus' => (float) env('FALAK_DRILL_CPUS', 1),
         'tolerance_percent' => (float) env('FALAK_DRILL_TOLERANCE_PERCENT', 10),
+    ],
+
+    // Point-in-time recovery (docs/BACKUPS.md): recovery points kept and a new base backup every so many days (per
+    // instance; these are the defaults), the alerts (oldest unshipped segment older than lag_alert_seconds while the
+    // instance is up; the spool above spool_alert_percent of its volume), and the lifetime of the agent's upload URLs.
+    'pitr' => [
+        'window_days' => 7,
+        'base_interval_days' => 7,
+        'lag_alert_seconds' => 300,
+        'spool_alert_percent' => 20,
+        'upload_url_ttl' => 3600,
+        // A failed base backup is tried again after this many minutes.
+        'base_retry_minutes' => 60,
+        // Segments handed out but never reported shipped, per instance: beyond, pitr.upload_urls refuses.
+        'max_pending' => 2000,
+        // pitr.shipped reads back objects up to this size to compare their SHA-256 (larger ones: the size only).
+        'verify_max_bytes' => 64 * 1024 ** 2,
+        // pitr.gap reports per instance and hour.
+        'gaps_per_hour' => 10,
     ],
 
     // Presigned URL lifetimes (seconds). The upload URL must outlive queueing + the dump itself.

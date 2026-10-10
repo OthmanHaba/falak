@@ -239,7 +239,22 @@ func (h *Helper) Init(extra []string) error {
 	if h.Engine.mysqlFamily() {
 		kind = spoolBinlog
 	}
-	dirs := []string{spool, filepath.Join(spool, kind)}
+	// The spool itself stays root's (0755): only spool/<kind> is the engine's, so the engine's user (a superuser who
+	// got a shell through COPY ... PROGRAM) can't swap spool/<kind> for a symlink the host agent would follow.
+	if !h.Engine.kv() {
+		if err := os.MkdirAll(spool, 0o755); err != nil {
+			return err
+		}
+		if err := os.Chmod(spool, 0o755); err != nil {
+			return err
+		}
+		if h.Chown != nil {
+			if err := h.Chown(spool, 0, 0); err != nil {
+				return err
+			}
+		}
+	}
+	dirs := []string{filepath.Join(spool, kind)}
 	if h.Engine.mysqlFamily() {
 		dirs = append(dirs, h.path(filepath.Dir(mySlowLog)))
 	}

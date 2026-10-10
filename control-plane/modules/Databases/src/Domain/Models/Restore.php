@@ -3,6 +3,7 @@
 namespace Falak\Databases\Domain\Models;
 
 use Falak\Databases\Domain\Enums\RestoreStatus;
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,18 @@ use Illuminate\Support\Carbon;
  * @property string $backup_id
  * @property string $database_instance_id
  * @property string $server_id
- * @property string $database_name
+ * @property string $type backup|pitr
+ * @property ?string $database_name backup restores: the target database
+ * @property ?Carbon $target_time pitr: the time recovered to
+ * @property ?string $source_instance_id pitr: the instance whose history was restored
+ * @property ?string $restored_instance_id pitr: the new instance
+ * @property ?int $segments pitr: log segments replayed
+ * @property ?array<string, array<string, int>> $table_counts pitr: rows per table of each database, as restored
+ * @property ?string $decision pitr: swap|keep|discard
+ * @property ?Carbon $decided_at
+ * @property ?string $decided_by
+ * @property bool $to_latest pitr: recovered to the end of the shipped log
+ * @property ?string $inspection_password pitr: the copy's read-only account (sealed)
  * @property RestoreStatus $status
  * @property ?int $bytes
  * @property ?int $duration_ms
@@ -28,12 +40,19 @@ use Illuminate\Support\Carbon;
  */
 class Restore extends Model
 {
+    public const BACKUP = 'backup';
+
+    public const PITR = 'pitr';
+
     use HasUlids;
 
     protected $table = 'databases_restores';
 
     /** @var list<string> */
     protected $guarded = [];
+
+    /** @var list<string> */
+    protected $hidden = ['inspection_password'];
 
     /**
      * @return array<string, string>
@@ -46,6 +65,12 @@ class Restore extends Model
             'duration_ms' => 'integer',
             'warnings' => 'array',
             'finished_at' => 'datetime',
+            'target_time' => 'datetime',
+            'segments' => 'integer',
+            'table_counts' => 'array',
+            'decided_at' => 'datetime',
+            'to_latest' => 'boolean',
+            'inspection_password' => Sealed::class,
         ];
     }
 

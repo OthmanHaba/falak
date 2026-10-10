@@ -189,8 +189,14 @@ final class FakeAgentGateway implements AgentGateway
         }
 
         foreach ($paths as $path) {
-            if (Arr::has($this->commands[$id]['payload'], $path)) {
-                Arr::set($this->commands[$id]['payload'], $path, '[forgotten]');
+            // `*` stands for every element of a list (segments.*.encryption.key), like the real gateway.
+            [$head, $tail] = str_contains($path, '.*.') ? explode('.*.', $path, 2) : [$path, null];
+            $concrete = $tail === null ? [$path] : array_map(fn ($key) => "{$head}.{$key}.{$tail}", array_keys((array) Arr::get($this->commands[$id]['payload'], $head, [])));
+
+            foreach ($concrete as $one) {
+                if (Arr::has($this->commands[$id]['payload'], $one)) {
+                    Arr::set($this->commands[$id]['payload'], $one, '[forgotten]');
+                }
             }
         }
 

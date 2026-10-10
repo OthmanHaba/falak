@@ -306,6 +306,10 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		loops.Add(1)
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}
+	// Point-in-time recovery: the spools of instances with PITR on go to storage through presigned URLs.
+	shipper := comps.DB.NewShipper(client)
+	loops.Add(1)
+	go func() { defer loops.Done(); shipper.Run(runCtx) }()
 	loops.Add(1)
 	go func() {
 		defer loops.Done()

@@ -30,6 +30,8 @@ type fakeDocker struct {
 	calls      []string
 	seq        int
 	health     string // health of started containers (default healthy)
+	onStart    func(*docker.Container)
+	logs       string
 }
 
 func newFakeDocker() *fakeDocker {
@@ -164,6 +166,9 @@ func (f *fakeDocker) ContainerStart(_ context.Context, id string) error {
 		Status string `json:"Status"`
 	}{f.health}
 	f.log("start %s", strings.TrimPrefix(c.Name, "/"))
+	if f.onStart != nil {
+		f.onStart(c)
+	}
 	return nil
 }
 
@@ -216,7 +221,12 @@ func (f *fakeDocker) ContainerRemove(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeDocker) ContainerLogs(context.Context, string, bool, int, io.Writer) error { return nil }
+func (f *fakeDocker) ContainerLogs(_ context.Context, _ string, _ bool, _ int, w io.Writer) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, err := io.WriteString(w, f.logs)
+	return err
+}
 
 func (f *fakeDocker) NetworkExists(_ context.Context, name string) (bool, error) {
 	f.mu.Lock()

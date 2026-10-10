@@ -25,6 +25,7 @@ Both sides validate against these schemas in their test suites.
 | GET  | `/agent/v1/commands?wait=30` | — | `{ "commands": [envelope...] }` (long-poll, returns early when a command is queued) |
 | POST | `/agent/v1/commands/{id}/events` | NDJSON of `event` | `204` (idempotent on `(command_id, seq)`) |
 | POST | `/agent/v1/insights` | NDJSON of insight events | `204` |
+| POST | `/agent/v1/requests/{type}` | `requests/<type>.schema.json` | the type's `$defs/reply` (`404 unknown_request`, `409 {error: <reason>}` when refused, `422` when invalid) |
 
 ## Command payloads
 `commands/<type>.schema.json` — one schema per command type in the catalogue in `ARCHITECTURE.md` §3.
@@ -115,6 +116,27 @@ The heartbeat's `databases` lists every container labelled `falak.db.instance` w
 `/etc/docker/daemon.json` and reloads dockerd, so databases keep running while Docker restarts or is upgraded.
 `docker.compose.up` `join_networks` and `networks[].environment` (`docker.run`, `deploy.container.swap`) put apps on
 their environment's network, where the databases answer by name.
+
+## Point-in-time recovery (v0.10.0)
+Instances whose spec has `pitr.enabled` (written to `/etc/falak/db/<id>/pitr.json`; without it the spool is emptied)
+have their spool shipped by the agent (`agent/internal/db/pitr.go`, docs/BACKUPS.md "Point-in-time recovery"):
+
+- MySQL / MariaDB: `falak-db binlog-rotate` every 60 s (skipped while the binlog being written did not grow); exit 4 is
+  reported once with `pitr.gap`, and after a `reset` the next `db.pitr.base` runs `binlog-rotate --restart`.
+- Completed spool files (never `.` files) go in batches: `pitr.upload_urls` (`{instance, kind: wal|binlog,
+  segments: [{name, bytes, sha256}]}` → `{segments: [{name, id, url, encryption} | {name, id, shipped: true}]}`: a URL
+  and a key or recipient per segment, `encryption.key_id` = the segment id), FKB1 + PUT, then `pitr.shipped`
+  (`{instance, kind, segments: [{id, name, size_bytes, sha256, plaintext_bytes, plaintext_sha256, end_time}]}` →
+  `{acknowledged: [id]}`: only once a HEAD finds the object with the reported size and, up to 64 MiB, SHA-256). A spool
+  file is deleted only once acknowledged; the spool is read beneath the volume without following symlinks. Refusals:
+  `too_many_pending`, `too_many_gaps`, `unknown_instance` (not this
+  server's, or the wrong kind), `pitr_disabled`, `bad_recipient`. Failures back off with jitter; the heartbeat reports
+  `databases[].pitr`.
+- `db.pitr.base`: `falak-db backup physical` like `db.backup` (result: `started_at`, `finished_at`, `start_wal`,
+  `stop_wal` / `start_binlog`). `db.pitr.restore`: a new instance from a base and segments (each checked, decrypted
+  and fully verified before use; `segments.*.encryption.key` and `identity` forgotten when it settled), recovered to
+  `target_time`, read-only, with row counts. `db.pitr.promote`: `readonly off`, and with `stop` the replaced instance
+  stops.
 
 ## Secrets on servers (v0.10.0)
 **Env files on tmpfs.** `deploy.prepare` writes `env_file` to `/run/falak/env/<site>.env` (directory 0711 root, file

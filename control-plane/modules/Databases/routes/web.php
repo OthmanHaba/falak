@@ -6,6 +6,7 @@ use Falak\Databases\Http\Controllers\DatabaseController;
 use Falak\Databases\Http\Controllers\DatabaseInstanceController;
 use Falak\Databases\Http\Controllers\DatabasePanelController;
 use Falak\Databases\Http\Controllers\DatabaseUserController;
+use Falak\Databases\Http\Controllers\PitrController;
 use Falak\Databases\Http\Controllers\StorageProviderController;
 use Falak\Kernel\Http\LegacyRedirect;
 use Illuminate\Support\Facades\Route;
@@ -30,6 +31,11 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
     Route::post('instances/{instance}/databases', [DatabaseController::class, 'store'])->name('databases.store');
     Route::post('instances/{instance}/users', [DatabaseUserController::class, 'store'])->name('users.store');
     Route::post('instances/{instance}/schedules', [BackupScheduleController::class, 'store'])->name('schedules.store');
+    Route::put('instances/{instance}/pitr', [PitrController::class, 'update'])->name('pitr.update');
+    Route::post('instances/{instance}/pitr/base', [PitrController::class, 'base'])->middleware('throttle:10,1')->name('pitr.base');
+    Route::post('instances/{instance}/pitr/restore', [PitrController::class, 'restore'])->middleware('throttle:10,1')->name('pitr.restore');
+    Route::post('pitr-restores/{restore}/decision', [PitrController::class, 'decide'])->name('pitr.decide');
+    Route::post('pitr-restores/{restore}/inspection', [PitrController::class, 'inspection'])->middleware('throttle:30,1')->name('pitr.inspection');
 
     Route::get('databases/{database}', [DatabasePanelController::class, 'show'])->name('databases.show');
     Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');

@@ -37,6 +37,9 @@ func TestInitPostgres(t *testing.T) {
 	var argv0 string
 	var argv []string
 	th.Exec = func(a0 string, a []string, _ []string) error { argv0, argv = a0, a; return nil }
+	owners := map[string]int{}
+	th.Chown = func(p string, uid, _ int) error { owners[strings.TrimPrefix(p, th.Root)] = uid; return nil }
+	th.LookupUser = func(string) (int, int, error) { return 999, 999, nil }
 
 	if err := th.Init([]string{"-c", "log_statement=all"}); err != nil {
 		t.Fatal(err)
@@ -62,6 +65,13 @@ func TestInitPostgres(t *testing.T) {
 		t.Errorf("config dir: %v %v", st, err)
 	}
 	if st, err := os.Stat(filepath.Join(th.Root, defaultSpool, "wal")); err != nil || st.Mode().Perm() != 0o700 {
+		t.Errorf("spool: %v %v", st, err)
+	}
+	// Only spool/wal is the engine's: the spool stays root's, so spool/wal can't be swapped for a symlink.
+	if u, ok := owners[defaultSpool]; !ok || u != 0 || owners[defaultSpool+"/wal"] != 999 {
+		t.Errorf("owners %v", owners)
+	}
+	if st, err := os.Stat(filepath.Join(th.Root, defaultSpool)); err != nil || st.Mode().Perm() != 0o755 {
 		t.Errorf("spool: %v %v", st, err)
 	}
 	if st, err := os.Stat(filepath.Dir(filepath.Join(th.Root, defaultSpool))); err != nil || st.Mode().Perm() != 0o755 {

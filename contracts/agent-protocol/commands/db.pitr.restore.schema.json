@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.pitr.restore.schema.json",
+  "title": "db.pitr.restore — point-in-time recovery into a NEW instance (its own volume; the running one is never touched): the base is downloaded onto the new volume, its SHA-256 checked and the whole file authenticated before `falak-db restore physical`; every segment is checked and decrypted into <volume>/spool/replay; postgres `falak-db recover --wal-dir --target-time` then start, mysql/mariadb start then `falak-db recover --binlog-dir --target-time`; the instance ends read-only (`falak-db readonly on`) and its tables are counted",
+  "x-falak-forget-secrets": [
+    "password",
+    "identity",
+    "base.encryption.key",
+    "segments.*.encryption.key",
+    "instance.tls.private_key",
+    "inspection.password"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "restore",
+    "instance",
+    "password",
+    "base",
+    "segments",
+    "inspection"
+  ],
+  "properties": {
+    "restore": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "engine",
+        "version",
+        "image",
+        "volume_id",
+        "memory_bytes",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$"
+        },
+        "engine": {
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "valkey"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "the image's major version (postgres 15–18, mysql 8.0 / 8.4, mariadb 10.11 / 11.4, redis 7.4 / 8, valkey 8.1)"
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9_.-]+)?$",
+          "description": "tag reference, e.g. ghcr.io/othmanhaba/falak-postgres:17"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "required: the image runs pinned by digest (the control plane ships the digests CI published); pulled as <repository>@<digest> and checked against the image's RepoDigests"
+        },
+        "volume_id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$",
+          "description": "the sized volume holding data/ and spool/ (/var/lib/falak/volumes/<id>; the agent waits up to 120 s for it to be mounted)"
+        },
+        "host_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "published on 127.0.0.1 (native sites on the server) and publish.addresses; absent: not published (a retired instance)"
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 33554432,
+          "description": "the container's memory limit; falak-db tunes the engine to it"
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "settings": {
+          "type": "object",
+          "description": "falak-db settings (docs/DB_IMAGES.md), FALAK_DB_SETTINGS. Without an installed certificate the agent sets tls: false."
+        },
+        "network": {
+          "type": "string",
+          "pattern": "^falak-env-[0-9a-z]{26}$",
+          "description": "the environment's network, created when missing; the container joins it under aliases"
+        },
+        "aliases": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,62}$"
+          },
+          "description": "DNS names on the network (default [falak-db-<id>]); after a major upgrade the new instance keeps the old one's name"
+        },
+        "publish": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "addresses": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "format": "ipv4"
+              },
+              "description": "private addresses (RFC 1918, CGNAT 100.64.0.0/10: WireGuard) the port is also published on; any other address fails the command"
+            },
+            "public": {
+              "type": "boolean",
+              "default": false,
+              "description": "publish on every address (0.0.0.0); the control plane sends settings.require_tls with it"
+            },
+            "allowed_sources": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+              },
+              "description": "IPv4 networks (CIDR) allowed to reach the published port on `addresses` (or anywhere with `public`); the agent's DOCKER-USER chain drops every other source. Empty: nobody but loopback. Changes apply without recreating the container"
+            }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "certificate",
+            "private_key"
+          ],
+          "description": "db.instance.create only: the certificate from the Falak CA, written to /etc/falak/db/<id>/tls (root, 0600) and mounted read-only at /run/falak/db/tls. Updates keep the installed one.",
+          "properties": {
+            "certificate": {
+              "type": "string"
+            },
+            "private_key": {
+              "type": "string",
+              "description": "secret"
+            },
+            "ca": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "description": "the new instance (db.instance.create's spec; no pitr: it starts without)"
+    },
+    "password": {
+      "type": "string",
+      "minLength": 1,
+      "description": "secret: the source's superuser / root password (the restored data keeps the source's accounts)"
+    },
+    "identity": {
+      "type": "string",
+      "pattern": "^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$",
+      "description": "secret: customer-held files: the age identity, given for this restore only"
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "sha256",
+        "plaintext_sha256",
+        "size_bytes",
+        "encryption"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the stored file's SHA-256, checked after the download"
+        },
+        "plaintext_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the content's SHA-256, authenticated in the file's trailer; checked before anything is used"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plaintext_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "encryption": {
+          "$ref": "#/$defs/encryption"
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url",
+          "sha256",
+          "plaintext_sha256",
+          "size_bytes",
+          "encryption"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "the stored file's SHA-256, checked after the download"
+          },
+          "plaintext_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "the content's SHA-256, authenticated in the file's trailer; checked before anything is used"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "plaintext_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "encryption": {
+            "$ref": "#/$defs/encryption"
+          }
+        }
+      },
+      "description": "WAL segments / binlogs from the base on, oldest first"
+    },
+    "target_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339; MySQL / MariaDB round it down to the second. Absent: the latest point (everything given is replayed)"
+    },
+    "databases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+      },
+      "description": "counted (rows per table) once recovered"
+    },
+    "inspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "description": "the copy's read-only account (SELECT on `databases`), what people inspect it with",
+      "properties": {
+        "username": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 12,
+          "description": "secret"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "encryption": {
+      "description": "opens one FKB1 file: cp with its data key (each segment has its own); age names only the key id (the restore's identity opens it)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$"
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "container_id",
+        "health",
+        "segments",
+        "downloaded_bytes",
+        "table_counts"
+      ],
+      "properties": {
+        "container_id": {
+          "type": "string"
+        },
+        "image_digest": {
+          "type": "string"
+        },
+        "health": {
+          "type": "string"
+        },
+        "recovered_to": {
+          "type": "string"
+        },
+        "segments": {
+          "type": "integer"
+        },
+        "downloaded_bytes": {
+          "type": "integer"
+        },
+        "table_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "recovered_to_end": {
+          "type": "boolean",
+          "description": "replayed to the end of the log given (the latest point, or no commit after the target in it)"
+        }
+      }
+    }
+  }
+}

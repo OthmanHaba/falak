@@ -17,12 +17,15 @@ const STATUS_STYLES: Record<AnyStatus, string> = {
     pruned: 'bg-muted text-muted-foreground',
     upgrading: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
     retired: 'bg-muted text-muted-foreground',
+    inspecting: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+    awaiting_decision: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+    discarded: 'bg-muted text-muted-foreground',
 };
 
 export function StatusBadge({ status, title, className }: { status: AnyStatus; title?: string | null; className?: string }) {
     return (
         <Badge variant="outline" title={title ?? undefined} className={cn('border-transparent capitalize', STATUS_STYLES[status], className)}>
-            {status}
+            {status.replace('_', ' ')}
         </Badge>
     );
 }

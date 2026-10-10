@@ -14,6 +14,8 @@ type InstanceReport struct {
 	// SecretsMissing: the secrets directory is gone (a reboot emptied /run), so the container cannot start until the
 	// control plane sends db.instance.secrets.
 	SecretsMissing bool `json:"secrets_missing"`
+	// PITR is the shipping of its spool (instances with point-in-time recovery on).
+	PITR *PITRReport `json:"pitr,omitempty"`
 }
 
 // Report lists the database containers on the server, for the heartbeat (nil when there are none or Docker is not
@@ -27,12 +29,13 @@ func (db *DB) Report(ctx context.Context) []InstanceReport {
 		return nil
 	}
 	var out []InstanceReport
+	cfgs := db.pitrConfigs()
 	for _, c := range list {
 		id := c.Labels[LabelInstance]
 		if !idRe.MatchString(id) {
 			continue
 		}
-		out = append(out, InstanceReport{ID: id, State: reportState(c.State), Health: healthFromStatus(c.Status), SecretsMissing: db.secretsMissing(id)})
+		out = append(out, InstanceReport{ID: id, State: reportState(c.State), Health: healthFromStatus(c.Status), SecretsMissing: db.secretsMissing(id), PITR: db.pitrReport(id, cfgs)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	if len(out) > 200 {

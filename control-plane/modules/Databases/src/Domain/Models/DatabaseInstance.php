@@ -8,6 +8,7 @@ use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -44,6 +45,16 @@ use Illuminate\Support\Carbon;
  * @property ?float $cpus
  * @property ?array<string, mixed> $settings falak-db settings (docs/DB_IMAGES.md "Settings")
  * @property bool $pitr_enabled
+ * @property ?string $pitr_storage_provider_id where bases and segments go
+ * @property string $pitr_encryption_mode cp|customer
+ * @property ?string $pitr_age_recipient customer: the age recipient segments and bases are encrypted to
+ * @property int $pitr_window_days recovery points kept
+ * @property int $pitr_base_interval_days a new base every so many days
+ * @property ?Carbon $pitr_next_base_at
+ * @property ?Carbon $pitr_last_shipped_at the last segment the agent reported uploaded
+ * @property ?array<string, mixed> $pitr_report the heartbeat's spool report (spool_bytes, volume_bytes, pending, oldest_pending_at, error, at)
+ * @property int $pitr_epoch incremented by a binlog reset: segments and bases of another epoch never chain
+ * @property ?string $restored_from a point-in-time restore's new instance: the instance it was restored from
  * @property string $root_password superuser / root / Redis `default` password; sealed at rest
  * @property ?string $next_root_password a rotation the agent has not confirmed yet
  * @property bool $delete_volume deleting: the data volume goes too
@@ -93,6 +104,12 @@ class DatabaseInstance extends Model
             'cpus' => 'float',
             'settings' => 'array',
             'pitr_enabled' => 'boolean',
+            'pitr_window_days' => 'integer',
+            'pitr_epoch' => 'integer',
+            'pitr_base_interval_days' => 'integer',
+            'pitr_next_base_at' => 'datetime',
+            'pitr_last_shipped_at' => 'datetime',
+            'pitr_report' => 'array',
             'root_password' => Sealed::class,
             'next_root_password' => Sealed::class,
             'previous_password' => Sealed::class,
@@ -127,6 +144,20 @@ class DatabaseInstance extends Model
     public function schedules(): HasMany
     {
         return $this->hasMany(BackupSchedule::class)->orderBy('name');
+    }
+
+    /**
+     * @return BelongsTo<StorageProvider, $this>
+     */
+    public function pitrStorageProvider(): BelongsTo
+    {
+        return $this->belongsTo(StorageProvider::class, 'pitr_storage_provider_id');
+    }
+
+    /** Point-in-time recovery is for the SQL engines. */
+    public function supportsPitr(): bool
+    {
+        return ! $this->engine->isKeyValue();
     }
 
     public function container(): string

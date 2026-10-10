@@ -21,6 +21,13 @@ type Settings struct {
 	Eviction             string   `json:"eviction,omitempty"`               // redis/valkey maxmemory-policy (noeviction)
 	Persistence          string   `json:"persistence,omitempty"`            // redis/valkey: rdb | aof | none (rdb)
 	Bind                 []string `json:"bind,omitempty"`                   // redis/valkey bind addresses (* -::*)
+	// ReadOnly (sql) refuses writes in the rendered config, so it holds across restarts: a point-in-time restore's copy
+	// while it is inspected. PostgreSQL default_transaction_read_only; MySQL super_read_only + read_only; MariaDB
+	// read_only (accounts with READ ONLY ADMIN, root, still write). falak-db's own sessions are not held back.
+	ReadOnly bool `json:"read_only,omitempty"`
+	// EventScheduler (mysql/mariadb) false turns the event scheduler off: no event writes while binlogs are replayed or
+	// a copy is inspected.
+	EventScheduler *bool `json:"event_scheduler,omitempty"`
 }
 
 // ParseSettings decodes settings JSON strictly. Empty input is the defaults.
@@ -89,6 +96,12 @@ func (s Settings) validate(e Engine) error {
 	}
 	if !e.mysqlFamily() && (s.ServerID != 0 || s.BinlogRetentionHours != 0) {
 		return usageErr("settings: server_id and binlog_retention_hours are for mysql and mariadb")
+	}
+	if e.kv() && s.ReadOnly {
+		return usageErr("settings: read_only is for the SQL engines")
+	}
+	if !e.mysqlFamily() && s.EventScheduler != nil {
+		return usageErr("settings: event_scheduler is for mysql and mariadb")
 	}
 	if e.kv() && s.MaxConnections != 0 {
 		return usageErr("settings: max_connections is not used by %s", e)
@@ -205,6 +218,11 @@ func renderPostgres(in RenderInput) ([]File, Tuning, error) {
 	w.line("archive_timeout = 60")
 	w.line("max_wal_senders = 10")
 	w.line("")
+	if in.Settings.ReadOnly {
+		w.line("# Read-only (a point-in-time restore's copy being inspected).")
+		w.line("default_transaction_read_only = on")
+		w.line("")
+	}
 	if in.Settings.tls() {
 		w.line("ssl = on")
 		w.line("ssl_cert_file = %s", pgQuote(tlsDir+"/server.crt"))
@@ -331,6 +349,19 @@ func renderMySQL(in RenderInput) ([]File, Tuning, error) {
 		w.line("gtid_strict_mode = ON")
 	}
 	w.line("")
+	if in.Settings.ReadOnly || (in.Settings.EventScheduler != nil && !*in.Settings.EventScheduler) {
+		w.line("# A point-in-time restore's copy: read-only while it is inspected, no scheduled events.")
+		if in.Settings.EventScheduler != nil && !*in.Settings.EventScheduler {
+			w.line("event_scheduler = OFF")
+		}
+		if in.Settings.ReadOnly {
+			w.line("read_only = ON")
+			if e == MySQL {
+				w.line("super_read_only = ON")
+			}
+		}
+		w.line("")
+	}
 	if in.Settings.tls() {
 		w.line("ssl_cert = %s", tlsDir+"/server.crt")
 		w.line("ssl_key = %s", tlsDir+"/server.key")

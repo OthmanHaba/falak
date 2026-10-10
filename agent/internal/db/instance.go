@@ -76,10 +76,11 @@ func (db *DB) apply(ctx context.Context, p InstancePayload, st commands.Stream) 
 		return nil, err
 	}
 	vol := db.d.FS.P(db.volumeDir(s.VolumeID))
-	for _, sub := range []string{"data", "spool"} {
-		if err := os.MkdirAll(filepath.Join(vol, sub), 0o700); err != nil {
-			return nil, err
-		}
+	if err := os.MkdirAll(filepath.Join(vol, "data"), 0o700); err != nil {
+		return nil, err
+	}
+	if err := ensureRootSpool(filepath.Join(vol, "spool")); err != nil {
+		return nil, err
 	}
 	digest, err := db.ensureImage(ctx, s, p.RegistryAuth, st)
 	if err != nil {
@@ -102,6 +103,9 @@ func (db *DB) apply(ctx context.Context, p InstancePayload, st commands.Stream) 
 	settingsChanged, err := db.writeSettings(s, tls)
 	if err != nil {
 		return nil, err
+	}
+	if err := db.writePITR(s); err != nil {
+		return nil, fmt.Errorf("pitr: %w", err)
 	}
 	if s.Network != "" {
 		if err := db.ensureNetwork(ctx, s.Network); err != nil {

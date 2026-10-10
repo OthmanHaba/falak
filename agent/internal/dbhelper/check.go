@@ -114,7 +114,7 @@ func (h *Helper) pgCheck(ctx context.Context, database, role, q string) (string,
 	defer func() {
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		_, _ = h.pgExec(dctx, "postgres", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = "+pgLit(role)+";\nDROP ROLE IF EXISTS "+pgIdent(role)+";\n")
+		_ = h.pgDropRole(dctx, role)
 	}()
 	out, err := output(ctx, h.Run, Cmd{Name: "psql", Args: []string{
 		"-h", pgSocketDir, "-p", strconv.Itoa(pgPort), "-U", role, "-d", database, "-AtqX", "-v", "ON_ERROR_STOP=1", "-f", "-",

@@ -64,6 +64,8 @@ type Deps struct {
 	// MemAvailable and FreeBytes size up a drill (defaults: /proc/meminfo, statfs(2)).
 	MemAvailable func() (int64, error)
 	FreeBytes    func(path string) (int64, error)
+	// TotalBytes is the size of the filesystem holding a path (default statfs(2)): a PITR spool's share of its volume.
+	TotalBytes func(path string) (int64, error)
 	// CheckQueryWait is how long a drill's check query may run, from the agent's side (default 75 s).
 	CheckQueryWait time.Duration
 	// Mounted reports whether a host path is a mountpoint (default: /proc/self/mountinfo).
@@ -80,6 +82,8 @@ type DB struct {
 	// locks serializes the commands of one instance (an update recreating the container while a backup streams from
 	// it, a restore during a password rotation): id → *sync.Mutex.
 	locks sync.Map
+	// shipper ships PITR spools (NewShipper); nil until started.
+	shipper *Shipper
 }
 
 // lock takes the instances' locks (in id order, so two commands never deadlock) and returns the release.
@@ -133,6 +137,9 @@ func New(d Deps) *DB {
 	if d.FreeBytes == nil {
 		d.FreeBytes = freeBytes
 	}
+	if d.TotalBytes == nil {
+		d.TotalBytes = totalBytes
+	}
 	if d.CheckQueryWait == 0 {
 		d.CheckQueryWait = 75 * time.Second
 	}
@@ -164,6 +171,9 @@ func (db *DB) Register(reg *commands.Registry) {
 	reg.Register("db.backup", commands.Typed(db.Backup))
 	reg.Register("db.restore", commands.Typed(db.Restore))
 	reg.Register("db.drill", commands.Typed(db.Drill))
+	reg.Register("db.pitr.base", commands.Typed(db.PITRBase))
+	reg.Register("db.pitr.restore", commands.Typed(db.PITRRestore))
+	reg.Register("db.pitr.promote", commands.Typed(db.PITRPromote))
 }
 
 // Labels of database containers.

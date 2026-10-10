@@ -42,7 +42,7 @@ func (h *Helper) pgExec(ctx context.Context, dbname, sql string) (string, error)
 	out, err := output(ctx, h.Run, Cmd{Name: "psql", Args: []string{
 		"-h", pgSocketDir, "-p", strconv.Itoa(pgPort), "-U", h.pgUser(), "-d", dbname,
 		"-AtqX", "-v", "ON_ERROR_STOP=1", "-f", "-",
-	}, Stdin: strings.NewReader(sql)})
+	}, Stdin: strings.NewReader(sql), Env: pgAdminEnv})
 	return strings.TrimSpace(out), err
 }
 
@@ -329,6 +329,29 @@ func (h *Helper) myUserApply(ctx context.Context, s UserSpec, desired map[string
 	return true, nil
 }
 
+// pgDropRole drops a role that may still own objects or hold privileges: postgres refuses DROP ROLE until every
+// database that has them was cleared (REASSIGN OWNED / DROP OWNED only act in the database they run in).
+func (h *Helper) pgDropRole(ctx context.Context, role string) error {
+	r := pgIdent(role)
+	if _, err := h.pgExec(ctx, "postgres", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = "+pgLit(role)+";"); err != nil {
+		return err
+	}
+	dbs, err := h.pgExec(ctx, "postgres", "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname;")
+	if err != nil {
+		return err
+	}
+	for _, db := range strings.Split(dbs, "\n") {
+		if db = strings.TrimSpace(db); db == "" {
+			continue
+		}
+		if _, err := h.pgExec(ctx, db, "REASSIGN OWNED BY "+r+" TO CURRENT_USER;\nDROP OWNED BY "+r+";"); err != nil {
+			return err
+		}
+	}
+	_, err = h.pgExec(ctx, "postgres", "DROP ROLE IF EXISTS "+r+";")
+	return err
+}
+
 func (h *Helper) pgUserApply(ctx context.Context, s UserSpec, desired map[string][]string) (bool, error) {
 	u := pgIdent(s.Username)
 	n, err := h.pgExec(ctx, "postgres", "SELECT COUNT(*) FROM pg_roles WHERE rolname="+pgLit(s.Username)+";")
@@ -340,8 +363,7 @@ func (h *Helper) pgUserApply(ctx context.Context, s UserSpec, desired map[string
 		if !exists {
 			return false, nil
 		}
-		_, err := h.pgExec(ctx, "postgres", "DROP ROLE IF EXISTS "+u+";")
-		return err == nil, err
+		return true, h.pgDropRole(ctx, s.Username)
 	}
 	if s.Password == "" {
 		return false, usageErr("password is required when state=present")

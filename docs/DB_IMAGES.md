@@ -134,6 +134,8 @@ Unknown fields are rejected. Zero values take the defaults.
 | `eviction` | redis, valkey | `noeviction` | `maxmemory-policy` |
 | `persistence` | redis, valkey | `rdb` | `rdb`, `aof` or `none` |
 | `bind` | redis, valkey | `["*", "-::*"]` | |
+| `read_only` | postgres, mysql, mariadb | `false` | refuse writes from the config, so it holds across restarts (a point-in-time restore's copy): postgres `default_transaction_read_only`, MySQL `super_read_only` + `read_only`, MariaDB `read_only` (not root). falak-db's own sessions are not held back |
+| `event_scheduler` | mysql, mariadb | `true` | `false`: no scheduled events (binlog replay, inspection) |
 
 ### Rendered config (at every start)
 
@@ -168,7 +170,7 @@ their JSON result as the last stderr line, prefixed with `falak-db-result: `. Er
 
 | Command | Server | Result |
 |---|---|---|
-| `init [-- server args]` | starts it | the image's entrypoint: checks the environment, installs the TLS files (key 0600, owned by the engine's user), renders the config, creates the spool, then `exec`s `docker-entrypoint.sh` with the engine's server and config |
+| `init [-- server args]` | starts it | the image's entrypoint: checks the environment, installs the TLS files (key 0600, owned by the engine's user), renders the config, creates the spool (`spool` itself root's, 0755; only `spool/<kind>` the engine's), then `exec`s `docker-entrypoint.sh` with the engine's server and config |
 | `config render [--memory-bytes N] [--settings JSON]` | any | writes the config (applied on the next start); `{"engine","memory_bytes","files","tuning"}` |
 | `health` | running | `pg_isready` / `mysqladmin ping` / `PING` over TCP or the private socket; `{"engine","status":"healthy"}`, exit 1 when not. TCP, so the socket-only server the official entrypoints run during first-time initialisation does not count as ready. |
 | `backup logical --database DB --out -` | running | postgres `pg_dump -Fc`; mysql `mysqldump --single-transaction --routines --triggers --events --hex-blob --set-gtid-purged=OFF`; mariadb `mariadb-dump` (same flags); redis/valkey `BGSAVE` (waits for a new `rdb_saves`), then the RDB (no `--database`). Result: `{"kind":"logical","format","database","bytes","sha256","started_at","finished_at"}` |
@@ -247,6 +249,8 @@ IMAGE=falak-postgres:17-local images/db/test.sh postgres 17   # test an existing
 IMAGE=falak-postgres:17-local images/db/drill-test.sh postgres 17   # a restore drill's hardening: cap-drop ALL + the
                                               # entrypoint's capabilities, no-new-privileges, pids, no network
 SKIP_PITR=1 images/db/test.sh mysql 8.4       # skip physical backup + PITR
+IMAGE=falak-mysql:8.4-local images/db/pitr-test.sh mysql 8.4   # the agent's whole PITR flow: shipping, a base, a restore
+                                              # to a time into a new instance (docs/BACKUPS.md)
 cd agent && go test ./internal/dbhelper       # unit tests (config golden files: go test ./internal/dbhelper -update)
 ```
 
