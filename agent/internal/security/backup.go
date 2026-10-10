@@ -48,8 +48,11 @@ type FileEntry struct {
 	// Stored is the copy of the content in the backup ("files/0"); "" for permission-only entries (secret files: their
 	// content is never copied out of the tmpfs or the site).
 	Stored string `json:"stored,omitempty"`
-	// Inode identifies the file of a permission-only entry, so undo never changes the mode of a file swapped in since.
-	Inode uint64 `json:"inode,omitempty"`
+	// Inode and AfterCtime identify the file of a permission-only entry, so undo never changes the mode of a file swapped
+	// in since: Linux reuses a deleted file's inode number at once, while a new file (or any later chmod) changes the
+	// status change time.
+	Inode      uint64 `json:"inode,omitempty"`
+	AfterCtime int64  `json:"after_ctime,omitempty"`
 	// The file as the fix left it: undo refuses (unless forced) when it changed since, so it never silently throws
 	// away somebody's later edit. AfterSHA256 is "" for permission-only entries and when the fix left no file.
 	AfterExists bool   `json:"after_exists"`
@@ -225,7 +228,7 @@ func (b *backup) restorePerms(e FileEntry) error {
 	if err != nil {
 		return err
 	}
-	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || uint64(st.Ino) != e.Inode || !fi.Mode().IsRegular() {
+	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || uint64(st.Ino) != e.Inode || ctime(st) != e.AfterCtime || !fi.Mode().IsRegular() {
 		return errors.New("the file was replaced since the fix; leaving it alone")
 	}
 	if err := f.Chmod(os.FileMode(e.Mode)); err != nil {
@@ -237,11 +240,27 @@ func (b *backup) restorePerms(e FileEntry) error {
 	return nil
 }
 
+// afterCtime is the status change time of a permission-only entry's file as the fix left it (0 when it is gone).
+func (b *backup) afterCtime(e FileEntry) int64 {
+	fi, err := os.Lstat(b.s.d.FS.P(e.Path))
+	if err != nil {
+		return 0
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || uint64(st.Ino) != e.Inode {
+		return 0
+	}
+	return ctime(st)
+}
+
 // seal records every file as the fix left it.
 func (b *backup) seal() error {
 	for i := range b.m.Files {
 		e := &b.m.Files[i]
 		e.AfterExists, e.AfterSHA256, e.AfterMode = b.current(*e)
+		if e.Stored == "" && e.Inode != 0 {
+			e.AfterCtime = b.afterCtime(*e)
+		}
 	}
 	return b.write()
 }
