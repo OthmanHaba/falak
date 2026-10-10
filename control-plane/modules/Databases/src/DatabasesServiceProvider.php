@@ -4,6 +4,7 @@ namespace Falak\Databases;
 
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
+use Falak\Databases\Application\Jobs\CheckBackupHealth;
 use Falak\Databases\Application\Jobs\MaintainInstances;
 use Falak\Databases\Application\Jobs\MaintainPitr;
 use Falak\Databases\Application\Jobs\RunDueBackups;
@@ -92,7 +93,10 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         $registry->register(DatabasesPolicy::STORAGE, [Role::Admin], 'Manage backup storage providers and their credentials', 'databases');
 
         $types = $this->app->make(AlertTypes::class);
-        $types->register(BackupFailed::ALERT_TYPE, 'Database backup failed', 'Databases', Severity::Critical);
+        $types->register(BackupFailed::ALERT_TYPE, 'Database backup failed', 'Databases', Severity::Critical, 'Review backups');
+        $types->register('databases.backup_missed', 'No database backup within twice the schedule interval', 'Databases', Severity::Critical, 'Review backups');
+        $types->register('databases.storage_unreachable', 'Backup storage unreachable', 'Databases', Severity::Critical, 'Check storage');
+        $types->register('databases.connections_high', 'Database connections above 80% of the limit', 'Databases', Severity::Warning, 'Tune instance settings');
         $types->register(BackupSucceeded::ALERT_TYPE, 'Database backups succeed again', 'Databases', Severity::Info);
         $types->register(RestoreFinished::ALERT_FAILED, 'Database restore failed', 'Databases', Severity::Critical);
         $types->register(RestoreFinished::ALERT_SUCCEEDED, 'Database restore finished', 'Databases', Severity::Info);
@@ -102,6 +106,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         $types->register(PitrAlert::GAP, 'Gap in a point-in-time recovery timeline', 'Databases', Severity::Critical);
         $types->register(PitrAlert::SPOOL_FULL, 'Point-in-time recovery spool above 20% of the volume', 'Databases', Severity::Critical);
         $types->register(PitrAlert::BASE_FAILED, 'Point-in-time recovery base backup failed', 'Databases', Severity::Critical);
+        $types->register(PitrAlert::STOPPED, 'Point-in-time recovery stopped shipping', 'Databases', Severity::Critical);
         $types->register(PitrAlert::RECOVERED, 'Point-in-time recovery is fine again', 'Databases', Severity::Info);
 
         // The agent's point-in-time recovery shipper (POST /agent/v1/requests/<type>).
@@ -127,6 +132,10 @@ class DatabasesServiceProvider extends ModuleServiceProvider
             $schedule->job(new MaintainInstances)->everyTenMinutes()->name('databases:maintenance')->withoutOverlapping();
             $schedule->job(new MaintainPitr)->everyMinute()->name('databases:pitr')->withoutOverlapping();
             $schedule->job(new MaintainPitr(prune: true))->hourly()->name('databases:pitr-prune')->withoutOverlapping();
+            $schedule->job(new CheckBackupHealth)->everyFiveMinutes()->name('databases:backup-health')->withoutOverlapping()
+                ->when(fn () => now()->minute % 30 !== 0);
+            // Every 30 minutes the same check also probes the storage providers.
+            $schedule->job(new CheckBackupHealth(probe: true))->everyThirtyMinutes()->name('databases:backup-health-probe')->withoutOverlapping();
         });
     }
 }

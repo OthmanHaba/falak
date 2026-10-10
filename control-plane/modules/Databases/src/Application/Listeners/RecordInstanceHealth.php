@@ -2,6 +2,9 @@
 
 namespace Falak\Databases\Application\Listeners;
 
+use Falak\Alerting\Contracts\AlertConditions;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Severity;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Models\DatabaseInstance;
@@ -13,10 +16,16 @@ use Illuminate\Support\Facades\Cache;
  * the state of its spool) is recorded on the instance, and
  * a container whose password file is gone (a reboot emptied /run) gets it back with db.instance.secrets, at most once
  * per instance every databases.secrets_restore_throttle seconds (heartbeats repeat it until it is restored).
+ *
+ * Open connections above databases.connections_alert_percent of the server's limit for
+ * databases.connections_alert_seconds alert (databases.connections_high), resolved once below.
  */
 final class RecordInstanceHealth
 {
-    public function __construct(private readonly AgentCommands $commands) {}
+    public function __construct(
+        private readonly AgentCommands $commands,
+        private readonly AlertConditions $conditions,
+    ) {}
 
     public function handle(AgentDatabasesReported $event): void
     {
@@ -48,6 +57,10 @@ final class RecordInstanceHealth
             if (($item['secrets_missing'] ?? false) === true) {
                 $this->restoreSecrets($instance);
             }
+
+            if (is_array($item['connections'] ?? null) && (int) ($item['connections']['max'] ?? 0) > 0) {
+                $this->connections($instance, (int) ($item['connections']['used'] ?? 0), (int) $item['connections']['max']);
+            }
         }
     }
 
@@ -65,6 +78,22 @@ final class RecordInstanceHealth
             'last_shipped_at' => is_string($report['last_shipped_at'] ?? null) ? $report['last_shipped_at'] : null,
             'error' => is_string($report['error'] ?? null) ? mb_substr($report['error'], 0, 500) : null,
         ];
+    }
+
+    private function connections(DatabaseInstance $instance, int $used, int $max): void
+    {
+        $percent = (int) config('databases.connections_alert_percent', 80);
+
+        $this->conditions->observe($instance->organization_id, "databases.connections:{$instance->id}", $used * 100 > $max * $percent, fn () => new AlertData(
+            $instance->organization_id,
+            'databases.connections_high',
+            Severity::Warning,
+            "{$instance->name} on {$instance->server_name} uses {$used} of {$max} connections",
+            "Above {$percent}% of max_connections: new connections are refused once it is reached. Look for a connection leak or too many workers, put a pooler in front, or raise the limit in the instance's settings.",
+            "/databases/instances/{$instance->id}",
+            context: ['instance_id' => $instance->id, 'connections' => $used, 'max_connections' => $max],
+            action: 'Tune instance settings',
+        ), forSeconds: (int) config('databases.connections_alert_seconds', 300));
     }
 
     private function restoreSecrets(DatabaseInstance $instance): void

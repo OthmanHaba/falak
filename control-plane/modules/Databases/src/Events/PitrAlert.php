@@ -16,6 +16,8 @@ use Illuminate\Foundation\Events\Dispatchable;
  *  - pitr.spool_full: the spool holds more than databases.pitr.spool_alert_percent of the instance's volume (segments
  *    pile up while they can't be shipped);
  *  - pitr.base_failed: a base backup failed;
+ *  - pitr.stopped: the instance is up and its agent online, but the heartbeats stopped reporting its spool (the shipper
+ *    is not running, or the instance lost its PITR configuration): nothing is archived;
  *  - pitr.recovered: resolves the problem of the same kind (lag shipped, gap covered by a new base, spool drained, a
  *    base succeeded).
  *
@@ -33,6 +35,8 @@ final class PitrAlert implements Alertable
 
     public const BASE_FAILED = 'pitr.base_failed';
 
+    public const STOPPED = 'pitr.stopped';
+
     public const RECOVERED = 'pitr.recovered';
 
     public const TITLES = [
@@ -40,6 +44,7 @@ final class PitrAlert implements Alertable
         self::GAP => 'Gap in the point-in-time recovery timeline',
         self::SPOOL_FULL => 'Point-in-time recovery spool is filling the volume',
         self::BASE_FAILED => 'Point-in-time recovery base backup failed',
+        self::STOPPED => 'Point-in-time recovery stopped shipping',
     ];
 
     public function __construct(
