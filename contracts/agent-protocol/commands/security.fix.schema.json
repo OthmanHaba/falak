@@ -18,6 +18,20 @@
       "type": "string",
       "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
       "description": "updates.reboot: the next HH:MM, server time (default 04:00)"
+    },
+    "managed_keys": {
+      "type": "object",
+      "description": "ssh.harden: the keys Falak installs per unix user (the falak user's don't count as a way in when password logins go)",
+      "propertyNames": {
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      }
     }
   },
   "$defs": {

@@ -25,6 +25,8 @@ type Fix struct {
 	apply        func(s *Security, ctx context.Context, b *backup, p FixPayload, st commands.Stream) (changed bool, msg string, err error)
 	// undo runs after the backup's files and settings are restored (reloads, restarts).
 	undo func(s *Security, ctx context.Context, m Manifest, st commands.Stream) error
+	// recover runs after a rollback or a failed undo (restarts the service on the restored config).
+	recover func(s *Security, ctx context.Context, st commands.Stream) error
 }
 
 var fixes map[string]Fix
@@ -32,7 +34,7 @@ var fixes map[string]Fix
 func init() {
 	fixes = map[string]Fix{}
 	for _, f := range []Fix{
-		{ID: "ssh.harden", Disruptive: true, Undoable: true, apply: (*Security).fixSSH, undo: (*Security).undoSSH},
+		{ID: "ssh.harden", Disruptive: true, Undoable: true, apply: (*Security).fixSSH, undo: (*Security).undoSSH, recover: (*Security).recoverSSH},
 		{ID: "updates.unattended", Undoable: true, apply: (*Security).fixUnattended},
 		{ID: "updates.install", Disruptive: true, apply: (*Security).fixInstallUpdates},
 		{ID: "updates.reboot", Disruptive: true, Undoable: true, apply: (*Security).fixReboot, undo: (*Security).undoReboot},
@@ -73,6 +75,9 @@ type FixPayload struct {
 	FixID string `json:"fix_id"`
 	// RebootAt is when updates.reboot reboots ("HH:MM", server time, the next occurrence); default 04:00.
 	RebootAt string `json:"reboot_at"`
+	// ManagedKeys (ssh.harden) are the keys Falak installs per unix user: the ones of its falak user don't count as a
+	// way in for people when password logins go.
+	ManagedKeys map[string][]string `json:"managed_keys"`
 }
 
 // FixResult is its result.
@@ -131,6 +136,11 @@ func (s *Security) Fix(ctx context.Context, p FixPayload, st commands.Stream) (a
 		} else if !b.empty() {
 			err = fmt.Errorf("%w (rolled back)", err)
 		}
+		if f.recover != nil && !b.empty() {
+			if rerr := f.recover(s, context.WithoutCancel(ctx), st); rerr != nil {
+				err = errors.Join(err, fmt.Errorf("restarting after the rollback: %w", rerr))
+			}
+		}
 		b.discard()
 		return nil, err
 	}
@@ -174,6 +184,11 @@ func (s *Security) Undo(ctx context.Context, p UndoPayload, st commands.Stream) 
 	}
 	if f.undo != nil {
 		if err := f.undo(s, ctx, b.m, st); err != nil {
+			if f.recover != nil {
+				if rerr := f.recover(s, context.WithoutCancel(ctx), st); rerr != nil {
+					err = errors.Join(err, fmt.Errorf("restarting: %w", rerr))
+				}
+			}
 			return nil, err
 		}
 	}

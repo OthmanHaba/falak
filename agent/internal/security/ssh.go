@@ -64,12 +64,17 @@ func ParseSSHDT(out string) map[string]string {
 		if !ok {
 			continue
 		}
-		if _, seen := eff[k]; !seen {
+		if cur, seen := eff[k]; seen && sshLists[k] {
+			eff[k] = cur + " " + strings.TrimSpace(v)
+		} else if !seen {
 			eff[k] = strings.TrimSpace(v)
 		}
 	}
 	return eff
 }
+
+// sshLists are keywords sshd -T prints once per entry.
+var sshLists = map[string]bool{"allowusers": true, "denyusers": true, "allowgroups": true, "denygroups": true}
 
 // sshDirectives returns the first value of every keyword (lowercase) before the first Match block.
 func sshDirectives(content string) map[string]string {
@@ -171,6 +176,7 @@ func (s *Security) sshChecks(ctx context.Context, p AuditPayload) []Check {
 type LoginUser struct {
 	Name string
 	UID  int
+	GID  string
 	Home string
 }
 
@@ -187,7 +193,7 @@ func (s *Security) loginUsers() []LoginUser {
 		if err != nil || !(uid == 0 || (uid >= 1000 && uid < 65534)) || !loginShell(f[6]) {
 			continue
 		}
-		us = append(us, LoginUser{Name: f[0], UID: uid, Home: f[5]})
+		us = append(us, LoginUser{Name: f[0], UID: uid, GID: f[3], Home: f[5]})
 	}
 	return us
 }
@@ -247,6 +253,17 @@ const maxKeysFile = 1 << 20
 // keyBlobs returns the key blobs of an authorized_keys file without trusting it: it lives in a user's home, so it is
 // opened with O_NOFOLLOW|O_NONBLOCK, must be a regular file and is read up to maxKeysFile bytes.
 func (s *Security) keyBlobs(path string) []string {
+	var blobs []string
+	for _, line := range s.keyLines(path) {
+		if blob := KeyBlob(line); blob != "" {
+			blobs = append(blobs, blob)
+		}
+	}
+	return blobs
+}
+
+// keyLines reads the lines of an authorized_keys file without trusting it (see keyBlobs).
+func (s *Security) keyLines(path string) []string {
 	f, err := os.OpenFile(s.d.FS.P(path), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil
@@ -259,13 +276,34 @@ func (s *Security) keyBlobs(path string) []string {
 	if err != nil {
 		return nil
 	}
-	var blobs []string
-	for _, line := range strings.Split(string(b), "\n") {
-		if blob := KeyBlob(line); blob != "" {
-			blobs = append(blobs, blob)
+	return strings.Split(string(b), "\n")
+}
+
+// keyEntry is one key of an authorized_keys file.
+type keyEntry struct {
+	blob   string
+	forced bool // a command= option: no shell with it
+}
+
+// keyEntries reads an authorized_keys file like keyBlobs, keeping whether each key has a forced command.
+func (s *Security) keyEntries(path string) []keyEntry {
+	var es []keyEntry
+	for _, line := range s.keyLines(path) {
+		blob := KeyBlob(line)
+		if blob == "" {
+			continue
 		}
+		f := strings.Fields(strings.TrimSpace(line))
+		opts := ""
+		for i := 0; i < len(f)-1; i++ {
+			if keyType.MatchString(f[i]) {
+				opts = strings.Join(f[:i], " ")
+				break
+			}
+		}
+		es = append(es, keyEntry{blob: blob, forced: strings.Contains(opts, "command=")})
 	}
-	return blobs
+	return es
 }
 
 var keyType = regexp.MustCompile(`^(ssh-(rsa|dss|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh[.]com)$`)

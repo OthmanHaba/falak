@@ -94,7 +94,15 @@ func TestTheAllowlistRefusesEverythingElse(t *testing.T) {
 
 // sshHost scripts sshd: -T computes the effective config from the files on disk, like the real one.
 func sshHost(t *testing.T) (*Security, *runnertest.Fake, string) {
+	return sshHostWith(t, nil)
+}
+
+// sshHostWith registers the test's own rules first (the fake answers with the first matching rule).
+func sshHostWith(t *testing.T, pre func(*runnertest.Fake)) (*Security, *runnertest.Fake, string) {
 	s, f, root := newSec(t)
+	if pre != nil {
+		pre(f)
+	}
 	passwd(root, t)
 	put(t, root, "/root/.ssh/authorized_keys", keyA+"\n", 0o600)
 	put(t, root, SSHDConfig, "Include /etc/ssh/sshd_config.d/*.conf\nPasswordAuthentication yes\nKbdInteractiveAuthentication no\nUsePAM yes\n", 0o644)
@@ -113,6 +121,7 @@ func sshHost(t *testing.T) (*Security, *runnertest.Fake, string) {
 		}
 		return ok(b.String()), nil
 	})
+	f.On("systemctl is-active --quiet ssh.socket", fail(3))
 	f.On("systemctl is-active --quiet ssh.service", ok(""))
 	return s, f, root
 }

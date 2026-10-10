@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -107,7 +108,7 @@ func CommentConflicts(content string) (string, bool) {
 	return strings.Join(lines, "\n"), changed
 }
 
-func (s *Security) fixSSH(ctx context.Context, b *backup, _ FixPayload, st commands.Stream) (bool, string, error) {
+func (s *Security) fixSSH(ctx context.Context, b *backup, p FixPayload, st commands.Stream) (bool, string, error) {
 	eff, _ := s.sshEffective(ctx)
 	// Every hardened setting goes into the drop-in (so a later edit elsewhere can't undo it); a stricter root login
 	// mode already in effect is kept.
@@ -130,8 +131,8 @@ func (s *Security) fixSSH(ctx context.Context, b *backup, _ FixPayload, st comma
 		return false, "SSH is already hardened", nil
 	}
 	// Turning password logins off must not lock everyone out.
-	if !s.anyAuthorizedKey(eff["authorizedkeysfile"]) {
-		return false, "", errors.New("no user who can log in has an SSH key; add one (SSH keys tab) before turning password logins off")
+	if err := s.keyLoginPossible(ctx, eff, p); err != nil {
+		return false, "", err
 	}
 	if err := b.saveFile(SSHDDropIn); err != nil {
 		return false, "", err
@@ -219,17 +220,129 @@ func (s *Security) reloadSSH(ctx context.Context, st commands.Stream) error {
 	return nil
 }
 
-// anyAuthorizedKey reports whether some user who can log in has a public key.
-func (s *Security) anyAuthorizedKey(keysFile string) bool {
+// keyLoginPossible makes sure somebody can still log in once passwords are off: a user sshd lets in (its settings for
+// that user: PermitRootLogin, AllowUsers / DenyUsers / AllowGroups / DenyGroups, from `sshd -T -C`) who has a key
+// usable for a shell (no forced command) that Falak did not install for its own falak user. Two-factor logins
+// (AuthenticationMethods with keyboard-interactive) would be locked out altogether, so the fix refuses them.
+func (s *Security) keyLoginPossible(ctx context.Context, eff map[string]string, p FixPayload) error {
+	if strings.Contains(eff["authenticationmethods"], "keyboard-interactive") {
+		return errors.New("AuthenticationMethods needs keyboard-interactive (two-factor logins); turning it off would lock those users out: change it by hand")
+	}
+	keysFile := eff["authorizedkeysfile"]
 	if keysFile == "" || keysFile == "none" {
 		keysFile = sshDefaults["authorizedkeysfile"]
 	}
+	falak := map[string]bool{}
+	for _, k := range p.ManagedKeys["falak"] {
+		if blob := KeyBlob(k); blob != "" {
+			falak[blob] = true
+		}
+	}
+	etcGroup, _ := s.read("/etc/group")
+	var tried []string
 	for _, u := range s.loginUsers() {
+		usable := 0
 		for _, f := range strings.Fields(keysFile) {
-			if len(s.keyBlobs(expandKeysPath(f, u.Name, u.Home))) > 0 {
+			for _, k := range s.keyEntries(expandKeysPath(f, u.Name, u.Home)) {
+				if !k.forced && !(u.Name == "falak" && falak[k.blob]) {
+					usable++
+				}
+			}
+		}
+		if usable == 0 {
+			continue
+		}
+		tried = append(tried, u.Name)
+		cfg := eff
+		if out, ok := s.output(ctx, "sshd", "-T", "-C", "user="+u.Name+",host=,addr=127.0.0.1"); ok {
+			cfg = ParseSSHDT(out)
+		}
+		if SSHAllows(cfg, u.Name, UserGroups(etcGroup, u.Name, u.GID)) {
+			return nil
+		}
+	}
+	if len(tried) == 0 {
+		return errors.New("no user who can log in has an SSH key of their own (keys with a forced command, and the keys Falak installs for its falak user, don't count); add one before turning password logins off")
+	}
+	return fmt.Errorf("sshd lets none of the users with a key in (%s: PermitRootLogin, AllowUsers, DenyUsers, AllowGroups or DenyGroups); fix that before turning password logins off", strings.Join(tried, ", "))
+}
+
+// SSHAllows reports whether sshd's settings for a user (sshd -T -C) let it log in with a key.
+func SSHAllows(cfg map[string]string, user string, groups []string) bool {
+	if cfg["pubkeyauthentication"] == "no" || strings.Contains(cfg["authenticationmethods"], "keyboard-interactive") {
+		return false
+	}
+	if user == "root" {
+		if v := cfg["permitrootlogin"]; v == "no" || v == "forced-commands-only" {
+			return false
+		}
+	}
+	matchUser := func(list string) bool {
+		for _, pat := range strings.Fields(list) {
+			pat, _, _ = strings.Cut(pat, "@")
+			if ok, _ := path.Match(pat, user); ok {
 				return true
 			}
 		}
+		return false
 	}
-	return false
+	matchGroup := func(list string) bool {
+		for _, pat := range strings.Fields(list) {
+			for _, g := range groups {
+				if ok, _ := path.Match(pat, g); ok {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if matchUser(cfg["denyusers"]) || (cfg["allowusers"] != "" && !matchUser(cfg["allowusers"])) {
+		return false
+	}
+	return !matchGroup(cfg["denygroups"]) && (cfg["allowgroups"] == "" || matchGroup(cfg["allowgroups"]))
+}
+
+// UserGroups returns a user's groups: its primary group (by gid) and the groups listing it in /etc/group.
+func UserGroups(etcGroup, user, gid string) []string {
+	var gs []string
+	for _, line := range strings.Split(etcGroup, "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 4 {
+			continue
+		}
+		if f[2] == gid {
+			gs = append(gs, f[0])
+			continue
+		}
+		for _, m := range strings.Split(f[3], ",") {
+			if strings.TrimSpace(m) == user {
+				gs = append(gs, f[0])
+				break
+			}
+		}
+	}
+	return gs
+}
+
+// recoverSSH restarts sshd after a rollback, so it runs with the restored config, and checks it is up: ssh.socket
+// when socket activation is on, else ssh.service (Debian, Ubuntu) or sshd.service.
+func (s *Security) recoverSSH(ctx context.Context, st commands.Stream) error {
+	units := []string{"ssh.service", "sshd.service"}
+	if s.active(ctx, "ssh.socket") {
+		units = []string{"ssh.socket"}
+	}
+	for _, unit := range units {
+		if res, err := s.run(ctx, cmdTimeout, "systemctl", "cat", unit); unit != "ssh.socket" && (err != nil || res.ExitCode != 0) {
+			continue
+		}
+		if err := s.exec(ctx, st, time.Minute, nil, "systemctl", "restart", unit); err != nil {
+			return err
+		}
+		if !s.active(ctx, unit) {
+			return fmt.Errorf("%s is not active after a restart", unit)
+		}
+		fmt.Fprintf(st.Stdout(), "%s restarted with the restored config\n", unit)
+		return nil
+	}
+	return errors.New("no SSH unit found")
 }
