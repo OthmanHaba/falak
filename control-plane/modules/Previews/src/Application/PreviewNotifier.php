@@ -8,8 +8,9 @@ use Falak\SourceControl\Contracts\SourceControlGateway;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Falak's one comment per pull request (posted once, then edited) and its `falak/preview` commit status. The comment
- * is public: it never carries the basic auth password, only where members find it in Falak.
+ * Falak's one comment per pull request (posted once, then edited) and its `falak/preview` commit status. Both are
+ * public: they carry generic states only. Errors, server names, script output and the basic auth password stay in
+ * Falak, where project members see them.
  */
 final class PreviewNotifier
 {
@@ -17,9 +18,9 @@ final class PreviewNotifier
 
     public function __construct(private readonly SourceControlGateway $gateway) {}
 
-    public function update(Preview $preview, ?string $note = null): void
+    public function update(Preview $preview): void
     {
-        $body = $this->body($preview, $note);
+        $body = $this->body($preview);
 
         try {
             $id = $this->gateway->commentOnPullRequest($preview->connection_id, $preview->repository, $preview->number, $body, $preview->comment_id);
@@ -44,7 +45,7 @@ final class PreviewNotifier
         }
     }
 
-    public function body(Preview $preview, ?string $note = null): string
+    public function body(Preview $preview): string
     {
         $sha = substr($preview->head_sha, 0, 7);
         $lines = ["**Falak preview** for #{$preview->number} (`{$sha}`): ".$this->headline($preview), ''];
@@ -63,11 +64,6 @@ final class PreviewNotifier
                 : 'These previews are public.';
         }
 
-        if ($note !== null && $note !== '') {
-            $lines[] = '';
-            $lines[] = $note;
-        }
-
         $lines[] = '';
         $lines[] = '<sub>'.$this->link($preview).'</sub>';
 
@@ -82,8 +78,8 @@ final class PreviewNotifier
             Preview::CREATING => 'setting up.',
             Preview::DEPLOYING => 'deploying.',
             Preview::READY => 'ready.',
-            Preview::FAILED => 'failed. '.($preview->status_message ?? ''),
-            Preview::CLOSED => 'removed. '.($preview->status_message ?? ''),
+            Preview::FAILED => 'failed. Project members see why in Falak.',
+            Preview::CLOSED => 'removed.',
             default => $preview->status.'.',
         };
     }

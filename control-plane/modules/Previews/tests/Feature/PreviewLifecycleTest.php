@@ -15,12 +15,14 @@ use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Secrets\Application\Actions\CreateSecret;
 use Falak\Secrets\Contracts\SecretScope;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\SourceControl\Events\PullRequestClosed;
 use Falak\SourceControl\Events\PullRequestCommented;
 use Falak\SourceControl\Events\PullRequestOpened;
 use Falak\SourceControl\Events\PullRequestUpdated;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -124,7 +126,22 @@ it('redeploys on a new head and tears everything down when the pull request clos
         ->and(array_values($this->sc->comments)[0]['body'])->toContain('removed');
 });
 
-it('never deploys a fork\'s pull request on its own, and its preview gets no secrets', function () {
+/** Forks run on a dedicated preview server, as containers: the base site becomes a Docker site. */
+function fork_ready(object $test): void
+{
+    $test->forkServer = sites_server($test->organization->id, ['name' => 'previews-1'], docker: true);
+    Site::query()->whereKey($test->web->id)->update([
+        'runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null,
+        'docker_image' => 'ghcr.io/acme/shop:1', 'container_port' => 8080, 'app_port' => 3100,
+    ]);
+    $test->settings->forceFill(['fork_server_id' => $test->forkServer->id, 'variables' => ['APP_NAME', 'DATABASE_URL']])->save();
+    EnvironmentVersion::query()->where('site_id', $test->web->id)->firstOrFail()->forceFill(['variables' => [
+        'APP_NAME' => 'Shop', 'APP_KEY' => 'base64:staging', 'STRIPE_SECRET' => 'sk_live_x', 'DATABASE_URL' => '${{ db.DATABASE_URL }}', 'MAIL_HOST' => 'smtp.internal',
+    ]])->save();
+}
+
+it('never deploys a fork\'s pull request on its own, runs it isolated on the fork server and gives it no secrets', function () {
+    fork_ready($this);
     open_pr($this, fork: true);
 
     $preview = previews_sole();
@@ -133,49 +150,79 @@ it('never deploys a fork\'s pull request on its own, and its preview gets no sec
         ->and($this->databases->created)->toBe([])
         ->and(array_values($this->sc->comments)[0]['body'])->toContain('/falak preview');
 
-    app(PreviewLifecycle::class)->approve($preview, $this->user->id);
+    app(PreviewLifecycle::class)->approve($preview, $this->user->id, 'ui', $preview->head_sha);
     $preview->refresh();
     $environment = Environment::query()->findOrFail($preview->environment_id);
-    $copy = Site::query()->with('latestEnvironment')->findOrFail($preview->sites['web']);
+    $copy = Site::query()->with(['latestEnvironment', 'targets'])->findOrFail($preview->sites['web']);
 
     expect($environment->is_fork_preview)->toBeTrue()
+        ->and($copy->targets->pluck('server_id')->all())->toBe([$this->forkServer->id])
+        // Its own Linux user, never the base's shared one.
+        ->and($copy->isolated)->toBeTrue()
+        ->and($copy->unix_user)->not->toBe($this->web->unix_user)
         // The fork's branch lives in the fork: the copy keeps the base branch, the head commit is deployed.
         ->and($copy->branch)->toBe('main')
-        // Literal secret values (by name or value) are emptied in the copy.
-        ->and($copy->latestEnvironment->variables['STRIPE_SECRET'])->toBe('')
-        ->and($copy->latestEnvironment->variables['APP_KEY'])->toBe('');
+        // Only the allowlisted names; no literal secret, no other base value.
+        ->and($copy->latestEnvironment->variables)->toBe(['APP_NAME' => 'Shop', 'DATABASE_URL' => '${{ db.DATABASE_URL }}'])
+        // A fork never gets a plain copy of data.
+        ->and($preview->databases['db']['strategy'])->toBe(PreviewSettings::EMPTY);
 
-    // A new commit from the fork waits for a new approval.
+    // A new commit from the fork waits for a new approval; the old approval can't be replayed for it.
     preview_go_live($this, $preview);
     PullRequestUpdated::dispatch($this->organization->id, $this->connection->id, 'github', previews_pr(sha: 'e', fork: true));
-    expect($preview->refresh()->status)->toBe(Preview::WAITING_APPROVAL)->and($this->deployments->deployed)->toHaveCount(1);
+    expect($preview->refresh()->status)->toBe(Preview::WAITING_APPROVAL)->and($this->deployments->deployed)->toHaveCount(1)
+        ->and(fn () => app(PreviewLifecycle::class)->approve($preview, $this->user->id, 'ui', str_repeat('c', 40)))->toThrow(ValidationException::class);
 });
 
-it('approves a fork through /falak preview only for members who connected that account and may manage previews', function () {
+it('refuses a fork without a dedicated fork server, on a server hosting other sites, on the edge, or running natively', function (string $case) {
+    fork_ready($this);
+
+    match ($case) {
+        'no fork server' => $this->settings->forceFill(['fork_server_id' => null])->save(),
+        'production server' => $this->settings->forceFill(['fork_server_id' => $this->server->id])->save(),
+        'edge server' => $this->domains->configure($this->organization->id, 'prv.example.com', 'cred', $this->forkServer->id),
+        'native runtime' => Site::query()->whereKey($this->web->id)->update(['runtime' => 'frankenphp', 'build_mode' => 'native', 'framework' => 'laravel', 'php_version' => '8.4']),
+    };
     open_pr($this, fork: true);
     $preview = previews_sole();
-    $comment = fn (string $author, string $body = '/falak preview') => PullRequestCommented::dispatch($this->organization->id, $this->connection->id, 'github', 'acme/shop', 7, '1', $author, $body);
+    app(PreviewLifecycle::class)->approve($preview, $this->user->id, 'ui', $preview->head_sha);
 
-    // A stranger, and a viewer who connected their account: refused with a reply.
+    expect($preview->refresh()->status)->toBe(Preview::FAILED)
+        ->and(Site::query()->count())->toBe(1)
+        ->and($this->deployments->deployed)->toBe([]);
+})->with(['no fork server', 'production server', 'edge server', 'native runtime']);
+
+it('approves a fork through /falak preview only for members who connected that account id, for the head they saw', function () {
+    fork_ready($this);
+    open_pr($this, fork: true);
+    $preview = previews_sole();
+    $comment = fn (string $author, ?string $id, string $body = '/falak preview', ?string $at = null) => PullRequestCommented::dispatch(
+        $this->organization->id, $this->connection->id, 'github', 'acme/shop', 7, '1', $author, $body, $id, new DateTimeImmutable($at ?? 'now'));
+
+    // A stranger, a viewer who connected their account, and a login that matches a member's but not their id.
     [$viewer] = memberOf($this->organization, Role::Viewer);
-    $this->sc->accounts['github|vic'] = [$viewer->id];
-    $comment('mallory');
-    $comment('vic');
+    $this->sc->accounts['github|2002'] = [$viewer->id];
+    $this->sc->accounts['github|1001'] = [$this->user->id];
+    $comment('mallory', '3003');
+    $comment('vic', '2002');
+    $comment('grace', null);
     expect($preview->refresh()->status)->toBe(Preview::WAITING_APPROVAL)
-        ->and(collect($this->sc->comments)->pluck('body')->filter(fn ($b) => str_contains($b, "can't approve"))->count())->toBe(2);
+        // At most one refusal reply per pull request and hour.
+        ->and(collect($this->sc->comments)->pluck('body')->filter(fn ($b) => str_contains($b, 'Only Falak project members'))->count())->toBe(1);
 
-    // A member of another organization with the same login proves nothing.
+    // A member of another organization proves nothing.
     [$outsider] = memberOf(null, Role::Owner);
-    $this->sc->accounts['github|eve'] = [$outsider->id];
-    $comment('eve');
+    $this->sc->accounts['github|4004'] = [$outsider->id];
+    $comment('eve', '4004');
     expect($preview->refresh()->status)->toBe(Preview::WAITING_APPROVAL);
 
-    // Other comments are ignored.
-    $this->sc->accounts['github|grace'] = [$this->user->id];
-    $comment('grace', 'looks good');
+    // Other comments are ignored; a comment older than the head approves nothing.
+    $comment('grace', '1001', 'looks good');
+    $comment('grace', '1001', at: '-1 hour');
     expect($preview->refresh()->status)->toBe(Preview::WAITING_APPROVAL);
 
-    $comment('grace', "/falak preview\nplease");
+    $this->travel(2)->seconds();
+    $comment('grace', '1001', "/falak preview\nplease");
     expect($preview->refresh()->status)->toBe(Preview::CREATING)->and($preview->approved_by)->toBe($this->user->id);
 });
 
@@ -190,10 +237,39 @@ it('resolves only secrets available to previews, and none at all for a fork', fu
     expect($resolve($preview, '${{ secrets.OPEN }}')->variables['X'])->toBe('open-value')
         ->and($resolve($preview, '${{ secrets.CLOSED }}')->errors[0])->toContain('not available to preview environments');
 
+    fork_ready($this);
     open_pr($this, number: 8, fork: true);
     $fork = Preview::query()->where('number', 8)->sole();
-    app(PreviewLifecycle::class)->approve($fork, $this->user->id);
+    app(PreviewLifecycle::class)->approve($fork, $this->user->id, 'ui', $fork->head_sha);
     expect($resolve($fork->refresh(), '${{ secrets.OPEN }}')->errors[0])->toContain('forks get no secrets');
+});
+
+it('copies only the allowlisted variables and references into same-repo previews, never literal secrets', function () {
+    $this->settings->forceFill(['variables' => ['APP_KEY', 'APP_NAME']])->save();
+    EnvironmentVersion::query()->where('site_id', $this->web->id)->firstOrFail()->forceFill(['variables' => [
+        'APP_NAME' => 'Shop', 'APP_KEY' => 'base64:staging', 'STRIPE_SECRET' => 'sk_live_x', 'DATABASE_URL' => '${{ db.DATABASE_URL }}', 'MAIL_HOST' => 'smtp.internal',
+    ]])->save();
+
+    open_pr($this);
+    $copy = Site::query()->with('latestEnvironment')->findOrFail(previews_sole()->sites['web']);
+
+    expect($copy->latestEnvironment->variables)->toBe(['APP_NAME' => 'Shop', 'DATABASE_URL' => '${{ db.DATABASE_URL }}'])
+        ->and($copy->isolated)->toBeTrue()
+        ->and($copy->unix_user)->not->toBe($this->web->unix_user);
+});
+
+it('shares nothing with a fork, even services set to share', function () {
+    fork_ready($this);
+    projects_site($this->organization, 'api', ['URL' => 'https://api.staging'], $this->staging, [$this->server]);
+    $this->settings->forceFill(['services' => ['api' => PreviewSettings::SHARE]])->save();
+
+    open_pr($this, fork: true);
+    $preview = previews_sole();
+    app(PreviewLifecycle::class)->approve($preview, $this->user->id, 'ui', $preview->head_sha);
+
+    $result = app(VariableReferences::class)->resolveForSite($preview->refresh()->sites['web'], ['API' => '${{ api.URL }}']);
+    expect($result->errors[0])->toContain('unknown service')
+        ->and(Environment::query()->findOrFail($preview->environment_id)->shared_services)->toBeNull();
 });
 
 it('shares the services set to share from the base environment and leaves out omitted ones', function () {

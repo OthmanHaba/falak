@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $author
  * @property string $head_branch
  * @property string $head_sha
+ * @property ?Carbon $head_updated_at when Falak learned of the head
  * @property string $base_branch
  * @property bool $is_fork
  * @property ?string $source_repository
@@ -88,6 +89,7 @@ class Preview extends Model
             'deployments' => 'array',
             'basic_password' => Sealed::class,
             'approved_at' => 'datetime',
+            'head_updated_at' => 'datetime',
             'last_activity_at' => 'datetime',
             'closed_at' => 'datetime',
         ];

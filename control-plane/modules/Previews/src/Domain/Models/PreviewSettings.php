@@ -15,6 +15,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property ?string $base_environment_id
  * @property ?array<string, string> $services service name => include | share | omit (unlisted: include)
  * @property ?string $server_id
+ * @property ?string $fork_server_id a server hosting only previews: forks run there only
+ * @property ?list<string> $variables variable names previews copy from the base sites
+ * @property bool $acknowledge_shared_database
  * @property string $domain_pattern
  * @property ?array<string, array{strategy: string, source_environment_id?: ?string, sanitize_kind?: ?string, sanitize_script?: ?string}> $databases
  * @property int $max_concurrent
@@ -53,6 +56,8 @@ class PreviewSettings extends Model
     {
         return [
             'enabled' => 'boolean',
+            'variables' => 'array',
+            'acknowledge_shared_database' => 'boolean',
             'services' => 'array',
             'databases' => 'array',
             'max_concurrent' => 'integer',
@@ -66,7 +71,7 @@ class PreviewSettings extends Model
     }
 
     /**
-     * @return array{strategy: string, source_environment_id?: ?string, sanitize_kind?: ?string, sanitize_script?: ?string}
+     * @return array{strategy: string, source_environment_id?: ?string, sanitize_kind?: ?string, sanitize_script?: ?string, acknowledge_production?: bool}
      */
     public function databaseOf(string $service): array
     {

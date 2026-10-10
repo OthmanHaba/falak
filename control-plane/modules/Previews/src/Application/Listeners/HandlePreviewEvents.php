@@ -41,7 +41,7 @@ final class HandlePreviewEvents implements ShouldHandleEventsAfterCommit, Should
 
     public function commented(PullRequestCommented $event): void
     {
-        $this->lifecycle->commented($event->organizationId, $event->connectionId, $event->provider, $event->repository, $event->number, $event->author, $event->body);
+        $this->lifecycle->commented($event->organizationId, $event->connectionId, $event->provider, $event->repository, $event->number, $event->author, $event->body, $event->authorId, $event->createdAt);
     }
 
     public function databaseCreated(DatabaseCreated $event): void

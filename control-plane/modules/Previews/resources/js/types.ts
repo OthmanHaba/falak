@@ -9,6 +9,7 @@ export interface DatabaseSettings {
     source_environment_id?: string | null;
     sanitize_kind?: 'sql' | 'command' | null;
     sanitize_script?: string | null;
+    acknowledge_production?: boolean;
 }
 
 export interface PreviewSettingsForm {
@@ -16,6 +17,9 @@ export interface PreviewSettingsForm {
     base_environment_id: string | null;
     services: Record<string, ServiceMode>;
     server_id: string | null;
+    fork_server_id: string | null;
+    variables: string[];
+    acknowledge_shared_database: boolean;
     domain_pattern: string;
     databases: Record<string, DatabaseSettings>;
     max_concurrent: number;

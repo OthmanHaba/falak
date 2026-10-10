@@ -19,6 +19,12 @@ return new class extends Migration
             $table->json('services')->nullable();
             // null: the base environment's servers (the first site's leader)
             $table->ulid('server_id')->nullable();
+            // Pull requests from forks run only here: a server that hosts nothing but previews (required for forks).
+            $table->ulid('fork_server_id')->nullable();
+            // Variable names previews copy from the base sites (plus `${{ }}` references for same-repo previews).
+            $table->json('variables')->nullable();
+            // The project accepted that previews use the base environment's databases it shares.
+            $table->boolean('acknowledge_shared_database')->default(false);
             $table->string('domain_pattern', 100)->default('pr-{number}-{service}');
             // {database service name: {strategy: empty|clone_backup|clone_sanitize, source_environment_id?, sanitize_kind?, sanitize_script?}}
             $table->json('databases')->nullable();
@@ -44,6 +50,8 @@ return new class extends Migration
             $table->string('author', 250)->nullable();
             $table->string('head_branch', 250);
             $table->string('head_sha', 64);
+            // When Falak learned of the head: a `/falak preview` comment written before it approves nothing.
+            $table->timestamp('head_updated_at')->nullable();
             $table->string('base_branch', 250)->default('');
             $table->boolean('is_fork')->default(false);
             $table->string('source_repository')->nullable();

@@ -127,7 +127,9 @@ export default function Index({ project, previews, settings, environments, servi
 }
 
 function PreviewCard({ preview, canManage, onDelete }: { preview: PreviewRow; canManage: boolean; onDelete: () => void }) {
-    const post = (action: 'approve' | 'redeploy') => router.post(`/previews/${preview.id}/${action}`, {}, { preserveScroll: true });
+    // An approval names the head the member reviewed: refused when new commits arrived since.
+    const post = (action: 'approve' | 'redeploy') =>
+        router.post(`/previews/${preview.id}/${action}`, action === 'approve' ? { sha: preview.head_sha } : {}, { preserveScroll: true });
     const urls = Object.entries(preview.urls);
 
     return (
@@ -273,6 +275,39 @@ function SettingsForm({
                             />
                         </Field>
                         <Field
+                            label="Fork server"
+                            error={errors.fork_server_id}
+                            hint="Pull requests from forks run only here: a server with nothing but previews, never the preview edge. Docker and Compose services only."
+                        >
+                            <Select
+                                value={form.data.fork_server_id ?? '_'}
+                                onValueChange={(value) => form.setData('fork_server_id', value === '_' ? null : value)}
+                                options={[
+                                    { value: '_', label: 'None (forks are not previewed)' },
+                                    ...servers.map((s) => ({ value: s.id, label: s.name })),
+                                ]}
+                            />
+                        </Field>
+                        <Field
+                            label="Variables previews copy"
+                            error={errors.variables}
+                            hint="Names, comma separated. Secret values never copy; your own pull requests also keep ${{ }} references."
+                        >
+                            <Input
+                                mono
+                                value={form.data.variables.join(', ')}
+                                onChange={(e) =>
+                                    form.setData(
+                                        'variables',
+                                        e.target.value
+                                            .split(',')
+                                            .map((name) => name.trim())
+                                            .filter(Boolean),
+                                    )
+                                }
+                            />
+                        </Field>
+                        <Field
                             label="Domain pattern"
                             error={errors.domain_pattern}
                             hint="Under the preview domain. Placeholders: {number}, {service}, {project}."
@@ -343,6 +378,14 @@ function SettingsForm({
                                     )}
                                 </div>
                             ))}
+                            {services.some((s) => s.kind === 'database' && mode(s.name) === 'share') && (
+                                <Field label="Previews use the base environment's database" error={errors.acknowledge_shared_database} inline>
+                                    <Switch
+                                        checked={form.data.acknowledge_shared_database}
+                                        onCheckedChange={(value) => form.setData('acknowledge_shared_database', value)}
+                                    />
+                                </Field>
+                            )}
                             <p className="text-fg-faint text-xs">
                                 Redis and Valkey always start empty. Only secrets marked “available to previews” reach previews; pull requests from
                                 forks get none.
@@ -379,6 +422,19 @@ function DatabaseFields({
                         value={value.source_environment_id ?? '_'}
                         onValueChange={(id) => onChange({ source_environment_id: id === '_' ? null : id })}
                         options={[{ value: '_', label: 'Default' }, ...environments.map((e) => ({ value: e.id, label: e.name }))]}
+                    />
+                </Field>
+            )}
+            {value.strategy === 'clone_backup' && (
+                <Field
+                    label="Unsanitized production data"
+                    inline
+                    error={errors[`databases.${name}.acknowledge_production`]}
+                    hint="Needed when this copies a production backup: previews would hold it as is. Forks always start empty."
+                >
+                    <Switch
+                        checked={Boolean(value.acknowledge_production)}
+                        onCheckedChange={(checked) => onChange({ acknowledge_production: checked })}
                     />
                 </Field>
             )}

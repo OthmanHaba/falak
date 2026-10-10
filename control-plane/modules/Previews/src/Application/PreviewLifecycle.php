@@ -62,6 +62,7 @@ final class PreviewLifecycle
         private readonly SourceControlGateway $sourceControl,
         private readonly OrganizationAccess $access,
         private readonly PreviewNotifier $notifier,
+        private readonly PreviewServers $servers,
         private readonly AuditLog $audit,
     ) {}
 
@@ -100,6 +101,7 @@ final class PreviewLifecycle
                     'approved_by' => null,
                     'approved_at' => null,
                     'closed_at' => null,
+                    'head_updated_at' => now(),
                     'last_activity_at' => now(),
                 ]);
 
@@ -136,19 +138,26 @@ final class PreviewLifecycle
             }
 
             $changed = $preview->head_sha !== $pr->headSha;
-            $preview->forceFill([...$this->pullRequestFields($pr), 'last_activity_at' => now()])->save();
 
             if (! $changed) {
+                $preview->forceFill($this->pullRequestFields($pr))->save();
+
                 continue;
             }
 
-            // New code from a fork is untrusted again: a member approves each new head.
+            // New code from a fork is untrusted again: a member approves each new head. The head and the status change
+            // in one write (never an approved preview with an unreviewed head), and a fork's pushes don't keep it alive
+            // (the idle TTL still applies).
             if ($preview->is_fork) {
-                $preview->forceFill(['status' => Preview::WAITING_APPROVAL, 'approved_by' => null, 'approved_at' => null, 'status_message' => null])->save();
+                $preview->forceFill([...$this->pullRequestFields($pr), 'head_updated_at' => now(),
+                    'status' => Preview::WAITING_APPROVAL, 'approved_by' => null, 'approved_at' => null, 'status_message' => null])->save();
+                $this->dropUnfinishedSanitized($preview);
                 $this->notifier->update($preview);
 
                 continue;
             }
+
+            $preview->forceFill([...$this->pullRequestFields($pr), 'head_updated_at' => now(), 'last_activity_at' => now()])->save();
 
             match ($preview->status) {
                 Preview::READY, Preview::FAILED, Preview::DEPLOYING => $preview->environment_id !== null ? $this->deploy($preview) : $this->start($preview),
@@ -177,7 +186,7 @@ final class PreviewLifecycle
      * Falak (an OAuth or token connection of the organization) and may manage previews. Anyone else is told to ask a
      * member, or to approve in Falak.
      */
-    public function commented(string $organizationId, string $connectionId, string $provider, string $repository, int $number, ?string $author, string $body): void
+    public function commented(string $organizationId, string $connectionId, string $provider, string $repository, int $number, ?string $author, string $body, ?string $authorId = null, ?\DateTimeImmutable $commentedAt = null): void
     {
         if (preg_match('#^\s*/falak\s+preview\b#i', $body) !== 1) {
             return;
@@ -188,31 +197,54 @@ final class PreviewLifecycle
                 continue;
             }
 
-            $approver = $this->memberFor($organizationId, $provider, (string) $author);
+            // Matched on the provider's immutable account id, never a login or nickname (renamed and reused).
+            $approver = $authorId !== null ? $this->memberFor($organizationId, $provider, $authorId) : null;
 
             if ($approver === null) {
-                $this->notifier->reply($preview, '@'.Str::limit((string) $author, 60, '').' can\'t approve this preview: approvals come from Falak project members who connected this '
-                    .ucfirst($provider).' account in Falak and may manage previews. A member can also approve it in Falak (project → Previews).');
                 $this->audit->record('previews.approval_refused', 'preview', $preview->id, ['pull_request' => $preview->label(), 'commenter' => $author], $preview->organization_id);
+                // At most one such reply per pull request and hour (a comment storm doesn't become one from Falak).
+                if (Cache::add("previews:refusal:{$preview->id}", true, 3600)) {
+                    $this->notifier->reply($preview, 'Only Falak project members who connected this '.ucfirst($provider).' account in Falak and may manage previews can approve with `/falak preview`. A member can also approve it in Falak (project → Previews).');
+                }
 
                 continue;
             }
 
-            $this->approve($preview, $approver, 'comment');
+            // The approval covers the head the commenter saw: a comment older than the current head approves nothing.
+            if ($commentedAt === null || $preview->head_updated_at === null || $commentedAt->getTimestamp() < $preview->head_updated_at->getTimestamp()) {
+                $this->audit->record('previews.approval_refused', 'preview', $preview->id, ['pull_request' => $preview->label(), 'commenter' => $author, 'reason' => 'stale'], $preview->organization_id);
+                $this->notifier->reply($preview, 'New commits arrived after that `/falak preview`: review the current head and approve again.');
+
+                continue;
+            }
+
+            $this->approve($preview, $approver, 'comment', $preview->head_sha);
         }
     }
 
     // ---- actions ------------------------------------------------------------------------------
 
-    /** A member approves a fork's pull request (the comment or the UI): the preview starts, or redeploys the new head. */
-    public function approve(Preview $preview, string $userId, string $via = 'ui'): void
+    /**
+     * A member approves a fork's pull request at the head they reviewed ($sha): refused when the pull request moved on
+     * since. The preview starts, or redeploys the approved head when everything it runs is ready.
+     */
+    public function approve(Preview $preview, string $userId, string $via, string $sha): void
     {
         if ($preview->status !== Preview::WAITING_APPROVAL) {
             throw ValidationException::withMessages(['preview' => 'This preview is not waiting for an approval.']);
         }
 
+        if (! hash_equals($preview->head_sha, $sha)) {
+            throw ValidationException::withMessages(['sha' => 'The pull request has new commits since you reviewed it ('.substr($preview->head_sha, 0, 7).' now): review them and approve again.']);
+        }
+
         $preview->forceFill(['approved_by' => $userId, 'approved_at' => now(), 'last_activity_at' => now()])->save();
         $this->audit->record('previews.approved', 'preview', $preview->id, ['pull_request' => $preview->label(), 'sha' => $preview->head_sha, 'via' => $via], $preview->organization_id);
+
+        if ($preview->environment_id !== null && ! $this->databasesReady($preview)) {
+            // Copies that never finished (dropped when it waited): set the preview up again.
+            $this->release($preview);
+        }
 
         $preview->environment_id !== null ? $this->deploy($preview) : $this->start($preview);
     }
@@ -233,27 +265,11 @@ final class PreviewLifecycle
      */
     public function destroy(Preview $preview, string $reason): void
     {
-        foreach ($preview->sites ?? [] as $service => $siteId) {
-            $this->attempt($preview, "site {$service}", function () use ($siteId) {
-                $this->domains->release($siteId);
-                $volumes = array_values(array_map(fn ($volume) => $volume->id, array_filter($this->volumes->forSite($siteId), fn ($volume) => ! $volume->protected)));
-                $this->siteFactory->delete($siteId, $volumes);
-            });
-        }
-
-        foreach ($preview->databases ?? [] as $service => $database) {
-            $this->attempt($preview, "database {$service}", fn () => $this->databases->delete($database['database_id'], deleteVolume: true));
-        }
-
-        if ($preview->environment_id !== null) {
-            $environmentId = $preview->environment_id;
-            $this->attempt($preview, 'environment', fn () => $this->environments->delete($environmentId));
-        }
+        $this->release($preview);
 
         $preview->forceFill([
             'status' => Preview::CLOSED,
             'status_message' => $reason,
-            'environment_id' => null,
             'closed_at' => now(),
             'basic_password' => null,
         ])->save();
@@ -263,12 +279,37 @@ final class PreviewLifecycle
         $this->promoteQueued($preview->project_id);
     }
 
+    /** Delete what the preview holds (sites and volumes, databases and volumes, DNS records, the environment). */
+    private function release(Preview $preview): void
+    {
+        foreach ($preview->sites ?? [] as $service => $siteId) {
+            $this->attempt($preview, "site {$service}", function () use ($siteId) {
+                $this->domains->release($siteId);
+                $volumes = array_values(array_map(fn ($volume) => $volume->id, array_filter($this->volumes->forSite($siteId), fn ($volume) => ! $volume->protected)));
+                $this->siteFactory->delete($siteId, $volumes);
+            });
+        }
+
+        foreach ($preview->databases ?? [] as $service => $database) {
+            if ($database['state'] !== 'dropped') {
+                $this->attempt($preview, "database {$service}", fn () => $this->databases->delete($database['database_id'], deleteVolume: true));
+            }
+        }
+
+        if ($preview->environment_id !== null) {
+            $environmentId = $preview->environment_id;
+            $this->attempt($preview, 'environment', fn () => $this->environments->delete($environmentId));
+        }
+
+        $preview->forceFill(['environment_id' => null, 'sites' => null, 'databases' => null, 'urls' => null, 'deployments' => null])->save();
+    }
+
     /** Previews idle (no push, approval or redeploy) longer than their project's TTL are deleted. */
     public function cleanupIdle(): int
     {
         $deleted = 0;
 
-        foreach (Preview::query()->whereNotNull('environment_id')->where('status', '!=', Preview::CLOSED)->get() as $preview) {
+        foreach (Preview::query()->where('status', '!=', Preview::CLOSED)->get() as $preview) {
             $ttl = PreviewSettings::query()->where('project_id', $preview->project_id)->value('idle_ttl_hours') ?? 72;
 
             if ($preview->last_activity_at !== null && $preview->last_activity_at->lt(now()->subHours((int) $ttl))) {
@@ -290,6 +331,11 @@ final class PreviewLifecycle
             return;
         }
 
+        // A preview that stopped setting up (failed, waiting for an approval) restores nothing more.
+        if ($preview->status !== Preview::CREATING) {
+            return;
+        }
+
         $entry = $preview->databases[$service];
 
         if ($entry['strategy'] === PreviewSettings::EMPTY) {
@@ -303,7 +349,7 @@ final class PreviewLifecycle
             $source = $this->sourceDatabase($preview, $service, $entry['strategy']);
             $restoreId = $this->databases->restoreLatestBackup($source, $databaseId);
             $this->setDatabase($preview, $service, ['state' => 'restoring', 'restore_id' => $restoreId]);
-            $this->notifier->update($preview, "Restoring {$service} from its newest backup.");
+            $this->notifier->update($preview);
         } catch (ValidationException $e) {
             $this->fail($preview, "{$service}: ".self::message($e), $entry['strategy'] === PreviewSettings::CLONE_SANITIZE ? $service : null);
         }
@@ -311,13 +357,20 @@ final class PreviewLifecycle
 
     public function restoreFinished(string $restoreId, bool $succeeded, ?string $error): void
     {
-        foreach (Preview::query()->where('status', Preview::CREATING)->get() as $preview) {
+        foreach (Preview::query()->where('status', '!=', Preview::CLOSED)->get() as $preview) {
             foreach ($preview->databases ?? [] as $service => $entry) {
                 if (($entry['restore_id'] ?? null) !== $restoreId || $entry['state'] !== 'restoring') {
                     continue;
                 }
 
                 $sanitize = $entry['strategy'] === PreviewSettings::CLONE_SANITIZE;
+
+                // The preview left its setup meanwhile: an unsanitized copy never stays.
+                if ($preview->status !== Preview::CREATING) {
+                    $sanitize ? $this->dropDatabase($preview, (string) $service) : $this->setDatabase($preview, $service, ['state' => $succeeded ? 'ready' : 'failed']);
+
+                    return;
+                }
 
                 if (! $succeeded) {
                     $this->fail($preview, "Restoring {$service} failed: ".($error ?? 'unknown error'), $sanitize ? $service : null);
@@ -356,7 +409,14 @@ final class PreviewLifecycle
         $preview = Preview::query()->find($m[1]);
         $service = $m[2];
 
-        if ($preview === null || $preview->status !== Preview::CREATING || ($preview->databases[$service]['state'] ?? null) !== 'sanitizing') {
+        if ($preview === null || $preview->status === Preview::CLOSED || ($preview->databases[$service]['state'] ?? null) !== 'sanitizing') {
+            return;
+        }
+
+        if ($preview->status !== Preview::CREATING) {
+            // Sanitized or not, a copy of production whose preview left its setup goes.
+            $this->dropDatabase($preview, $service);
+
             return;
         }
 
@@ -408,17 +468,26 @@ final class PreviewLifecycle
             return;
         }
 
-        $running = Preview::query()->where('project_id', $preview->project_id)->whereKeyNot($preview->id)->whereNotNull('environment_id')->where('status', '!=', Preview::CLOSED)->count();
+        // Counted and claimed under the project's lock: two pull requests opening together can't both take the last slot.
+        $claimed = Cache::lock("previews:project:{$preview->project_id}", 30)->block(20, function () use ($preview, $settings) {
+            $running = Preview::query()->where('project_id', $preview->project_id)->whereKeyNot($preview->id)
+                ->where(fn ($q) => $q->whereNotNull('environment_id')->orWhere('status', Preview::CREATING))->where('status', '!=', Preview::CLOSED)->count();
 
-        if ($running >= $settings->max_concurrent) {
-            $preview->forceFill(['status' => Preview::QUEUED, 'status_message' => "{$running} previews are running (the project's limit is {$settings->max_concurrent})."])->save();
-            $this->notifier->update($preview);
+            if ($running >= $settings->max_concurrent) {
+                $preview->forceFill(['status' => Preview::QUEUED, 'status_message' => "{$running} previews are running (the project's limit is {$settings->max_concurrent})."])->save();
 
+                return false;
+            }
+
+            $preview->forceFill(['status' => Preview::CREATING, 'status_message' => null])->save();
+
+            return true;
+        });
+        $this->notifier->update($preview);
+
+        if (! $claimed) {
             return;
         }
-
-        $preview->forceFill(['status' => Preview::CREATING, 'status_message' => null])->save();
-        $this->notifier->update($preview);
 
         try {
             $this->create($preview, $settings);
@@ -444,17 +513,25 @@ final class PreviewLifecycle
         $services = $this->projects->servicesIn($settings->base_environment_id);
         $include = array_values(array_filter($services, fn (ServiceData $s) => $settings->modeOf($s->name) === PreviewSettings::INCLUDE));
         $shared = array_values(array_map(fn (ServiceData $s) => $s->name, array_filter($services, fn (ServiceData $s) => $settings->modeOf($s->name) === PreviewSettings::SHARE)));
-        $serverId = $settings->server_id ?? $this->defaultServer($services)
-            ?? throw ValidationException::withMessages(['server_id' => 'Pick the server previews run on (project → Previews → Settings).']);
+        $serverId = $preview->is_fork ? $this->forkServer($settings) : ($settings->server_id ?? $this->defaultServer($services)
+            ?? throw ValidationException::withMessages(['server_id' => 'Pick the server previews run on (project → Previews → Settings).']));
         $siteOverrides = [];
 
         foreach ($include as $service) {
             if ($service->kind === ServiceKind::Site && ($site = $this->sites->find($service->refId)) !== null) {
+                if ($preview->is_fork && ! PreviewServers::forkRuntime($site->runtime)) {
+                    throw ValidationException::withMessages(['runtime' => "{$service->name} runs natively ({$site->runtime->value}): pull requests from forks only run as containers (Docker or Compose)."]);
+                }
+
                 $siteOverrides[$service->name] = [
                     // A fork's branch lives in the fork: the head commit is fetched from the base repository.
                     'branch' => $preview->is_fork || $preview->head_branch === '' ? $site->branch : $preview->head_branch,
                     'server_ids' => [$serverId],
                     'name_suffix' => "pr-{$preview->number}",
+                    // Only the names the project lists (plus references for its own pull requests): never the base's
+                    // other literal values.
+                    'only_variables' => array_values($settings->variables ?? []),
+                    'references' => ! $preview->is_fork,
                 ];
             }
         }
@@ -471,8 +548,9 @@ final class PreviewLifecycle
                 continue;
             }
 
-            // Redis / Valkey always start empty.
+            // Redis / Valkey always start empty; a fork never gets a plain copy of real data (empty or sanitized only).
             $strategy = $base->isKeyValue() ? PreviewSettings::EMPTY : (string) $settings->databaseOf($service->name)['strategy'];
+            $strategy = $preview->is_fork && $strategy === PreviewSettings::CLONE_BACKUP ? PreviewSettings::EMPTY : $strategy;
             $database = $this->databases->create($preview->organization_id, $serverId, $base->engine, Str::limit(Str::slug($service->name), 40, '')."-pr-{$preview->number}", null, [
                 'version' => $base->engineVersion,
                 'database' => $base->isKeyValue() ? null : $base->name,
@@ -480,8 +558,10 @@ final class PreviewLifecycle
                 'disk_gb' => self::DB_DISK_GB,
                 'environment_id' => $environmentId,
             ]);
-            $this->environments->place($environmentId, ServiceKind::Database, $database->id, $service->name, $service->x, $service->y);
+            // Recorded at once: a later failure still deletes it.
             $databases[$service->name] = ['database_id' => $database->id, 'strategy' => $strategy, 'state' => $database->status === 'active' ? 'created' : 'creating'];
+            $preview->forceFill(['databases' => $databases])->save();
+            $this->environments->place($environmentId, ServiceKind::Database, $database->id, $service->name, $service->x, $service->y);
         }
 
         $preview->forceFill(['databases' => $databases])->save();
@@ -545,6 +625,15 @@ final class PreviewLifecycle
 
     private function deploy(Preview $preview, ?string $userId = null): void
     {
+        // Never against a database that is not ready (a production copy still being restored or sanitized).
+        if (! $this->databasesReady($preview)) {
+            if ($preview->status !== Preview::CREATING) {
+                $this->fail($preview, 'A database of the preview is not ready.');
+            }
+
+            return;
+        }
+
         $deployments = [];
         $preview->forceFill(['status' => Preview::DEPLOYING, 'status_message' => null])->save();
 
@@ -570,16 +659,65 @@ final class PreviewLifecycle
     private function fail(Preview $preview, string $message, ?string $dropDatabase = null): void
     {
         if ($dropDatabase !== null && isset($preview->databases[$dropDatabase])) {
-            $entry = $preview->databases[$dropDatabase];
-            $this->attempt($preview, "database {$dropDatabase}", fn () => $this->databases->delete($entry['database_id'], deleteVolume: true));
-            $databases = $preview->databases;
-            unset($databases[$dropDatabase]);
-            $preview->forceFill(['databases' => $databases]);
+            $this->dropDatabase($preview, $dropDatabase);
         }
+
+        $this->dropUnfinishedSanitized($preview);
 
         $preview->forceFill(['status' => Preview::FAILED, 'status_message' => Str::limit($message, 990)])->save();
         $this->audit->record('previews.failed', 'preview', $preview->id, ['pull_request' => $preview->label(), 'reason' => Str::limit($message, 200)], $preview->organization_id);
         $this->notifier->update($preview);
+    }
+
+    private function databasesReady(Preview $preview): bool
+    {
+        foreach ($preview->databases ?? [] as $entry) {
+            if ($entry['state'] !== 'ready') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** A production copy that was not sanitized yet never outlives its setup. */
+    private function dropUnfinishedSanitized(Preview $preview): void
+    {
+        foreach ($preview->databases ?? [] as $service => $entry) {
+            if ($entry['strategy'] === PreviewSettings::CLONE_SANITIZE && ! in_array($entry['state'], ['ready', 'dropped'], true)) {
+                $this->dropDatabase($preview, (string) $service);
+            }
+        }
+    }
+
+    private function dropDatabase(Preview $preview, string $service): void
+    {
+        $entry = $preview->databases[$service] ?? null;
+
+        if ($entry === null) {
+            return;
+        }
+
+        $this->attempt($preview, "database {$service}", fn () => $this->databases->delete($entry['database_id'], deleteVolume: true));
+        $this->setDatabase($preview, $service, ['state' => 'dropped']);
+        $this->audit->record('previews.database_dropped', 'preview', $preview->id, ['pull_request' => $preview->label(), 'service' => $service, 'strategy' => $entry['strategy']], $preview->organization_id);
+    }
+
+    /**
+     * The server a fork's pull request runs on: the project's fork server, which hosts nothing but previews.
+     *
+     * @throws ValidationException
+     */
+    private function forkServer(PreviewSettings $settings): string
+    {
+        $serverId = $settings->fork_server_id
+            ?? throw ValidationException::withMessages(['fork_server_id' => 'Pull requests from forks need a dedicated fork server (project → Previews → Settings).']);
+
+        if (($problem = $this->servers->forkProblem($serverId)) !== null) {
+            throw ValidationException::withMessages(['fork_server_id' => $problem]);
+        }
+
+        return $serverId;
     }
 
     private function promoteQueued(string $projectId): void
@@ -662,10 +800,10 @@ final class PreviewLifecycle
         ];
     }
 
-    /** The Falak member who may manage previews and connected the provider account $login (null: nobody). */
-    private function memberFor(string $organizationId, string $provider, string $login): ?string
+    /** The Falak member who may manage previews and connected the provider account $accountId (null: nobody). */
+    private function memberFor(string $organizationId, string $provider, string $accountId): ?string
     {
-        foreach ($this->sourceControl->usersWithAccount($organizationId, $provider, $login) as $userId) {
+        foreach ($this->sourceControl->usersWithAccount($organizationId, $provider, $accountId) as $userId) {
             $user = Auth::guard('web')->getProvider()->retrieveById($userId);
 
             if ($user !== null && $this->access->can($user, $organizationId, PreviewPolicy::MANAGE)) {
@@ -728,7 +866,7 @@ final class PreviewLifecycle
      */
     private function byDatabase(string $databaseId): array
     {
-        foreach (Preview::query()->where('status', Preview::CREATING)->get() as $preview) {
+        foreach (Preview::query()->where('status', '!=', Preview::CLOSED)->get() as $preview) {
             foreach ($preview->databases ?? [] as $service => $entry) {
                 if ($entry['database_id'] === strtolower($databaseId)) {
                     return [$preview, (string) $service];

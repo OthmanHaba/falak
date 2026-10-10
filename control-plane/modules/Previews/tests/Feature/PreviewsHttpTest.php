@@ -70,10 +70,17 @@ it('approves a fork, redeploys and deletes from the UI', function () {
     [$developer] = memberOf($this->organization, Role::Developer);
     $this->actingAs($developer);
 
-    $this->post("/previews/{$preview->id}/approve")->assertRedirect()->assertSessionHasNoErrors();
-    expect($preview->refresh()->approved_by)->toBe($developer->id)->and($preview->environment_id)->not->toBeNull();
+    // The approval names the reviewed head: missing or stale, it is refused.
+    $this->post("/previews/{$preview->id}/approve")->assertSessionHasErrors('sha');
+    $this->post("/previews/{$preview->id}/approve", ['sha' => str_repeat('0', 40)])->assertSessionHasErrors('sha');
+    expect($preview->refresh()->approved_by)->toBeNull();
 
-    $preview->forceFill(['status' => Preview::READY, 'deployments' => []])->save();
+    $this->post("/previews/{$preview->id}/approve", ['sha' => $preview->head_sha])->assertRedirect()->assertSessionHasNoErrors();
+    // Approved, but this project has no fork server: the fork does not run anywhere.
+    expect($preview->refresh()->approved_by)->toBe($developer->id)->and($preview->status)->toBe(Preview::FAILED)
+        ->and($preview->environment_id)->toBeNull();
+
+    $preview->forceFill(['status' => Preview::READY, 'deployments' => [], 'environment_id' => $this->staging->id, 'sites' => ['web' => $this->web->id], 'databases' => []])->save();
     $this->post("/previews/{$preview->id}/redeploy")->assertRedirect()->assertSessionHasNoErrors();
     expect($this->deployments->deployed)->not->toBe([]);
 
@@ -109,7 +116,10 @@ it('saves settings, validates them and pins the base repositories\' webhooks', f
 });
 
 it('lets only the operator organization\'s owners and admins set the preview domain', function () {
+    // Recorded by id only (a slug could be taken by whoever creates an organization first).
     config(['previews.operator_organization' => $this->organization->slug]);
+    $this->get('/settings/previews')->assertInertia(fn (Assert $page) => $page->where('can.manage', false));
+    config(['previews.operator_organization' => $this->organization->id]);
     $this->get('/settings/previews')->assertOk()->assertInertia(fn (Assert $page) => $page->component('Previews/Domain', false)->where('can.manage', true));
     $this->put('/settings/previews', ['domain' => 'prv.falak.sh', 'server_id' => $this->server->id])->assertRedirect()->assertSessionHasNoErrors();
     expect($this->domains->settings->domain)->toBe('prv.falak.sh');

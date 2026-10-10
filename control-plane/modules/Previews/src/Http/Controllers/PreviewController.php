@@ -48,6 +48,9 @@ final class PreviewController extends Controller
                 'base_environment_id' => $settings?->base_environment_id,
                 'services' => (object) ($settings?->services ?? []),
                 'server_id' => $settings?->server_id,
+                'fork_server_id' => $settings?->fork_server_id,
+                'variables' => $settings?->variables ?? [],
+                'acknowledge_shared_database' => (bool) $settings?->acknowledge_shared_database,
                 'domain_pattern' => $settings?->domain_pattern ?? 'pr-{number}-{service}',
                 'databases' => (object) ($settings?->databases ?? []),
                 'max_concurrent' => $settings?->max_concurrent ?? 5,
@@ -73,7 +76,9 @@ final class PreviewController extends Controller
     public function approve(Request $request, Preview $preview, PreviewLifecycle $lifecycle): RedirectResponse
     {
         $this->authorize('manage', $preview);
-        $lifecycle->approve($preview, (string) $request->user()?->getAuthIdentifier());
+        // The head the member reviewed: refused when the pull request moved on since the page loaded.
+        $data = $request->validate(['sha' => ['required', 'string', 'max:64']]);
+        $lifecycle->approve($preview, (string) $request->user()?->getAuthIdentifier(), 'ui', $data['sha']);
 
         return back()->with('success', "Preview of #{$preview->number} approved.");
     }

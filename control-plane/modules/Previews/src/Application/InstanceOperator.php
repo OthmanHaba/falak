@@ -9,7 +9,8 @@ use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * The organization that operates the instance and owns its preview domain (its DNS credential and edge server): the
- * one install.sh records (FALAK_DR_ORGANIZATION, like disaster recovery; an id or slug), else the only organization
+ * one install.sh records (FALAK_DR_ORGANIZATION, like disaster recovery; its id only: a slug can be taken by
+ * anyone who creates an organization first), else the only organization
  * of a single-organization install, else none. Its owners and admins edit Settings → Previews; everyone else only
  * sees whether previews are available.
  */
@@ -26,8 +27,12 @@ final class InstanceOperator
         $all = $this->organizations->all();
 
         if ($configured !== '') {
+            if (preg_match('/^[0-9a-hjkmnp-tv-z]{26}$/', strtolower($configured)) !== 1) {
+                return null;
+            }
+
             foreach ($all as $organization) {
-                if ($organization->id === strtolower($configured) || $organization->slug === $configured) {
+                if ($organization->id === strtolower($configured)) {
                     return $organization->id;
                 }
             }
