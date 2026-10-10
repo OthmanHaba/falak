@@ -19,6 +19,8 @@ use Falak\Volumes\Domain\Models\Operation;
 use Falak\Volumes\Domain\Models\Volume;
 use Falak\Volumes\Domain\Models\VolumeBackup;
 use Falak\Volumes\Events\VolumeAlmostFull;
+use Falak\Volumes\Events\VolumeBackupFinished;
+use Falak\Volumes\Events\VolumeSpaceRecovered;
 use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
@@ -155,6 +157,9 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
         }
 
         $sha = is_string($result['sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/', $result['sha256']) === 1 ? $result['sha256'] : null;
+        $previous = VolumeBackup::query()->whereKeyNot($backup->id)->whereNotNull('finished_at')
+            ->when($backup->schedule_id !== null, fn ($q) => $q->where('schedule_id', $backup->schedule_id), fn ($q) => $q->whereNull('schedule_id')->where('volume_id', $backup->volume_id))
+            ->latest('finished_at')->value('status');
 
         $plainSha = is_string($result['plaintext_sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/', $result['plaintext_sha256']) === 1 ? $result['plaintext_sha256'] : null;
 
@@ -183,6 +188,11 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
         if ($succeeded && $backup->schedule_id !== null) {
             PruneScheduleBackups::dispatch($backup->schedule_id);
+        }
+
+        // Failures alert; the first success after one resolves it.
+        if (! $succeeded || $previous === BackupStatus::Failed) {
+            VolumeBackupFinished::dispatch($succeeded, $backup->id, $backup->organization_id, $backup->volume_id, $backup->volume_name, $backup->schedule_id, $succeeded ? null : $error);
         }
 
         $operation = $this->operation($commandId);
@@ -271,7 +281,7 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
     /**
      * Usage of the volumes a server reported (only its own volumes, of the organization that owns it). A volume over
-     * {@see VolumeAlmostFull::THRESHOLD} of its limit alerts once per crossing.
+     * {@see VolumeAlmostFull::THRESHOLD} of its limit alerts once per crossing, resolved when it drops back below.
      *
      * @param  array<string, mixed>  $result  volume.inventory $defs/result
      */
@@ -306,6 +316,8 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
                 if ($after !== null && $after > VolumeAlmostFull::THRESHOLD && ($before === null || $before <= VolumeAlmostFull::THRESHOLD)) {
                     VolumeAlmostFull::dispatch($volume->id, $volume->organization_id, $volume->server_id, $volume->name, (int) $volume->used_bytes, (int) $volume->size_limit_bytes);
+                } elseif ($before !== null && $before > VolumeAlmostFull::THRESHOLD && ($after === null || $after <= VolumeAlmostFull::THRESHOLD)) {
+                    VolumeSpaceRecovered::dispatch($volume->id, $volume->organization_id, $volume->name, (int) $volume->used_bytes, max(1, (int) $volume->size_limit_bytes));
                 }
             });
     }
