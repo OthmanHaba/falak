@@ -18,6 +18,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
 	"github.com/OthmanHaba/falak/agent/internal/resources"
+	"github.com/OthmanHaba/falak/agent/internal/security"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
 	"github.com/OthmanHaba/falak/agent/internal/volumes"
 )
@@ -39,6 +40,7 @@ var Catalogue = []string{
 	"telemetry.configure",
 	"volume.create", "volume.resize", "volume.delete", "volume.inventory", "volume.archive", "volume.restore", "volume.clone", "volume.browse", "volume.download", "volume.drill",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",
+	"security.audit", "security.fix", "security.undo",
 }
 
 const (
@@ -181,6 +183,9 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		"volume.resize":          `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"size_bytes":1024}`,
 		"volume.restore":         `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"size_bytes":16777216,"source":{"kind":"url","url":"https://s3.example.com/k"},"sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","archive_bytes":0}`,
 		"volume.clone":           `{"source":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"target":{"id":"01j9z8y7x6w5v4t3s2r1q0p9nb","kind":"docker"}}`,
+		"security.audit":         `{"expected_ports":["tcp/http"]}`,
+		"security.fix":           `{"fix_id":"sh -c reboot"}`,
+		"security.undo":          `{"fix_id":"ssh.harden","backup_id":"../../../etc"}`,
 	}
 	for typ, payload := range bad {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
@@ -396,6 +401,41 @@ func TestVolumeResultsValidate(t *testing.T) {
 		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
 		if err := sch.Validate(v); err != nil {
 			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
+		}
+	}
+}
+
+// Results of the security executors validate against their schemas' $defs.result.
+func TestSecurityResultsValidate(t *testing.T) {
+	c := compiler(t)
+	for typ, res := range map[string]any{
+		"security.audit": security.AuditResult{Checks: []security.Check{
+			{ID: "ssh.password_authentication", Title: "Password logins are off", Area: "ssh", Status: "fail", Severity: "high", Evidence: "PasswordAuthentication yes", FixID: "ssh.harden", Disruptive: true},
+			{ID: "firewall.port.tcp.8080", Title: "Port tcp/8080 listens on a public interface", Area: "firewall", Status: "warn", Severity: "low", Evidence: "node", FixID: "firewall.close_port:tcp:8080"},
+			{ID: "accounts.unknown_users", Title: "Users with a login shell", Area: "accounts", Status: "info", Severity: "info", Evidence: "ubuntu"},
+		}, DurationMS: 1234},
+		"security.fix":  security.FixResult{FixID: "kernel.sysctl", Changed: true, BackupID: "20261009T120000Z-1a2b3c4d", Undoable: true, Message: "hardened"},
+		"security.undo": security.UndoResult{FixID: "kernel.sysctl", BackupID: "20261009T120000Z-1a2b3c4d", Restored: 3},
+	} {
+		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(res)
+		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+		if err := sch.Validate(v); err != nil {
+			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
+		}
+	}
+	// Every fix of the allowlist the agent applies fits the payload pattern.
+	sch, err := c.Compile(idBase + "commands/security.fix.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range security.FixIDs() {
+		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(`{"fix_id":"` + id + `"}`))
+		if err := sch.Validate(v); err != nil {
+			t.Errorf("fix %s does not fit the schema: %v", id, err)
 		}
 	}
 }

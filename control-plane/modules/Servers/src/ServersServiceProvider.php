@@ -20,12 +20,14 @@ use Falak\Servers\Application\Listeners\RecordReportedFacts;
 use Falak\Servers\Application\Listeners\StartProvisioningOnEnrollment;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Servers\Contracts\ServerHeaders;
+use Falak\Servers\Contracts\ServerSshKeys;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
 use Falak\Servers\Domain\Policies\ServerPolicy;
 use Falak\Servers\Domain\Policies\SshKeyPolicy;
 use Falak\Servers\Http\Channels\ServerChannel;
 use Falak\Servers\Infrastructure\EloquentServerDirectory;
+use Falak\Servers\Infrastructure\EloquentServerSshKeys;
 use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
 use Falak\Servers\Infrastructure\ServerHeaderPresenter;
 use Illuminate\Support\Facades\Broadcast;
@@ -42,6 +44,7 @@ class ServersServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         ServerDirectory::class => EloquentServerDirectory::class,
         ServerHeaders::class => ServerHeaderPresenter::class,
+        ServerSshKeys::class => EloquentServerSshKeys::class,
     ];
 
     public function register(): void

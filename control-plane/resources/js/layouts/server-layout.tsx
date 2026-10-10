@@ -37,7 +37,7 @@ export interface ServerTab {
     permissions?: string[];
 }
 
-/** The server page tabs (§3): Overview, Metrics, Processes, Volumes, Firewall, Network, Terminal, SSH keys, Recipes, PHP, Settings. */
+/** The server page tabs (§3): Overview, Metrics, Processes, Volumes, Firewall, Network, Security, Terminal, SSH keys, Recipes, PHP, Settings. */
 export const SERVER_TABS: ServerTab[] = [
     { id: 'overview', label: 'Overview', path: '' },
     { id: 'metrics', label: 'Metrics', path: 'metrics' },
@@ -45,6 +45,7 @@ export const SERVER_TABS: ServerTab[] = [
     { id: 'volumes', label: 'Volumes', path: 'volumes', permissions: ['volumes.view'] },
     { id: 'firewall', label: 'Firewall', path: 'firewall', permissions: ['network.view'] },
     { id: 'network', label: 'Private network', path: 'network', permissions: ['network.view'] },
+    { id: 'security', label: 'Security', path: 'security', permissions: ['security.view'] },
     {
         id: 'terminal',
         label: 'Terminal',

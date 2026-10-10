@@ -13,6 +13,7 @@ use Falak\Databases\Application\Listeners\DeleteOrganizationData;
 use Falak\Databases\Application\Listeners\ForgetDeletedServer;
 use Falak\Databases\Application\Listeners\HandleCommandOutcome;
 use Falak\Databases\Application\Listeners\RecordInstanceHealth;
+use Falak\Databases\Contracts\BackupPosture;
 use Falak\Databases\Contracts\BackupStorage;
 use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Contracts\DatabaseDirectory;
@@ -36,6 +37,7 @@ use Falak\Databases\Infrastructure\ActionDatabaseProvisioner;
 use Falak\Databases\Infrastructure\AgentRequests\PitrGapReported;
 use Falak\Databases\Infrastructure\AgentRequests\PitrShipped;
 use Falak\Databases\Infrastructure\AgentRequests\PitrUploadUrls;
+use Falak\Databases\Infrastructure\EloquentBackupPosture;
 use Falak\Databases\Infrastructure\EloquentDatabaseConnections;
 use Falak\Databases\Infrastructure\EloquentDatabaseDirectory;
 use Falak\Databases\Infrastructure\ObjectStorageBackupStorage;
@@ -68,6 +70,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         DatabaseConnections::class => EloquentDatabaseConnections::class,
         DatabaseProvisioner::class => ActionDatabaseProvisioner::class,
         BackupStorage::class => ObjectStorageBackupStorage::class,
+        BackupPosture::class => EloquentBackupPosture::class,
     ];
 
     public function register(): void
