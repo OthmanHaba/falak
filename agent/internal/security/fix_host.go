@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -260,37 +261,111 @@ func (s *Security) fixSysctl(ctx context.Context, b *backup, _ FixPayload, st co
 }
 
 // fixSecretPerms takes the other users' bits off exposed secret files. The files are found again here (the control
-// plane never names a path), only under Falak's own paths, and each one is changed through a descriptor opened
-// without following symlinks.
+// plane never names a path), only under the sites root and the tmpfs env directory, and each one is opened from that
+// root one component at a time without following symlinks (openConfined). A file with more than one link, or owned
+// by anyone but its site's user (the env directory: root), is left alone and listed.
 func (s *Security) fixSecretPerms(ctx context.Context, b *backup, _ FixPayload, st commands.Stream) (bool, string, error) {
 	files, _ := s.exposedSecrets(ctx)
-	roots := append([]string{s.d.SitesRoot}, s.secretRoots()...)
 	n := 0
+	var skipped []string
 	for _, p := range files {
-		confined := false
-		for _, r := range roots {
-			confined = confined || within(r, p)
-		}
-		if !confined {
+		var changed bool
+		var err error
+		switch {
+		case within(s.envDir(), p):
+			changed, err = s.tightenFile(b, s.envDir(), p, s.d.RootUID)
+		case within(s.d.SitesRoot, p):
+			owner, oerr := s.siteOwner(p)
+			if oerr != nil {
+				err = oerr
+				break
+			}
+			changed, err = s.tightenFile(b, s.d.SitesRoot, p, owner)
+		default:
 			continue
 		}
-		changed, err := s.tightenFile(b, p)
 		if err != nil {
-			return false, "", fmt.Errorf("%s: %w", p, err)
+			skipped = append(skipped, p+": "+err.Error())
+			continue
 		}
 		if changed {
 			n++
 		}
 	}
+	for _, sk := range skipped {
+		fmt.Fprintf(st.Stderr(), "left alone: %s\n", sk)
+	}
 	if n == 0 {
+		if len(skipped) > 0 {
+			return false, "", fmt.Errorf("no secret file could be changed safely: %s", list(skipped, 3))
+		}
 		return false, "no secret file is readable by other users", nil
 	}
-	fmt.Fprintf(st.Stdout(), "removed other users' access to %s\n", plural(n, "file", "files"))
-	return true, "made " + plural(n, "secret file", "secret files") + " private", nil
+	msg := "made " + plural(n, "secret file", "secret files") + " private"
+	if len(skipped) > 0 {
+		msg += "; left alone: " + list(skipped, 3)
+	}
+	return true, msg, nil
 }
 
-func (s *Security) tightenFile(b *backup, p string) (bool, error) {
-	f, err := os.OpenFile(s.d.FS.P(p), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+// siteOwner is the uid owning a path's site directory (<sites root>/<site>); root-owned sites are refused.
+func (s *Security) siteOwner(p string) (int, error) {
+	rel, err := filepath.Rel(s.d.SitesRoot, p)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return 0, errors.New("not under the sites root")
+	}
+	site, _, _ := strings.Cut(rel, "/")
+	fi, err := os.Lstat(s.d.FS.P(filepath.Join(s.d.SitesRoot, site)))
+	if err != nil || !fi.IsDir() {
+		return 0, errors.New("the site directory is not a directory")
+	}
+	uid := uidOf(fi)
+	if uid == s.d.RootUID || uid < 0 {
+		return 0, errors.New("the site directory belongs to root")
+	}
+	return uid, nil
+}
+
+// openConfined opens p (a host path below root) through a chain of os.Root handles, one component at a time: no
+// directory on the way and not the file itself may be a symlink, and a directory swapped between the check and the
+// open is refused. os.Root keeps every step inside root whatever happens.
+func (s *Security) openConfined(root, p string) (*os.File, error) {
+	rel, err := filepath.Rel(root, p)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return nil, errors.New("outside its root")
+	}
+	r, err := os.OpenRoot(s.d.FS.P(root))
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	for _, dir := range parts[:len(parts)-1] {
+		fi, err := r.Lstat(dir)
+		if err != nil {
+			r.Close()
+			return nil, err
+		}
+		if !fi.IsDir() {
+			r.Close()
+			return nil, errors.New("a symlink or file on the way")
+		}
+		next, err := r.OpenRoot(dir)
+		r.Close()
+		if err != nil {
+			return nil, err
+		}
+		if now, err := next.Stat("."); err != nil || !os.SameFile(fi, now) {
+			next.Close()
+			return nil, errors.New("a directory on the way was swapped")
+		}
+		r = next
+	}
+	defer r.Close()
+	return r.OpenFile(parts[len(parts)-1], os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+}
+
+func (s *Security) tightenFile(b *backup, root, p string, owner int) (bool, error) {
+	f, err := s.openConfined(root, p)
 	if err != nil {
 		return false, err
 	}
@@ -299,7 +374,17 @@ func (s *Security) tightenFile(b *backup, p string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o007 == 0 {
+	if !fi.Mode().IsRegular() {
+		return false, errors.New("not a regular file")
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok || st.Nlink != 1 {
+		return false, errors.New("it has other hard links")
+	}
+	if int(st.Uid) != owner {
+		return false, fmt.Errorf("owned by uid %d, not %d", st.Uid, owner)
+	}
+	if fi.Mode().Perm()&0o007 == 0 {
 		return false, nil
 	}
 	if err := b.savePerms(p, fi); err != nil {

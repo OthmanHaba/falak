@@ -335,12 +335,18 @@ func TestDockerChecks(t *testing.T) {
 
 func TestFileChecks(t *testing.T) {
 	s, _, root := newSec(t)
+	s.d.RootUID = os.Getuid() // Falak's own directories belong to "root"
 	put(t, root, "/srv/falak/sites/shop/current/.env", "APP_KEY=secret\n", 0o644)
 	put(t, root, "/srv/falak/sites/shop/current/.env.example", "APP_KEY=\n", 0o644)
 	put(t, root, "/srv/falak/sites/blog/shared/.env", "APP_KEY=secret\n", 0o640)
 	put(t, root, "/srv/falak/sites/blog/shared/node_modules/x/.env", "X=1\n", 0o644) // skipped
-	put(t, root, "/run/falak/secrets/db/password", "pw", 0o604)
+	put(t, root, "/run/falak/env/shop.env", "pw", 0o604)
 	put(t, root, "/run/falak/env/blog.env", "A=1", 0o600)
+	// Container secrets are world-readable inside a private directory, by design.
+	put(t, root, "/run/falak/secrets/shop-app/db_password", "pw", 0o444)
+	_ = os.Chmod(filepath.Join(root, "/run/falak/secrets/shop-app"), 0o555)
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(root, "/run/falak/secrets/shop-app"), 0o755) })
+	_ = os.Chmod(filepath.Join(root, "/run/falak/secrets"), 0o700)
 	put(t, root, "/srv/falak/sites/shop/current/public/up.php", "<?php", 0o666)
 	if err := os.MkdirAll(filepath.Join(root, "/srv/falak/sites/shop/tmp"), 0o777); err != nil {
 		t.Fatal(err)
@@ -354,9 +360,19 @@ func TestFileChecks(t *testing.T) {
 	put(t, root, "/tmp/notes.txt", "", 0o644)
 	cs := s.fileChecks(context.Background(), AuditPayload{})
 	c := byID(t, cs, "files.secret_permissions")
-	if c.Status != Fail || c.FixID != "files.secret_permissions" || c.Evidence != "2 secret files are readable by other users: /run/falak/secrets/db/password, /srv/falak/sites/shop/current/.env" {
+	if c.Status != Fail || c.FixID != "files.secret_permissions" || c.Evidence != "2 secret files are readable by other users: /run/falak/env/shop.env, /srv/falak/sites/shop/current/.env" {
 		t.Errorf("%+v", c)
 	}
+	if c := byID(t, cs, "files.container_secrets"); c.Status != Pass {
+		t.Errorf("%+v", c)
+	}
+	_ = os.Chmod(filepath.Join(root, "/run/falak/secrets"), 0o755)
+	_ = os.Chmod(filepath.Join(root, "/run/falak/secrets/shop-app"), 0o777)
+	if c := s.containerSecretsCheck(); c.Status != Fail || !strings.Contains(c.Evidence, "/run/falak/secrets (-rwxr-xr-x") || !strings.Contains(c.Evidence, "shop-app") {
+		t.Errorf("%+v", c)
+	}
+	_ = os.Chmod(filepath.Join(root, "/run/falak/secrets"), 0o700)
+	_ = os.Chmod(filepath.Join(root, "/run/falak/secrets/shop-app"), 0o555)
 	if c := byID(t, cs, "files.world_writable"); c.Status != Warn || c.Evidence != "1 world-writable path: /srv/falak/sites/shop/current/public/up.php" {
 		t.Errorf("%+v", c)
 	}

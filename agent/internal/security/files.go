@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // Walk bounds: the audit has to finish in its budget on servers with large site trees.
@@ -62,13 +63,16 @@ func isSecretName(name string) bool {
 	return true
 }
 
-// secretRoots are the places Falak keeps secrets on the tmpfs: sites' env files and containers' secret files.
-func (s *Security) secretRoots() []string {
-	return []string{filepath.Join(s.d.RunDir, "env"), filepath.Join(s.d.RunDir, "secrets")}
-}
+// envDir holds the sites' env files on the tmpfs (root-owned, never readable by other users).
+func (s *Security) envDir() string { return filepath.Join(s.d.RunDir, "env") }
+
+// containerSecretsDir holds containers' secret files. They are world-readable on purpose (0444 in 0555 directories,
+// or 0400 in 0500 for a container with a known user) so a container's non-root user can read them; the parent
+// directory (0700, root) is what keeps everyone else out. They are checked by containerSecretsCheck, never "fixed".
+func (s *Security) containerSecretsDir() string { return filepath.Join(s.d.RunDir, "secrets") }
 
 // exposedSecrets lists secret files under Falak's paths that other users can read or write (o+rwx bits): dotenv files
-// under the sites root and every file under the tmpfs secret directories. Only regular files count, never symlinks.
+// under the sites root and the sites' env files on the tmpfs. Only regular files count, never symlinks.
 func (s *Security) exposedSecrets(ctx context.Context) (files []string, truncated bool) {
 	visit := func(all bool) func(string, fs.DirEntry) {
 		return func(p string, d fs.DirEntry) {
@@ -84,12 +88,51 @@ func (s *Security) exposedSecrets(ctx context.Context) (files []string, truncate
 	if s.d.FS.Exists(s.d.SitesRoot) {
 		truncated = s.walk(ctx, s.d.SitesRoot, siteWalkDepth, siteWalkEntries, skip, visit(false))
 	}
-	for _, r := range s.secretRoots() {
-		if s.d.FS.Exists(r) {
-			truncated = s.walk(ctx, r, 4, siteWalkEntries, nil, visit(true)) || truncated
-		}
+	if s.d.FS.Exists(s.envDir()) {
+		truncated = s.walk(ctx, s.envDir(), 4, siteWalkEntries, nil, visit(true)) || truncated
 	}
 	return files, truncated
+}
+
+// containerSecretsCheck checks the layout that keeps containers' secret files private: the parent directory is 0700
+// and root's, each container's directory is 0555 (or 0500 for a container with a known user).
+func (s *Security) containerSecretsCheck() Check {
+	c := Check{ID: "files.container_secrets", Title: "Container secrets are private", Area: "files", Status: Pass, Severity: High,
+		Evidence: s.containerSecretsDir() + " is 0700 and root's; container directories are 0555 or 0500"}
+	dir := s.containerSecretsDir()
+	fi, err := os.Lstat(s.d.FS.P(dir))
+	if err != nil {
+		c.Status, c.Severity, c.Evidence = Info, SevInfo, "no container secrets on this server"
+		return c
+	}
+	var bad []string
+	if !fi.IsDir() || fi.Mode().Perm() != 0o700 || uidOf(fi) != s.d.RootUID {
+		bad = append(bad, fmt.Sprintf("%s (%s, uid %d)", dir, fi.Mode().Perm(), uidOf(fi)))
+	}
+	ents, _ := os.ReadDir(s.d.FS.P(dir))
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue // directories being built
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if !info.IsDir() || (info.Mode().Perm() != 0o555 && info.Mode().Perm() != 0o500) {
+			bad = append(bad, fmt.Sprintf("%s (%s)", filepath.Join(dir, e.Name()), info.Mode()))
+		}
+	}
+	if len(bad) > 0 {
+		c.Status, c.Evidence = Fail, "unexpected permissions: "+list(bad, 3)
+	}
+	return c
+}
+
+func uidOf(fi os.FileInfo) int {
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return int(st.Uid)
+	}
+	return -1
 }
 
 func (s *Security) fileChecks(ctx context.Context, _ AuditPayload) []Check {
@@ -104,7 +147,7 @@ func (s *Security) fileChecks(ctx context.Context, _ AuditPayload) []Check {
 	if cut {
 		c.Evidence += " (walk stopped at its limit)"
 	}
-	cs = append(cs, c)
+	cs = append(cs, c, s.containerSecretsCheck())
 
 	var writable []string
 	cut = false

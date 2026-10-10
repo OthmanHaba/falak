@@ -50,6 +50,11 @@ type FileEntry struct {
 	Stored string `json:"stored,omitempty"`
 	// Inode identifies the file of a permission-only entry, so undo never changes the mode of a file swapped in since.
 	Inode uint64 `json:"inode,omitempty"`
+	// The file as the fix left it: undo refuses (unless forced) when it changed since, so it never silently throws
+	// away somebody's later edit. AfterSHA256 is "" for permission-only entries and when the fix left no file.
+	AfterExists bool   `json:"after_exists"`
+	AfterSHA256 string `json:"after_sha256,omitempty"`
+	AfterMode   uint32 `json:"after_mode,omitempty"`
 }
 
 type backup struct {
@@ -230,6 +235,45 @@ func (b *backup) restorePerms(e FileEntry) error {
 		return err
 	}
 	return nil
+}
+
+// seal records every file as the fix left it.
+func (b *backup) seal() error {
+	for i := range b.m.Files {
+		e := &b.m.Files[i]
+		e.AfterExists, e.AfterSHA256, e.AfterMode = b.current(*e)
+	}
+	return b.write()
+}
+
+// current describes a file now: whether it exists, its sha256 (content entries) and mode.
+func (b *backup) current(e FileEntry) (bool, string, uint32) {
+	fi, err := os.Lstat(b.s.d.FS.P(e.Path))
+	if err != nil {
+		return false, "", 0
+	}
+	sum := ""
+	if e.Stored != "" || !e.Existed {
+		if content, err := b.s.d.FS.ReadFile(e.Path); err == nil && fi.Mode().IsRegular() {
+			h := sha256.Sum256(content)
+			sum = hex.EncodeToString(h[:])
+		} else {
+			sum = "unreadable"
+		}
+	}
+	return true, sum, uint32(fi.Mode().Perm())
+}
+
+// changedSinceFix lists the files that are no longer as the fix left them.
+func (b *backup) changedSinceFix() []string {
+	var changed []string
+	for _, e := range b.m.Files {
+		exists, sum, mode := b.current(e)
+		if exists != e.AfterExists || (exists && (sum != e.AfterSHA256 || mode != e.AfterMode)) {
+			changed = append(changed, e.Path)
+		}
+	}
+	return changed
 }
 
 // discard deletes the backup directory.

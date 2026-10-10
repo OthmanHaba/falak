@@ -29,7 +29,9 @@ type Deps struct {
 	SitesRoot string // /srv/falak/sites
 	RunDir    string // /run/falak (sites' env files and containers' secret files live on its tmpfs)
 	StateDir  string // /var/lib/falak (backups go to security-backups/)
-	Now       func() time.Time
+	// RootUID owns Falak's own directories (0, root; tests use their own uid).
+	RootUID int
+	Now     func() time.Time
 }
 
 // Security holds the executors.

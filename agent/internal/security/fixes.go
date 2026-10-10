@@ -89,6 +89,8 @@ type FixResult struct {
 type UndoPayload struct {
 	FixID    string `json:"fix_id"`
 	BackupID string `json:"backup_id"`
+	// Force restores files that changed since the fix (somebody edited them) instead of refusing.
+	Force bool `json:"force"`
 }
 
 // UndoResult is its result.
@@ -137,6 +139,9 @@ func (s *Security) Fix(ctx context.Context, p FixPayload, st commands.Stream) (a
 		b.discard()
 		return res, nil
 	}
+	if err := b.seal(); err != nil {
+		return nil, fmt.Errorf("recording the fixed files: %w", err)
+	}
 	res.BackupID, res.Undoable = b.m.ID, true
 	fmt.Fprintf(st.Stdout(), "backup %s (undo within %s)\n", b.m.ID, BackupTTL)
 	return res, nil
@@ -160,6 +165,9 @@ func (s *Security) Undo(ctx context.Context, p UndoPayload, st commands.Stream) 
 	}
 	if b.m.FixID != f.ID {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("backup %s belongs to %s, not %s", p.BackupID, b.m.FixID, f.ID)}
+	}
+	if changed := b.changedSinceFix(); len(changed) > 0 && !p.Force {
+		return nil, fmt.Errorf("changed since the fix: %s; undo with force to overwrite them", list(changed, 5))
 	}
 	if err := b.restore(ctx); err != nil {
 		return nil, err

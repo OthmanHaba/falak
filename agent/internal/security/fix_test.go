@@ -271,18 +271,21 @@ func TestSysctlFixAndUndo(t *testing.T) {
 }
 
 func TestSecretPermissionFixStaysInFalakPaths(t *testing.T) {
-	s, _, root := newSec(t)
+	s, _, root := newSec(t) // RootUID 0: the test's files belong to a site user
 	put(t, root, "/srv/falak/sites/shop/current/.env", "APP_KEY=base64:secret\n", 0o644)
-	put(t, root, "/run/falak/secrets/db/password", "pw", 0o604)
+	put(t, root, "/srv/falak/sites/shop/shared/.env.production", "X=1\n", 0o604)
 	put(t, root, "/etc/shadow", "root:*:", 0o644)
 	if err := os.Symlink(filepath.Join(root, "/etc/shadow"), filepath.Join(root, "/srv/falak/sites/shop/.env")); err != nil {
 		t.Fatal(err)
 	}
+	// Container secrets are world-readable on purpose: never touched.
+	put(t, root, "/run/falak/secrets/shop-app/db_password", "pw", 0o444)
 	res := fix(t, s, FixPayload{FixID: "files.secret_permissions"})
 	if !res.Changed || res.Message != "made 2 secret files private" {
 		t.Fatalf("%+v", res)
 	}
-	if mode(t, root, "/srv/falak/sites/shop/current/.env") != 0o640 || mode(t, root, "/run/falak/secrets/db/password") != 0o600 || mode(t, root, "/etc/shadow") != 0o644 {
+	if mode(t, root, "/srv/falak/sites/shop/current/.env") != 0o640 || mode(t, root, "/srv/falak/sites/shop/shared/.env.production") != 0o600 ||
+		mode(t, root, "/etc/shadow") != 0o644 || mode(t, root, "/run/falak/secrets/shop-app/db_password") != 0o444 {
 		t.Fatal("modes")
 	}
 	m := manifest(t, root, res.BackupID)
@@ -291,26 +294,67 @@ func TestSecretPermissionFixStaysInFalakPaths(t *testing.T) {
 			t.Errorf("secret content copied or no inode: %+v", e)
 		}
 	}
-	if raw := read(t, root, "/var/lib/falak/security-backups/"+res.BackupID+"/manifest.json"); strings.Contains(raw, "secret") && strings.Contains(raw, "APP_KEY") {
+	if raw := read(t, root, "/var/lib/falak/security-backups/"+res.BackupID+"/manifest.json"); strings.Contains(raw, "APP_KEY") {
 		t.Fatal("secret in the manifest")
 	}
 	undo(t, s, "files.secret_permissions", res.BackupID)
-	if mode(t, root, "/srv/falak/sites/shop/current/.env") != 0o644 || mode(t, root, "/run/falak/secrets/db/password") != 0o604 {
+	if mode(t, root, "/srv/falak/sites/shop/current/.env") != 0o644 || mode(t, root, "/srv/falak/sites/shop/shared/.env.production") != 0o604 {
 		t.Fatal("undo")
 	}
 
-	// A file swapped in after the fix keeps its mode: undo refuses to touch it.
+	// A file swapped in after the fix keeps its mode: undo refuses to touch it, even forced.
 	res = fix(t, s, FixPayload{FixID: "files.secret_permissions"})
 	p := filepath.Join(root, "/srv/falak/sites/shop/current/.env")
 	if err := os.Remove(p); err != nil {
 		t.Fatal(err)
 	}
 	put(t, root, "/srv/falak/sites/shop/current/.env", "other", 0o600)
-	if _, err := s.Undo(context.Background(), UndoPayload{FixID: "files.secret_permissions", BackupID: res.BackupID}, &stream{}); err == nil || !strings.Contains(err.Error(), "replaced") {
+	if _, err := s.Undo(context.Background(), UndoPayload{FixID: "files.secret_permissions", BackupID: res.BackupID, Force: true}, &stream{}); err == nil || !strings.Contains(err.Error(), "replaced") {
 		t.Fatalf("err %v", err)
 	}
 	if mode(t, root, "/srv/falak/sites/shop/current/.env") != 0o600 {
 		t.Fatal("swapped file changed")
+	}
+}
+
+func TestSecretPermissionFixRefusesLinksAndForeignOwners(t *testing.T) {
+	s, _, root := newSec(t)
+	put(t, root, "/srv/falak/sites/shop/current/.env", "A=1", 0o644)
+	// A hard link to a file elsewhere: refused (protected_hardlinks may be off).
+	if err := os.Link(filepath.Join(root, "/srv/falak/sites/shop/current/.env"), filepath.Join(root, "/srv/falak/sites/shop/linked")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Fix(context.Background(), FixPayload{FixID: "files.secret_permissions"}, &stream{}); err == nil || !strings.Contains(err.Error(), "hard links") {
+		t.Fatalf("hard link: %v", err)
+	}
+	if mode(t, root, "/srv/falak/sites/shop/current/.env") != 0o644 {
+		t.Fatal("changed")
+	}
+
+	// A site directory owned by "root" (here: the test's own uid as RootUID) is refused.
+	s, _, root = newSec(t)
+	s.d.RootUID = os.Getuid()
+	put(t, root, "/srv/falak/sites/shop/.env", "A=1", 0o644)
+	if _, err := s.Fix(context.Background(), FixPayload{FixID: "files.secret_permissions"}, &stream{}); err == nil || !strings.Contains(err.Error(), "belongs to root") {
+		t.Fatalf("root-owned site: %v", err)
+	}
+	// The tmpfs env files are root's: fixed then.
+	put(t, root, "/run/falak/env/shop.env", "A=1", 0o604)
+	res := fix(t, s, FixPayload{FixID: "files.secret_permissions"})
+	if !res.Changed || mode(t, root, "/run/falak/env/shop.env") != 0o600 {
+		t.Fatalf("%+v", res)
+	}
+
+	// Symlinked directories on the way are refused by openConfined.
+	put(t, root, "/elsewhere/.env", "A=1", 0o644)
+	if err := os.Symlink(filepath.Join(root, "/elsewhere"), filepath.Join(root, "/srv/falak/sites/shop/current")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.openConfined("/srv/falak/sites", "/srv/falak/sites/shop/current/.env"); err == nil {
+		t.Fatal("followed a symlinked directory")
+	}
+	if _, err := s.openConfined("/srv/falak/sites", "/srv/falak/sites/../../etc/shadow"); err == nil {
+		t.Fatal("escaped")
 	}
 }
 
