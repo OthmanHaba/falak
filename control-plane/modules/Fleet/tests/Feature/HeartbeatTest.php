@@ -39,6 +39,25 @@ it('records heartbeat metrics and returns 204', function () {
         ->and(app(AgentDirectory::class)->metrics($this->serverId, now()->subHour()))->toHaveCount(1);
 });
 
+it('records the data filesystems per mount, the reboot flag and ACME certificate expiries', function () {
+    $heartbeat = fleet_heartbeat([
+        'disks' => [
+            ['mount' => '/', 'used_bytes' => 80, 'available_bytes' => 20, 'total_bytes' => 105],
+            ['mount' => '/mnt/data', 'used_bytes' => 1, 'available_bytes' => 9, 'total_bytes' => 10],
+        ],
+        'facts' => fleet_facts(['reboot_required' => true, 'tls_certificates' => [['name' => 'example.com', 'not_after' => '2026-12-30T00:00:00Z']]]),
+    ]);
+    expect(fleet_schema_errors('heartbeat.schema.json', $heartbeat))->toBe([]);
+
+    $this->postJson('/agent/v1/heartbeat', $heartbeat, $this->headers)->assertNoContent();
+
+    $info = app(AgentDirectory::class)->forServer($this->serverId);
+    expect($info->metrics['disks'])->toBe(['/' => [80, 20, 105], '/mnt/data' => [1, 9, 10]])
+        ->and($info->facts['reboot_required'])->toBeTrue()
+        ->and($info->facts['tls_certificates'][0]['name'])->toBe('example.com')
+        ->and(app(AgentDirectory::class)->metrics($this->serverId, now()->subHour())[0]->disks)->toBe(['/' => [80, 20, 105], '/mnt/data' => [1, 9, 10]]);
+});
+
 it('updates facts and announces them only when sent', function () {
     Event::fake([AgentFactsReported::class]);
 
