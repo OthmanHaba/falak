@@ -26,6 +26,8 @@ final readonly class AlertMessage
         public bool $resolved,
         public DateTimeImmutable $createdAt,
         public bool $test = false,
+        // Label of the suggested fix at $url ("Grow volume"), shown instead of the generic "Open in Falak".
+        public ?string $action = null,
     ) {}
 
     public static function fromAlert(Alert $alert): self
@@ -41,6 +43,7 @@ final readonly class AlertMessage
             $alert->context ?? [],
             $alert->recovery,
             $alert->created_at->toDateTimeImmutable(),
+            action: $alert->recovery ? null : $alert->action,
         );
     }
 
@@ -69,6 +72,12 @@ final readonly class AlertMessage
         return "[{$tag}] {$this->title}";
     }
 
+    /** What the link to $url says: the suggested fix, else "Open in Falak". */
+    public function linkLabel(): string
+    {
+        return $this->action ?? 'Open in Falak';
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -81,6 +90,7 @@ final readonly class AlertMessage
             'title' => $this->title,
             'body' => $this->body,
             'url' => $this->url,
+            'action' => $this->action,
             'organization_id' => $this->organizationId,
             'context' => (object) $this->context,
             'resolved' => $this->resolved,

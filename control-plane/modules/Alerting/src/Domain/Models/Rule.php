@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property string $id
  * @property string $organization_id
+ * @property ?string $pack_key the default rule pack's area this rule was created for (DefaultRulePack); null: user rule
  * @property string $name
  * @property list<string> $event_types exact types, "group.*" prefixes or "*"
  * @property Severity $min_severity

@@ -41,6 +41,7 @@ final class InAppNotifier
                 'title' => $alert->recovery ? "Resolved: {$alert->title}" : $alert->title,
                 'body' => $alert->body,
                 'url' => $alert->url,
+                'action' => $alert->action,
             ]);
 
             NotificationCreated::dispatch($userId, $alert->organization_id, $notification->toPayload());

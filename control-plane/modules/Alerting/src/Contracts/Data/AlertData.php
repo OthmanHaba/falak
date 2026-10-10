@@ -2,6 +2,7 @@
 
 namespace Falak\Alerting\Contracts\Data;
 
+use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 
 /**
@@ -16,6 +17,8 @@ final readonly class AlertData
      * @param  bool  $resolves  this alert clears $dedupKey (recovery); it is only delivered when an
      *                          alert for the same key was delivered before
      * @param  array<string, scalar|null>  $context  extra fields shown in channel messages / webhook payloads
+     * @param  string|null  $action  label of the suggested fix at $url (e.g. "Grow volume"); null = the type's registered
+     *                               fix ({@see AlertTypes::register()})
      */
     public function __construct(
         public string $organizationId,
@@ -27,5 +30,6 @@ final readonly class AlertData
         public ?string $dedupKey = null,
         public bool $resolves = false,
         public array $context = [],
+        public ?string $action = null,
     ) {}
 }

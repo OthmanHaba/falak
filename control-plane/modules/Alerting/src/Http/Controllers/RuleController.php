@@ -5,6 +5,7 @@ namespace Falak\Alerting\Http\Controllers;
 use DateTimeZone;
 use Falak\Alerting\Application\Actions\DeleteRule;
 use Falak\Alerting\Application\Actions\SaveRule;
+use Falak\Alerting\Application\DefaultRulePack;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Alerting\Domain\Models\Channel;
@@ -25,7 +26,7 @@ final class RuleController extends Controller
         private readonly OrganizationAccess $access,
     ) {}
 
-    public function index(Request $request, AlertTypes $types): Response
+    public function index(Request $request, AlertTypes $types, DefaultRulePack $pack): Response
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'alerting.view');
@@ -35,6 +36,7 @@ final class RuleController extends Controller
         return Inertia::render('Alerting/Rules', [
             'rules' => $rules->map(fn (Rule $rule) => [
                 'id' => $rule->id,
+                'pack_key' => $rule->pack_key,
                 'name' => $rule->name,
                 'enabled' => $rule->enabled,
                 'event_types' => $rule->event_types,
@@ -45,6 +47,10 @@ final class RuleController extends Controller
             ])->values(),
             'channels' => Channel::query()->where('organization_id', $organizationId)->orderBy('name')->get(['id', 'name', 'type', 'enabled'])
                 ->map(fn (Channel $channel) => ['id' => $channel->id, 'name' => $channel->name, 'type' => $channel->type->value, 'enabled' => $channel->enabled])->values(),
+            // No channel yet: the default pack only notifies in-app (the page prompts to add one).
+            'hasChannel' => Channel::query()->where('organization_id', $organizationId)->exists(),
+            // The default rule pack's areas (rules with a pack_key), in the registry's group order.
+            'packAreas' => collect($pack->areas())->map(fn (array $area, string $key) => ['key' => $key, 'group' => $area['group'], 'patterns' => $area['patterns']])->values(),
             'alertTypes' => collect($types->all())->map(fn (array $type) => [...$type, 'severity' => $type['severity']->value])->values(),
             'severities' => collect(Severity::cases())->map(fn (Severity $severity) => ['value' => $severity->value, 'label' => $severity->label()])->values(),
             'timezones' => DateTimeZone::listIdentifiers(),

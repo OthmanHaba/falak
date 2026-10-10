@@ -3,6 +3,7 @@
 namespace Falak\Alerting\Http\Controllers;
 
 use Falak\Alerting\Application\Actions\DeleteChannel;
+use Falak\Alerting\Application\Actions\MakeDefaultChannel;
 use Falak\Alerting\Application\Actions\SaveChannel;
 use Falak\Alerting\Application\Actions\SendTestMessage;
 use Falak\Alerting\Domain\Enums\ChannelType;
@@ -31,7 +32,7 @@ final class ChannelController extends Controller
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'alerting.view');
 
-        $channels = Channel::query()->withCount('rules')->where('organization_id', $organizationId)->orderBy('name')->get();
+        $channels = Channel::query()->withCount('rules')->where('organization_id', $organizationId)->orderByDesc('is_default')->orderBy('name')->get();
 
         return Inertia::render('Alerting/Channels', [
             'channels' => $channels->map(fn (Channel $channel) => $this->present($channel))->values(),
@@ -68,6 +69,15 @@ final class ChannelController extends Controller
         return to_route('alerting.channels.index');
     }
 
+    public function makeDefault(Channel $channel, MakeDefaultChannel $make): RedirectResponse
+    {
+        $this->authorize('update', $channel);
+
+        $make($channel);
+
+        return to_route('alerting.channels.index');
+    }
+
     public function test(Channel $channel, SendTestMessage $send): JsonResponse
     {
         $this->authorize('update', $channel);
@@ -89,6 +99,7 @@ final class ChannelController extends Controller
             'name' => $channel->name,
             'type' => $channel->type->value,
             'enabled' => $channel->enabled,
+            'is_default' => $channel->is_default,
             'config' => (object) $sender->mask($channel->config),
             'secret_keys' => $sender->secretKeys(),
             'rules_count' => (int) $channel->getAttribute('rules_count'),

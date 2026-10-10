@@ -46,6 +46,7 @@ final class HistoryController extends Controller
                 'title' => $alert->title,
                 'body' => $alert->body,
                 'url' => $alert->url,
+                'action' => $alert->action,
                 'recovery' => $alert->recovery,
                 'outcome' => $alert->outcome->value,
                 'created_at' => $alert->created_at->toIso8601String(),

@@ -7,12 +7,17 @@ use Falak\Alerting\Contracts\Severity;
 
 final class InMemoryAlertTypes implements AlertTypes
 {
-    /** @var array<string, array{type: string, label: string, group: string, severity: Severity}> */
+    /** @var array<string, array{type: string, label: string, group: string, severity: Severity, fix: ?string}> */
     private array $types = [];
 
-    public function register(string $type, string $label, string $group, Severity $defaultSeverity = Severity::Warning): void
+    public function register(string $type, string $label, string $group, Severity $defaultSeverity = Severity::Warning, ?string $fix = null): void
     {
-        $this->types[$type] = ['type' => $type, 'label' => $label, 'group' => $group, 'severity' => $defaultSeverity];
+        $this->types[$type] = ['type' => $type, 'label' => $label, 'group' => $group, 'severity' => $defaultSeverity, 'fix' => $fix];
+    }
+
+    public function fix(string $type): ?string
+    {
+        return $this->types[$type]['fix'] ?? null;
     }
 
     public function all(): array

@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property ?string $body
  * @property ?string $url
+ * @property ?string $action suggested fix at $url
  * @property ?Carbon $read_at
  * @property Carbon $created_at
  */
@@ -56,6 +57,7 @@ class Notification extends Model
             'title' => $this->title,
             'body' => $this->body,
             'url' => $this->url,
+            'action' => $this->action,
             'read_at' => $this->read_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
         ];

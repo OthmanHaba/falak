@@ -64,7 +64,7 @@ class VolumesServiceProvider extends ModuleServiceProvider
         $registry->register(VolumePolicy::BROWSE, [Role::Admin], 'Browse and download the files of volumes (audited)', 'volumes');
 
         $types = $this->app->make(AlertTypes::class);
-        $types->register(VolumeAlmostFull::ALERT_TYPE, 'Volume almost full', 'Volumes', Severity::Warning);
+        $types->register(VolumeAlmostFull::ALERT_TYPE, 'Volume almost full', 'Volumes', Severity::Warning, 'Grow volume');
         $types->register(VolumeDrillFinished::ALERT_FAILED, 'Volume restore drill failed', 'Volumes', Severity::Critical);
         $types->register(VolumeDrillFinished::ALERT_PASSED, 'Volume restore drills pass again', 'Volumes', Severity::Info);
 

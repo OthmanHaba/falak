@@ -3,6 +3,7 @@
 namespace Falak\Alerting\Application;
 
 use Falak\Alerting\Application\Jobs\DeliverAlert;
+use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Domain\Enums\AlertOutcome;
 use Falak\Alerting\Domain\Enums\DeliveryStatus;
@@ -27,7 +28,10 @@ use Illuminate\Support\Str;
  */
 final class AlertRouter
 {
-    public function __construct(private readonly InAppNotifier $notifier) {}
+    public function __construct(
+        private readonly InAppNotifier $notifier,
+        private readonly AlertTypes $types,
+    ) {}
 
     public function route(AlertData $data): Alert
     {
@@ -241,12 +245,25 @@ final class AlertRouter
             'title' => Str::limit($data->title, 490),
             'body' => $data->body !== '' ? $data->body : null,
             'url' => self::absoluteUrl($data->url),
+            'action' => $this->action($data),
             'dedup_key' => $data->dedupKey,
             'recovery' => $data->resolves,
             'context' => $data->context === [] ? null : $data->context,
             'outcome' => $outcome,
             'matched_rule_ids' => $ruleIds === [] ? null : array_values($ruleIds),
         ]);
+    }
+
+    /** The suggested fix: the alert's own, else its type's; only with a link to where it is done. */
+    private function action(AlertData $data): ?string
+    {
+        if ($data->resolves || $data->url === null || $data->url === '') {
+            return null;
+        }
+
+        $action = $data->action ?? $this->types->fix($data->type);
+
+        return $action === null || $action === '' ? null : Str::limit($action, 97);
     }
 
     public static function absoluteUrl(?string $url): ?string

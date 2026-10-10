@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property ?string $body
  * @property ?string $url
+ * @property ?string $action suggested fix at $url ("Grow volume")
  * @property ?string $dedup_key
  * @property bool $recovery
  * @property ?array<string, scalar|null> $context
