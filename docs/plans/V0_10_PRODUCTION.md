@@ -373,6 +373,28 @@ minutes, configurable per service, off for the first deploy).
 - **Migrations:** database migrations are *not* reversed. If the deploy ran migrations, the UI and the alert say
   so, and the user can choose "alert only" for those services.
 
+Implementation notes (built on `feat/v010-rollback`):
+
+- Per-site settings on `deployments_site_settings` (`watch_*`: enabled, minutes 1–60, each trigger, health failures
+  in a row, `on_trigger` rollback | alert_only), in Settings → Deploy → "Watch after deploy" and
+  `GET|PUT /api/v1/sites/{site}/release-watch`. Off by default; the card suggests it for production environments.
+- `ReleaseWatcher` keeps one `deployments_release_watches` row per watched deployment (snapshot of the settings,
+  baseline, live `checks`). `DeploymentSucceeded` opens it (not a first deployment, a rollback, a compose bootstrap
+  pass or a function); `DeploymentStarted` of the site stops it. `EvaluateReleaseWatches` runs every 30 s: the health
+  check through the edge on every server (`SiteHealthProbe`, shared with the deploy step) and the 5xx counts of the
+  release from Loki (`Telemetry\Contracts\AccessLogCounts`, instant `count_over_time` queries). Baseline = the
+  previous release's last hour when it served ≥ 20 requests, else the 5% absolute rule.
+- `ServiceOomKilled` / `ServiceRestartLoop` (any service of the site) and `IssueOpened` of kind `exception` (the
+  error-level issues) trip a window immediately (queued listener).
+- A trip queues a rollback deployment (`Trigger::Rollback`, `auto_rollback_of` = the watched deployment) to the
+  previous release, marks the deployment `rolled_back` with `rolled_back_reason`, and the release
+  `auto_rolled_back_at`. `DeploymentRolledBack` (automatic, with the reason and a migrations note) fires when the
+  rollback is live. Alert-only and held-back rollbacks fire `ReleaseWatchTriggered` (`deployments.watch_triggered`).
+- Migrations are detected from the deploy script (`migrate`, `doctrine:migrations:migrate`, `alembic upgrade`, …,
+  comments ignored) or a compose release's `falak.deploy.leader_command`.
+- Canvas badges "Watching" / "Rolled back" (`Deployments\Contracts\DeploymentBadges`); the deployment view shows the
+  countdown and each trigger's status, or the reason after a trip.
+
 ## 8. Alerts coverage (A6)
 
 New event sources, and a **default rule pack** created for every org (editable, can be switched off), routed to the
