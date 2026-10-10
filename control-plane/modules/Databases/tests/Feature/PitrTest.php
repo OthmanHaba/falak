@@ -18,6 +18,7 @@ use Falak\Databases\Domain\Models\PitrSegment;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\PitrAlert;
+use Falak\Fleet\Domain\Models\Certificate;
 use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
@@ -80,11 +81,20 @@ function pitr_bucket(object $test): void
     });
 }
 
+/** An enrolled agent whose certificate is valid on the frozen clock (it is issued at the real time, which may be later). */
+function pitr_enroll(string $organizationId, string $serverId): array
+{
+    $enrolled = fleet_enroll($organizationId, $serverId);
+    Certificate::query()->where('fingerprint', $enrolled['fingerprint'])->update(['not_before' => now()->subHour()]);
+
+    return $enrolled;
+}
+
 /** PITR on (without going through the agent), with an agent enrolled for the instance's server. */
 function pitr_on(object $test, array $attributes = []): DatabaseInstance
 {
     $test->engine->forceFill(['pitr_enabled' => true, 'pitr_storage_provider_id' => $test->provider->id, ...$attributes])->save();
-    $test->enrolled ??= fleet_enroll($test->organization->id, $test->server->id);
+    $test->enrolled ??= pitr_enroll($test->organization->id, $test->server->id);
     if (! isset($test->bucket)) {
         pitr_bucket($test);
     }
@@ -277,7 +287,7 @@ it('acknowledges only the segments it handed out, and answers a file it already 
     expect($again)->toBe(['name' => '000000010000000000000004', 'id' => $slot['id'], 'shipped' => true]);
 
     // An agent of another server can't acknowledge it.
-    $intruder = fleet_enroll($this->organization->id, databases_server($this->organization)->id);
+    $intruder = pitr_enroll($this->organization->id, databases_server($this->organization)->id);
     $this->postJson('/agent/v1/requests/pitr.shipped', ['instance' => $this->engine->id, 'kind' => 'wal', 'segments' => [$item]], fleet_mtls($intruder['fingerprint']))
         ->assertStatus(409);
 });
