@@ -9,7 +9,7 @@ import ObservabilityLayout from '@/layouts/observability-layout';
 import { type Paginated } from '@/types';
 import { Link, router } from '@inertiajs/react';
 import { format } from 'date-fns';
-import { BellRing, ChevronDown, ChevronRight, Settings2, SquareArrowOutUpRight } from 'lucide-react';
+import { BellRing, ChevronDown, ChevronRight, Settings2, SquareArrowOutUpRight, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { openUrl, SeverityIndicator } from '../components/severity';
 import { type AlertRow, type DeliveryRow } from '../types';
@@ -96,9 +96,15 @@ function AlertItem({ alert }: { alert: AlertRow }) {
                         </ul>
                     )}
                     {alert.url && (
-                        <div>
-                            <Button size="sm" icon={<SquareArrowOutUpRight />} onClick={() => openUrl(alert.url!, (path) => router.visit(path))}>
-                                Open
+                        <div className="flex flex-wrap items-center gap-2">
+                            {alert.action && <span className="text-fg-muted text-xs">Suggested fix:</span>}
+                            <Button
+                                size="sm"
+                                variant={alert.action ? 'primary' : undefined}
+                                icon={alert.action ? <Wrench /> : <SquareArrowOutUpRight />}
+                                onClick={() => openUrl(alert.url!, (path) => router.visit(path))}
+                            >
+                                {alert.action ?? 'Open'}
                             </Button>
                         </div>
                     )}

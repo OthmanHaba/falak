@@ -8,6 +8,8 @@ export interface AppNotification {
     title: string;
     body: string | null;
     url: string | null;
+    /** Suggested fix label for url ("Grow volume"). */
+    action: string | null;
     read_at: string | null;
     created_at: string;
 }
@@ -21,6 +23,8 @@ export interface ChannelRow {
     config: Record<string, unknown>;
     secret_keys: string[];
     rules_count: number;
+    /** The default rule pack routes to it. */
+    is_default: boolean;
     last_sent_at: string | null;
     last_error: string | null;
 }
@@ -35,6 +39,8 @@ export interface QuietHours {
 
 export interface RuleRow {
     id: string;
+    /** Default rule pack area ("area:servers"); null for the organization's own rules. */
+    pack_key: string | null;
     name: string;
     enabled: boolean;
     event_types: string[];
@@ -49,6 +55,8 @@ export interface AlertTypeOption {
     label: string;
     group: string;
     severity: Severity;
+    /** Suggested fix label shown with its alerts' links. */
+    fix: string | null;
 }
 
 export interface DeliveryRow {
@@ -67,6 +75,8 @@ export interface AlertRow {
     title: string;
     body: string | null;
     url: string | null;
+    /** Suggested fix label for url ("Grow volume"). */
+    action: string | null;
     recovery: boolean;
     outcome: string;
     created_at: string;
