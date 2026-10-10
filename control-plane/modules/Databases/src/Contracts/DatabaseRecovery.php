@@ -30,9 +30,31 @@ interface DatabaseRecovery
      * password, settings, databases, users, grants and schedules; db.instance.create recreates its container, then
      * its databases and users (empty). The old server is not contacted.
      *
+     * Called again for an instance that already moved there, it retries what failed (the container, or its databases
+     * and users). $suspendPitr: shipping stays off on the empty container (PITR restore follows: restoreToLatest).
+     *
      * @throws ValidationException
      */
-    public function relocate(string $instanceId, string $targetServerId, ?string $actorId = null): void;
+    public function relocate(string $instanceId, string $targetServerId, ?string $actorId = null, bool $suspendPitr = false): void;
+
+    /**
+     * Point-in-time restore of a relocated instance to the latest point of its shipped log: a read-only copy is made
+     * on its (new) server from the newest base and every segment after it.
+     *
+     * @return string the restore id
+     *
+     * @throws ValidationException no recovery point, customer-held keys, a restore already running
+     */
+    public function restoreToLatest(string $instanceId, ?string $actorId = null): string;
+
+    /**
+     * Drives that restore: once the copy is ready it is swapped in (it takes over the name, DNS name, databases and
+     * users; the empty placeholder is retired), then PITR is turned on again for it. $retry: a swap that failed is
+     * tried again.
+     *
+     * @return array{state: string, message: ?string} running | succeeded | failed
+     */
+    public function pitrProgress(string $restoreId, ?string $actorId = null, bool $retry = false): array;
 
     /**
      * Restore each database of a running instance from its latest restorable backup (customer-held keys are left

@@ -4,6 +4,7 @@ use Falak\Databases\Application\Actions\PrunePitr;
 use Falak\Databases\Application\Actions\TakePitrBase;
 use Falak\Databases\Application\Jobs\MaintainPitr;
 use Falak\Databases\Application\PitrTimeline;
+use Falak\Databases\Contracts\DatabaseRecovery;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Enums\InstanceStatus;
@@ -715,4 +716,55 @@ it('forgets a deleted instance\'s history, objects first', function () {
         ->and(PitrSegment::query()->find($segment->id))->toBeNull()
         ->and($base->refresh()->status)->toBe(BackupStatus::Pruned)
         ->and(iterator_to_array($this->deleted))->toContain($segment->object_key, $base->object_key);
+});
+
+it('brings a lost server\'s PITR database back on another server at the latest point (DatabaseRecovery)', function () {
+    pitr_on($this);
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    pitr_ship($this, '000000010000000000000003', '2026-10-09T09:00:00Z');
+    pitr_ship($this, '000000010000000000000004', '2026-10-09T11:40:00Z');
+    $recovery = app(DatabaseRecovery::class);
+    $target = databases_server($this->organization, attributes: ['name' => 'app-new']);
+
+    // The data loss is the PITR lag (time since the last shipped segment), not a backup's age.
+    $point = $recovery->points([$this->db->id])[$this->db->id];
+    expect($point->usesPitr())->toBeTrue()
+        ->and($point->pitrLatestAt?->format(DATE_ATOM))->toBe('2026-10-09T11:40:00+00:00')
+        ->and($point->dataLossSeconds(now()->toDateTimeImmutable()))->toBe(20 * 60);
+
+    // Relocated with shipping off: the empty container's own log never joins the history.
+    $recovery->relocate($this->engine->id, $target->id, suspendPitr: true);
+    $instance = $this->engine->refresh();
+    $create = $this->agents->last('db.instance.create', $target->id);
+    expect($instance->server_id)->toBe($target->id)->and($instance->pitr_enabled)->toBeFalse()
+        ->and($create['payload']['instance']['pitr'])->toBe(['enabled' => false]);
+    $bases = count($this->agents->dispatched('db.pitr.base'));
+    $this->agents->succeed($create['handle'], ['changed' => true, 'container_id' => 'c1', 'health' => 'healthy']);
+    foreach ($this->agents->dispatched('db.create', $target->id) as $command) {
+        $this->agents->succeed($command['handle']);
+    }
+    expect($recovery->progress($instance->id)['state'])->toBe('ready')
+        ->and(count($this->agents->dispatched('db.pitr.base')))->toBe($bases);
+
+    // Restored to the latest point on the new server, swapped in, PITR on again for the restored instance.
+    $restoreId = $recovery->restoreToLatest($instance->id);
+    $command = $this->agents->last('db.pitr.restore', $target->id);
+    expect($command['payload'])->not->toHaveKey('target_time')
+        ->and(array_column($command['payload']['segments'], 'name'))->toBe(['000000010000000000000003', '000000010000000000000004']);
+    expect($recovery->pitrProgress($restoreId)['state'])->toBe('running');
+    $this->agents->succeed($command['handle'], ['container_id' => 'c9', 'health' => 'healthy', 'recovered_to' => '2026-10-09T11:40:00Z', 'segments' => 2, 'downloaded_bytes' => 1, 'table_counts' => []]);
+
+    expect($recovery->pitrProgress($restoreId)['state'])->toBe('running');
+    $promote = $this->agents->last('db.pitr.promote', $target->id);
+    expect($promote['payload']['stop'])->toBe($instance->id);
+    $this->agents->succeed($promote['handle'], ['changed' => true]);
+
+    $restore = Restore::query()->findOrFail($restoreId);
+    $copy = DatabaseInstance::query()->findOrFail($restore->restored_instance_id);
+    $done = $recovery->pitrProgress($restoreId);
+    expect($done['state'])->toBe('succeeded')->and($done['message'])->toContain('latest point')
+        ->and($copy->refresh()->pitr_enabled)->toBeTrue()->and($copy->name)->toBe($instance->name)->and($copy->server_id)->toBe($target->id)
+        ->and(Database::query()->findOrFail($this->db->id)->database_instance_id)->toBe($copy->id)
+        ->and($this->agents->last('db.pitr.base')['payload']['instance'])->toBe($copy->id)
+        ->and($instance->refresh()->status)->toBe(InstanceStatus::Retired);
 });

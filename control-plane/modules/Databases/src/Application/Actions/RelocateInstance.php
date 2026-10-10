@@ -6,6 +6,7 @@ use Falak\Databases\Application\InstancePorts;
 use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\DatabaseInstance;
+use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Volumes\Contracts\AttachableType;
@@ -24,6 +25,8 @@ final class RelocateInstance
 {
     public function __construct(
         private readonly CreateInstance $create,
+        private readonly CreateDatabase $createDatabase,
+        private readonly ApplyDatabaseUser $applyUser,
         private readonly ServerDirectory $servers,
         private readonly ServiceVolumes $volumes,
         private readonly InstancePorts $ports,
@@ -33,7 +36,14 @@ final class RelocateInstance
     /**
      * @throws ValidationException
      */
-    public function __invoke(DatabaseInstance $instance, string $targetServerId, ?string $actorId = null): DatabaseInstance
+    /**
+     * @param  bool  $suspendPitr  turn PITR shipping off on the new, empty container: its fresh log must never join the
+     *                             instance's recovery history (a PITR restore to the latest point follows, then PITR is
+     *                             turned on again for the restored instance)
+     *
+     * @throws ValidationException
+     */
+    public function __invoke(DatabaseInstance $instance, string $targetServerId, ?string $actorId = null, bool $suspendPitr = false): DatabaseInstance
     {
         if (in_array($instance->status, [InstanceStatus::Retired, InstanceStatus::Deleting], true)) {
             throw ValidationException::withMessages(['database_instance_id' => "{$instance->name} is {$instance->status->value}."]);
@@ -46,17 +56,7 @@ final class RelocateInstance
         }
 
         if ($target->id === $instance->server_id) {
-            if ($instance->status !== InstanceStatus::Failed) {
-                throw ValidationException::withMessages(['server_id' => "{$instance->name} already runs on {$target->name}."]);
-            }
-
-            // A relocation whose container failed to come up: create it again.
-            $instance->forceFill(['status' => InstanceStatus::Pending, 'status_message' => "Recovering on {$target->name}: creating the container."])->save();
-            $instance->databases()->where('status', ResourceStatus::Failed)->update(['status' => ResourceStatus::Pending, 'status_message' => null]);
-            $instance->users()->where('status', ResourceStatus::Failed)->update(['status' => ResourceStatus::Pending, 'status_message' => null]);
-            $this->create->dispatch($instance);
-
-            return $instance;
+            return $this->retry($instance, $target->name);
         }
 
         if (! $target->isActive()) {
@@ -69,7 +69,7 @@ final class RelocateInstance
 
         $from = $instance->server_id;
 
-        DB::transaction(function () use ($instance, $target, $actorId) {
+        DB::transaction(function () use ($instance, $target, $actorId, $suspendPitr) {
             // Serializes port allocation on the target server.
             DatabaseInstance::query()->where('server_id', $target->id)->lockForUpdate()->get(['id']);
             $engine = $instance->engine;
@@ -88,6 +88,7 @@ final class RelocateInstance
                 'health' => null,
                 'health_at' => null,
                 'next_root_password' => null,
+                ...($suspendPitr ? ['pitr_enabled' => false] : []),
                 'status' => InstanceStatus::Pending,
                 'status_message' => "Recovering on {$target->name}: creating the container.",
             ])->save();
@@ -113,6 +114,37 @@ final class RelocateInstance
         });
 
         $this->audit->record('databases.instance_relocated', 'database_instance', $instance->id, ['name' => $instance->name, 'from' => $from, 'to' => $target->id], $instance->organization_id);
+
+        return $instance;
+    }
+
+    /**
+     * A relocation already moved it here and something failed: the container is created again (it never came up), or
+     * the databases and users that failed are (the container runs). One still in progress is left alone.
+     */
+    private function retry(DatabaseInstance $instance, string $serverName): DatabaseInstance
+    {
+        if ($instance->status === InstanceStatus::Failed) {
+            $instance->forceFill(['status' => InstanceStatus::Pending, 'status_message' => "Recovering on {$serverName}: creating the container."])->save();
+            $instance->databases()->whereIn('status', [ResourceStatus::Failed, ResourceStatus::Pending])->update(['status' => ResourceStatus::Pending, 'status_message' => null, 'command_id' => null]);
+            $instance->users()->whereIn('status', [ResourceStatus::Failed, ResourceStatus::Pending])->update(['status' => ResourceStatus::Pending, 'status_message' => null]);
+            $this->create->dispatch($instance);
+
+            return $instance;
+        }
+
+        if ($instance->status !== InstanceStatus::Active) {
+            return $instance;
+        }
+
+        foreach ($instance->databases()->where('status', ResourceStatus::Failed)->get() as $database) {
+            $database->forceFill(['status' => ResourceStatus::Pending, 'status_message' => null])->save();
+            $instance->engine->isKeyValue()
+                ? $database->forceFill(['status' => ResourceStatus::Active])->save()
+                : $this->createDatabase->dispatch($database);
+        }
+
+        $instance->users()->where('status', ResourceStatus::Failed)->get()->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
 
         return $instance;
     }

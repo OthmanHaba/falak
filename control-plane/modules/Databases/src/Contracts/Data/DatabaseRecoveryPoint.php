@@ -30,11 +30,26 @@ final readonly class DatabaseRecoveryPoint
         public bool $pitrEnabled,
         /** The engine can do point-in-time recovery (SQL engines) */
         public bool $pitrSupported,
+        /** How far the instance's shipped log reaches (PITR on and a recoverable chain), null otherwise */
+        public ?DateTimeImmutable $pitrLatestAt = null,
+        /** That chain's keys are the customer's (a PITR restore needs their age identity) */
+        public bool $pitrCustomerHeld = false,
     ) {}
 
-    /** Seconds of writes lost when restoring the latest backup now (null: no backup, everything is lost). */
+    /** A lost server's copy comes back by PITR to the latest point (else from the latest backup). */
+    public function usesPitr(): bool
+    {
+        return $this->pitrEnabled && $this->pitrLatestAt !== null && ! $this->pitrCustomerHeld;
+    }
+
+    /**
+     * Seconds of writes lost when recovering now: the PITR lag (time since the last shipped log) when PITR can be used,
+     * else the latest backup's age. Null: no backup, everything is lost.
+     */
     public function dataLossSeconds(?DateTimeImmutable $now = null): ?int
     {
-        return $this->lastBackupAt !== null ? max(0, ($now ?? new DateTimeImmutable)->getTimestamp() - $this->lastBackupAt->getTimestamp()) : null;
+        $point = $this->usesPitr() ? $this->pitrLatestAt : $this->lastBackupAt;
+
+        return $point !== null ? max(0, ($now ?? new DateTimeImmutable)->getTimestamp() - $point->getTimestamp()) : null;
     }
 }

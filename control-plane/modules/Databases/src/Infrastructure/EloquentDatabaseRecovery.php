@@ -3,8 +3,12 @@
 namespace Falak\Databases\Infrastructure;
 
 use DateTimeImmutable;
+use Falak\Databases\Application\Actions\ConfigurePitr;
+use Falak\Databases\Application\Actions\DecidePitrRestore;
 use Falak\Databases\Application\Actions\RelocateInstance;
 use Falak\Databases\Application\Actions\RestoreBackup;
+use Falak\Databases\Application\Actions\RestoreToTime;
+use Falak\Databases\Application\PitrTimeline;
 use Falak\Databases\Contracts\Data\DatabaseRecoveryPoint;
 use Falak\Databases\Contracts\Data\InstanceRecoveryPoint;
 use Falak\Databases\Contracts\DatabaseRecovery;
@@ -16,6 +20,7 @@ use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
+use Falak\Databases\Domain\Models\PitrSegment;
 use Falak\Databases\Domain\Models\Restore;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -26,6 +31,10 @@ final class EloquentDatabaseRecovery implements DatabaseRecovery
     public function __construct(
         private readonly RelocateInstance $relocate,
         private readonly RestoreBackup $restore,
+        private readonly RestoreToTime $restoreToTime,
+        private readonly DecidePitrRestore $decide,
+        private readonly ConfigurePitr $configurePitr,
+        private readonly PitrTimeline $timeline,
     ) {}
 
     public function instancesOn(string $serverId): array
@@ -61,6 +70,23 @@ final class EloquentDatabaseRecovery implements DatabaseRecovery
             ->orderByDesc('finished_at')->get();
 
         $points = [];
+        $pitr = [];
+
+        foreach ($databases->pluck('instance')->filter()->unique('id') as $instance) {
+            /** @var DatabaseInstance $instance */
+            if (! $instance->pitr_enabled || ! $instance->supportsPitr()) {
+                continue;
+            }
+
+            $plan = $this->timeline->plan($instance, null);
+
+            if ($plan !== null) {
+                $pitr[$instance->id] = [
+                    'to' => $plan['to']->toDateTimeImmutable(),
+                    'customer' => $plan['base']->isCustomerHeld() || collect($plan['segments'])->contains(fn (PitrSegment $segment) => $segment->isCustomerHeld()),
+                ];
+            }
+        }
 
         foreach ($databases as $database) {
             /** @var Database $database */
@@ -85,15 +111,56 @@ final class EloquentDatabaseRecovery implements DatabaseRecovery
                 $scheduled->has($instance->id),
                 $instance->pitr_enabled,
                 ! $instance->engine->isKeyValue(),
+                $pitr[$instance->id]['to'] ?? null,
+                $pitr[$instance->id]['customer'] ?? false,
             );
         }
 
         return $points;
     }
 
-    public function relocate(string $instanceId, string $targetServerId, ?string $actorId = null): void
+    public function relocate(string $instanceId, string $targetServerId, ?string $actorId = null, bool $suspendPitr = false): void
     {
-        ($this->relocate)($this->instance($instanceId), $targetServerId, $actorId);
+        ($this->relocate)($this->instance($instanceId), $targetServerId, $actorId, $suspendPitr);
+    }
+
+    public function restoreToLatest(string $instanceId, ?string $actorId = null): string
+    {
+        return ($this->restoreToTime)($this->instance($instanceId), null, $actorId)->id;
+    }
+
+    public function pitrProgress(string $restoreId, ?string $actorId = null, bool $retry = false): array
+    {
+        $restore = Restore::query()->find($restoreId);
+
+        if ($restore === null) {
+            return ['state' => 'failed', 'message' => 'The restore was deleted.'];
+        }
+
+        switch ($restore->status) {
+            case RestoreStatus::AwaitingDecision:
+                if (! $retry && $restore->error !== null && $restore->decision === null && $restore->decided_at !== null) {
+                    return ['state' => 'failed', 'message' => "Swapping the restored copy in failed: {$restore->error}"];
+                }
+
+                ($this->decide)($restore, 'swap', $actorId);
+
+                return ['state' => 'running', 'message' => 'Swapping the restored copy in.'];
+            case RestoreStatus::Succeeded:
+                $copy = DatabaseInstance::query()->find($restore->restored_instance_id);
+
+                // Its history starts again here (a base of its own); shipping was off on the empty placeholder.
+                if ($copy !== null && ! $copy->pitr_enabled && $copy->pitr_storage_provider_id !== null) {
+                    ($this->configurePitr)($copy, ['enabled' => true], $actorId);
+                }
+
+                return ['state' => 'succeeded', 'message' => 'Restored to '.$restore->target_time?->toIso8601ZuluString().' (the latest point); the empty placeholder is retired, delete it once you checked.'];
+            case RestoreStatus::Failed:
+            case RestoreStatus::Discarded:
+                return ['state' => 'failed', 'message' => $restore->error ?: 'The point-in-time restore failed.'];
+            default:
+                return ['state' => 'running', 'message' => 'Replaying the shipped log onto the newest base.'];
+        }
     }
 
     public function restoreLatest(string $instanceId, ?string $actorId = null): array
