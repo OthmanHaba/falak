@@ -149,3 +149,61 @@ func TestSSHUndoFailureRestartsSSH(t *testing.T) {
 		t.Fatal(f2.Lines())
 	}
 }
+
+// The sysctl fix never loosens a setting that is already stricter than its target.
+func TestSysctlFixKeepsStricterValues(t *testing.T) {
+	s, _, root := newSec(t)
+	sysctls(t, root, map[string]string{"kernel.kptr_restrict": "2", "net.ipv4.conf.all.rp_filter": "1", "kernel.dmesg_restrict": "0"})
+	fix(t, s, FixPayload{FixID: "kernel.sysctl"})
+	conf := read(t, root, SysctlFile)
+	for _, want := range []string{"kernel.kptr_restrict = 2\n", "net.ipv4.conf.all.rp_filter = 1\n", "kernel.dmesg_restrict = 1\n"} {
+		if !strings.Contains(conf, want) {
+			t.Errorf("missing %q:\n%s", want, conf)
+		}
+	}
+	if (Sysctls[0]).Stricter("0") != "2" {
+		t.Error("rp_filter 0 → 2")
+	}
+}
+
+// Without live-restore the Docker fix says that every container restarts.
+func TestDockerTCPFixWithoutLiveRestore(t *testing.T) {
+	s, f, root := newSec(t)
+	put(t, root, "/usr/bin/docker", "", 0o755)
+	put(t, root, DaemonJSON, `{"hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2375"]}`, 0o644)
+	f.On("docker ps", fail(1))
+	if c := byID(t, s.dockerChecks(context.Background(), AuditPayload{}), "docker.tcp"); !strings.Contains(c.Evidence, "live-restore is off") || c.FixID != "docker.tcp_off" {
+		t.Fatalf("%+v", c)
+	}
+	res := fix(t, s, FixPayload{FixID: "docker.tcp_off"})
+	if !res.Disruptive || !strings.Contains(res.Message, "every container restarted") {
+		t.Fatalf("%+v", res)
+	}
+	if !LiveRestore([]byte(`{"live-restore": true}`)) || LiveRestore([]byte(`{}`)) {
+		t.Fatal("LiveRestore")
+	}
+}
+
+// Installing updates only lists the services needing a restart (needrestart in list mode), never restarts them.
+func TestInstallUpdatesListsRestartsOnly(t *testing.T) {
+	s, f, root := newSec(t)
+	f.On("apt-get -s", ok(aptOut))
+	f.On("dpkg-query -W -f=${db:Status-Status} unattended-upgrades", ok("installed"))
+	f.On("needrestart -b", ok("NEEDRESTART-VER: 3.6\nNEEDRESTART-SVC: nginx.service\nNEEDRESTART-SVC: falak-agent.service\n"))
+	put(t, root, AutoUpgrades, "APT::Periodic::Unattended-Upgrade \"1\";\n", 0o644)
+	res := fix(t, s, FixPayload{FixID: "updates.install"})
+	if !strings.Contains(res.Message, "to restart: falak-agent.service, nginx.service") {
+		t.Fatalf("%+v", res)
+	}
+	for _, c := range f.Calls() {
+		if c.Line == "unattended-upgrade -v" {
+			env := strings.Join(c.Env, " ")
+			if !strings.Contains(env, "NEEDRESTART_MODE=l") || strings.Contains(env, "NEEDRESTART_MODE=a") {
+				t.Fatalf("env %s", env)
+			}
+		}
+		if strings.HasPrefix(c.Line, "systemctl restart") {
+			t.Fatalf("restarted: %s", c.Line)
+		}
+	}
+}

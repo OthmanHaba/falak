@@ -72,14 +72,49 @@ func (s *Security) fixInstallUpdates(ctx context.Context, _ *backup, _ FixPayloa
 	if err := system.AptFor(s.d.Runner, s.d.FS, st).Update(ctx); err != nil {
 		return false, "", err
 	}
-	if err := s.exec(ctx, st, updatesLimit, system.AptEnv, "unattended-upgrade", "-v"); err != nil {
+	// needrestart only lists what needs a restart: services (the agent among them) are never restarted from here.
+	if err := s.exec(ctx, st, updatesLimit, listOnly(system.AptEnv), "unattended-upgrade", "-v"); err != nil {
 		return false, "", err
 	}
 	msg := "installed " + plural(len(pkgs), "security update", "security updates")
+	if svcs := s.needRestart(ctx); len(svcs) > 0 {
+		msg += "; to restart: " + list(svcs, 6)
+	}
 	if s.d.FS.Exists(RebootRequired) {
 		msg += "; a reboot is required"
 	}
 	return true, msg, nil
+}
+
+// listOnly is the apt environment with needrestart in list mode.
+func listOnly(env []string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "NEEDRESTART_MODE=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, "NEEDRESTART_MODE=l", "NEEDRESTART_SUSPEND=1")
+}
+
+// needRestart lists the services running outdated libraries (needrestart's batch mode), when needrestart exists.
+func (s *Security) needRestart(ctx context.Context) []string {
+	out, ok := s.output(ctx, "needrestart", "-b", "-r", "l")
+	if !ok {
+		return nil
+	}
+	return ParseNeedRestart(out)
+}
+
+// ParseNeedRestart reads `needrestart -b` ("NEEDRESTART-SVC: nginx.service").
+func ParseNeedRestart(out string) []string {
+	var svcs []string
+	for _, line := range strings.Split(out, "\n") {
+		if svc, ok := strings.CutPrefix(strings.TrimSpace(line), "NEEDRESTART-SVC:"); ok && strings.TrimSpace(svc) != "" {
+			svcs = append(svcs, strings.TrimSpace(svc))
+		}
+	}
+	return svcs
 }
 
 func (s *Security) fixReboot(ctx context.Context, b *backup, p FixPayload, st commands.Stream) (bool, string, error) {
@@ -156,6 +191,14 @@ func (s *Security) undoFail2ban(ctx context.Context, _ Manifest, st commands.Str
 	return s.exec(ctx, st, time.Minute, nil, "systemctl", "restart", "fail2ban.service")
 }
 
+// LiveRestore reports whether daemon.json turns live-restore on (containers keep running while dockerd restarts).
+func LiveRestore(raw []byte) bool {
+	var cfg struct {
+		LiveRestore bool `json:"live-restore"`
+	}
+	return json.Unmarshal(raw, &cfg) == nil && cfg.LiveRestore
+}
+
 // DisableDaemonTCP removes the tcp:// entries from daemon.json "hosts" (the key goes when nothing is left); changed is
 // false when there was none.
 func DisableDaemonTCP(raw []byte) ([]byte, bool, error) {
@@ -204,26 +247,34 @@ func (s *Security) fixDockerTCP(ctx context.Context, b *backup, _ FixPayload, st
 	if err := s.exec(ctx, st, 30*time.Second, nil, "dockerd", "--validate", "--config-file", DaemonJSON); err != nil {
 		return false, "", fmt.Errorf("dockerd rejected the configuration: %w", err)
 	}
+	liveRestore := LiveRestore([]byte(raw))
+	if !liveRestore {
+		fmt.Fprintln(st.Stdout(), "live-restore is off: restarting Docker restarts every container")
+	}
 	if err := s.exec(ctx, st, 3*time.Minute, nil, "systemctl", "restart", "docker.service"); err != nil {
 		// Put the old configuration back and start Docker with it.
 		_ = b.restore(context.WithoutCancel(ctx))
 		_ = s.exec(context.WithoutCancel(ctx), st, 3*time.Minute, nil, "systemctl", "restart", "docker.service")
 		return false, "", fmt.Errorf("docker did not restart with the new configuration: %w", err)
 	}
-	return true, "the Docker API listens on its unix socket only (live-restore keeps containers running)", nil
+	if !liveRestore {
+		return true, "the Docker API listens on its unix socket only; live-restore is off, so every container restarted", nil
+	}
+	return true, "the Docker API listens on its unix socket only (live-restore kept the containers running)", nil
 }
 
 func (s *Security) undoDockerTCP(ctx context.Context, _ Manifest, st commands.Stream) error {
 	return s.exec(ctx, st, 3*time.Minute, nil, "systemctl", "restart", "docker.service")
 }
 
-// RenderSysctl renders 90-falak-hardening.conf for the settings this kernel has.
-func RenderSysctl(has func(key string) bool) string {
+// RenderSysctl renders 90-falak-hardening.conf for the settings this kernel has. A setting that already passes keeps
+// its value (kptr_restrict 2, strict rp_filter 1): the fix never loosens anything.
+func RenderSysctl(value func(key string) (string, bool)) string {
 	var b strings.Builder
 	b.WriteString("# Managed by Falak (security fix kernel.sysctl)\n")
 	for _, k := range Sysctls {
-		if has(k.Key) {
-			fmt.Fprintf(&b, "%s = %s\n", k.Key, k.Want)
+		if cur, ok := value(k.Key); ok {
+			fmt.Fprintf(&b, "%s = %s\n", k.Key, k.Stricter(cur))
 		}
 	}
 	return b.String()
@@ -231,7 +282,6 @@ func RenderSysctl(has func(key string) bool) string {
 
 func (s *Security) fixSysctl(ctx context.Context, b *backup, _ FixPayload, st commands.Stream) (bool, string, error) {
 	var bad []string
-	has := func(key string) bool { _, ok := s.sysctl(key); return ok }
 	for _, k := range Sysctls {
 		if v, ok := s.sysctl(k.Key); ok && !k.OK(v) {
 			bad = append(bad, k.Key)
@@ -250,7 +300,7 @@ func (s *Security) fixSysctl(ctx context.Context, b *backup, _ FixPayload, st co
 			}
 		}
 	}
-	if _, err := s.d.FS.WriteFile(SysctlFile, []byte(RenderSysctl(has)), 0o644); err != nil {
+	if _, err := s.d.FS.WriteFile(SysctlFile, []byte(RenderSysctl(s.sysctl)), 0o644); err != nil {
 		return false, "", err
 	}
 	if err := s.exec(ctx, st, 30*time.Second, nil, "sysctl", "-p", SysctlFile); err != nil {

@@ -38,6 +38,14 @@ var Sysctls = []Sysctl{
 	{"fs.protected_symlinks", "1", Medium, "Symlink protection is on", eq("1")},
 }
 
+// Stricter is what the fix writes for a setting now at cur: cur when it already passes (never loosened), else Want.
+func (k Sysctl) Stricter(cur string) string {
+	if k.OK(cur) {
+		return cur
+	}
+	return k.Want
+}
+
 func procPath(key string) string { return "/proc/sys/" + strings.ReplaceAll(key, ".", "/") }
 
 // sysctl reads a setting's live value; ok is false when the kernel has no such setting (IPv6 disabled, ...).

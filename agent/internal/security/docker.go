@@ -117,6 +117,9 @@ func (s *Security) dockerChecks(ctx context.Context, p AuditPayload) []Check {
 			c.Status, c.Severity, c.Evidence = Warn, Medium, DaemonJSON+" is not valid JSON"
 		} else if len(hosts) > 0 && !tls {
 			c.Status, c.FixID, c.Evidence = Fail, "docker.tcp_off", DaemonJSON+" listens on "+strings.Join(hosts, ", ")+" without tlsverify"
+			if !LiveRestore([]byte(b)) {
+				c.Evidence += "; live-restore is off: the fix restarts every container"
+			}
 		}
 	}
 	if c.Status == Pass {
