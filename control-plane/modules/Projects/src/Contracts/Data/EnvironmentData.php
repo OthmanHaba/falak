@@ -13,5 +13,9 @@ final readonly class EnvironmentData
         public string $slug,
         public bool $isProduction,
         public ?string $forkedFromId,
+        /** A pull request's preview (Previews) */
+        public bool $isPreview = false,
+        /** A preview of a pull request from a fork: untrusted, no secrets */
+        public bool $isForkPreview = false,
     ) {}
 }

@@ -6,6 +6,7 @@ use Falak\Sites\Application\OctanePorts;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Volumes\Contracts\ServiceVolumes;
@@ -19,13 +20,14 @@ use Illuminate\Support\Str;
 final class DuplicateSite
 {
     /** Overrides callers may set; everything else is copied from the source. */
-    public const OVERRIDES = ['name', 'name_suffix', 'branch', 'server_ids', 'leader_server_id', 'push_to_deploy'];
+    public const OVERRIDES = ['name', 'name_suffix', 'branch', 'server_ids', 'leader_server_id', 'push_to_deploy', 'strip_secrets'];
 
     public function __construct(
         private readonly CreateSite $create,
         private readonly OctanePorts $octanePorts,
         private readonly ServiceVolumes $volumes,
         private readonly VolumeMounts $mounts,
+        private readonly SecretVariables $secrets,
     ) {}
 
     /**
@@ -75,7 +77,7 @@ final class DuplicateSite
             $data,
             $placement,
             requireServers: false,
-            configure: function (Site $copy) use ($source) {
+            configure: function (Site $copy) use ($source, $overrides) {
                 $copy->forceFill([
                     'deploy_script' => $source->deploy_script,
                     'laravel' => $source->laravel,
@@ -93,7 +95,7 @@ final class DuplicateSite
 
                 // Still inside the creation transaction: version 1 is replaced before anything reads it.
                 EnvironmentVersion::query()->where('site_id', $copy->id)->where('version', 1)->firstOrFail()->forceFill([
-                    'variables' => $this->copyVariables($source, $copy, $environment->variables),
+                    'variables' => $this->copyVariables($source, $copy, $environment->variables, (bool) ($overrides['strip_secrets'] ?? false)),
                     'exposed' => array_values($environment->exposed ?? []),
                 ])->save();
             },
@@ -102,14 +104,23 @@ final class DuplicateSite
 
     /**
      * Variables are copied verbatim (references keep pointing at same-named services of the new
-     * environment), except values derived from the source site itself.
+     * environment), except values derived from the source site itself. $stripSecrets (a fork's preview) empties the
+     * secret values written in the variables; references stay, and resolving them refuses secrets there.
      *
      * @param  array<string, string>  $variables
      * @return array<string, string>
      */
-    private function copyVariables(Site $source, Site $copy, array $variables): array
+    private function copyVariables(Site $source, Site $copy, array $variables, bool $stripSecrets = false): array
     {
         $variables = array_map('strval', $variables);
+
+        if ($stripSecrets) {
+            foreach ($this->secrets->names($variables) as $name) {
+                if (! str_contains($variables[$name], '${{')) {
+                    $variables[$name] = '';
+                }
+            }
+        }
 
         if (($from = $source->testDomain()) !== null && ($variables['APP_URL'] ?? null) === "https://{$from}") {
             $variables['APP_URL'] = ($to = $copy->testDomain()) !== null ? "https://{$to}" : '';

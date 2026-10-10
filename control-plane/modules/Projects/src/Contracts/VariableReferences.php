@@ -32,7 +32,8 @@ interface VariableReferences
      *
      * @param  array<string, string>  $variables
      * @param  list<string>|null  $only  resolve and return only these variables (self-references still see all)
-     * @param  bool  $forPreview  a preview environment: secrets not available to previews count as missing
+     * @param  bool  $forPreview  treat as a preview: secrets not available to previews count as missing (a site in a
+     *                            preview environment always is; a fork's preview gets no secret at all)
      */
     public function resolveForSite(string $siteId, array $variables, ?array $only = null, bool $forPreview = false): ResolvedVariables;
 

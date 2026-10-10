@@ -30,11 +30,21 @@ final class CreateEnvironment
         private readonly AuditLog $audit,
     ) {}
 
+    /** @var array<string, string> service name => id of its copy (sites only) */
+    public array $copies = [];
+
     /**
+     * $preview makes a pull request's preview of $from (Previews): `fork` (untrusted, no secrets), only the services
+     * named in `include` copied, with `sites` overrides per service name ({@see SiteFactory::duplicate()}), and the
+     * `shared` names resolving in $from.
+     *
+     * @param  ?array{fork: bool, include: list<string>, shared: list<string>, sites: array<string, array<string, mixed>>}  $preview
+     *
      * @throws ValidationException
      */
-    public function __invoke(Project $project, string $name, ?string $userId = null, ?Environment $from = null): Environment
+    public function __invoke(Project $project, string $name, ?string $userId = null, ?Environment $from = null, ?array $preview = null): Environment
     {
+        $this->copies = [];
         $this->warnings = [];
         $name = trim($name);
 
@@ -54,6 +64,9 @@ final class CreateEnvironment
             'is_production' => false,
             'forked_from_id' => $from?->id,
             'created_by' => $userId,
+            'is_preview' => $preview !== null,
+            'is_fork_preview' => (bool) ($preview['fork'] ?? false),
+            'shared_services' => $preview !== null ? array_values($preview['shared']) : null,
         ]);
 
         $this->audit->record('project.environment_created', 'project', $project->id, [
@@ -64,18 +77,26 @@ final class CreateEnvironment
         EnvironmentCreated::dispatch($environment->id, $project->id, $project->organization_id, $environment->slug, false, $from?->id);
 
         if ($from !== null) {
-            $this->duplicate($from, $environment, $userId);
+            $this->duplicate($from, $environment, $userId, $preview);
         }
 
         return $environment;
     }
 
-    private function duplicate(Environment $from, Environment $to, ?string $userId): void
+    /**
+     * @param  ?array{fork: bool, include: list<string>, shared: list<string>, sites: array<string, array<string, mixed>>}  $preview
+     */
+    private function duplicate(Environment $from, Environment $to, ?string $userId, ?array $preview): void
     {
         $skippedDatabases = [];
+        $include = $preview !== null ? array_map(fn ($name) => Service::handle((string) $name), $preview['include']) : null;
 
         foreach ($from->services()->get() as $service) {
             /** @var Service $service */
+            if ($include !== null && ! in_array(Service::handle($service->name), $include, true)) {
+                continue;
+            }
+
             if ($service->kind === ServiceKind::Database) {
                 $skippedDatabases[] = $service->name;
 
@@ -86,22 +107,28 @@ final class CreateEnvironment
             ['x' => $x, 'y' => $y] = MoveService::absolute($service);
 
             try {
+                $overrides = $preview !== null ? [
+                    ...(array) ($preview['sites'][$service->name] ?? []),
+                    'strip_secrets' => (bool) $preview['fork'],
+                    'push_to_deploy' => false,
+                ] : [];
                 $copy = $this->sites->duplicate(
                     $service->ref_id,
-                    ['name_suffix' => $to->slug],
+                    ['name_suffix' => $to->slug, ...$overrides],
                     new SitePlacement($to->project_id, $to->id, $x, $y, $service->name),
                     $userId,
                 );
 
                 // Normally done by the SiteCreated listener already; linking is idempotent.
                 ($this->link)($to, ServiceKind::Site, $copy->site->id, $service->name, $x, $y);
+                $this->copies[$service->name] = $copy->site->id;
                 array_push($this->warnings, ...$copy->warnings);
             } catch (ValidationException $e) {
                 $this->warnings[] = "{$service->name} was not copied: ".implode(' ', array_merge(...array_values($e->errors())));
             }
         }
 
-        if ($skippedDatabases !== []) {
+        if ($skippedDatabases !== [] && $preview === null) {
             $this->warnings[] = 'Databases are not duplicated ('.implode(', ', $skippedDatabases).'); create them in this environment so references resolve.';
         }
     }

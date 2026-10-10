@@ -12,6 +12,22 @@ return [
             'log_max_size' => (int) env('FALAK_LIMITS_NONPROD_LOG_MB', 20),
             'log_max_files' => (int) env('FALAK_LIMITS_NONPROD_LOG_FILES', 3),
         ]),
+        // Pull request previews: small, many of them share a server.
+        'preview' => array_filter([
+            'memory_limit' => (int) env('FALAK_LIMITS_PREVIEW_MEMORY_MB', 384),
+            'cpus' => (float) env('FALAK_LIMITS_PREVIEW_CPUS', 0.5),
+            'pids_limit' => (int) env('FALAK_LIMITS_PREVIEW_PIDS', 256),
+            'log_max_size' => 10,
+            'log_max_files' => 2,
+        ]),
+        // Previews of pull requests from forks run untrusted code: the strictest caps.
+        'fork_preview' => array_filter([
+            'memory_limit' => (int) env('FALAK_LIMITS_FORK_PREVIEW_MEMORY_MB', 256),
+            'cpus' => (float) env('FALAK_LIMITS_FORK_PREVIEW_CPUS', 0.25),
+            'pids_limit' => 128,
+            'log_max_size' => 5,
+            'log_max_files' => 2,
+        ]),
     ],
 
     // A hard memory limit throttles (MemoryHigh) at this fraction of itself before the OOM killer acts.
