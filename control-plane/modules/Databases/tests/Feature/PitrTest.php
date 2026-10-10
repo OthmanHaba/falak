@@ -1,6 +1,7 @@
 <?php
 
 use Falak\Databases\Application\Actions\PrunePitr;
+use Falak\Databases\Application\Actions\SettlePitr;
 use Falak\Databases\Application\Actions\TakePitrBase;
 use Falak\Databases\Application\Jobs\MaintainPitr;
 use Falak\Databases\Application\PitrTimeline;
@@ -21,6 +22,8 @@ use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\PitrAlert;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Certificate;
 use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Identity\Contracts\Role;
@@ -554,15 +557,15 @@ it('alerts on a lagging or full spool from the heartbeat, once, and resolves', f
     ]));
 
     $report(['spool_bytes' => 3 * 1024 ** 3, 'volume_bytes' => 10 * 1024 ** 3, 'pending' => 40, 'oldest_pending_at' => now()->subMinutes(12)->toIso8601ZuluString(), 'error' => 'HTTP 502']);
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
     Event::assertDispatchedTimes(PitrAlert::class, 2);
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::LAG && str_contains($alert->body, 'HTTP 502'));
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::SPOOL_FULL && str_contains($alert->body, '30%'));
     expect($this->engine->refresh()->pitr_report['pending'])->toBe(40);
 
     $report(['spool_bytes' => 1024, 'volume_bytes' => 10 * 1024 ** 3, 'pending' => 0]);
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::RECOVERED && $alert->resolves === PitrAlert::LAG && $alert->toAlert()->resolves);
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::RECOVERED && $alert->resolves === PitrAlert::SPOOL_FULL);
     Event::assertDispatchedTimes(PitrAlert::class, 4);
@@ -570,12 +573,12 @@ it('alerts on a lagging or full spool from the heartbeat, once, and resolves', f
 
 it('takes due base backups', function () {
     pitr_on($this, ['pitr_next_base_at' => now()->subMinute()]);
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
     expect($this->agents->dispatched('db.pitr.base'))->toHaveCount(1)
         ->and($this->engine->refresh()->pitr_next_base_at->toDateTimeString())->toBe('2026-10-16 12:00:00');
     // One at a time.
     $this->engine->forceFill(['pitr_next_base_at' => now()->subMinute()])->save();
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
     expect($this->agents->dispatched('db.pitr.base'))->toHaveCount(1);
 });
 
@@ -808,4 +811,42 @@ it('keeps every restore status within the status column (32 wide; postgres and m
     foreach (RestoreStatus::cases() as $status) {
         expect(strlen($status->value))->toBeLessThanOrEqual(32);
     }
+});
+
+it('settles a restore whose outcome was never settled, so it no longer blocks the next restore', function () {
+    pitr_on($this);
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    pitr_ship($this, '000000010000000000000003', '2026-10-09T08:01:00Z');
+    $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => 'latest'])->assertStatus(202);
+    $command = $this->agents->last('db.pitr.restore');
+    $restore = Restore::query()->latest('id')->firstOrFail();
+
+    // The command finished on the agent, but its outcome never reached SettlePitr (the listener failed).
+    $id = $command['handle']->id;
+    $this->agents->commands[$id]['status'] = CommandStatus::Succeeded;
+    $this->agents->commands[$id]['result'] = ['container_id' => 'c9', 'health' => 'healthy', 'recovered_to' => '2026-10-09T08:01:00Z', 'segments' => 1, 'downloaded_bytes' => 1, 'table_counts' => ['shop' => ['public.orders' => 7]]];
+    expect($restore->refresh()->status)->toBe(RestoreStatus::Pending);
+
+    $maintain = fn () => (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
+    $maintain();
+    expect($restore->refresh()->status)->toBe(RestoreStatus::Pending); // not stale yet
+
+    $this->travel(MaintainPitr::STALE_RESTORE_SECONDS + 60)->seconds();
+    $maintain();
+    expect($restore->refresh()->status)->toBe(RestoreStatus::AwaitingDecision)
+        ->and($restore->table_counts)->toBe(['shop' => ['public.orders' => 7]]);
+});
+
+it('fails a restore whose command never finished', function () {
+    pitr_on($this);
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
+    pitr_ship($this, '000000010000000000000003', '2026-10-09T08:01:00Z');
+    $this->postJson("/databases/instances/{$this->engine->id}/pitr/restore", ['target_time' => 'latest'])->assertStatus(202);
+    $restore = Restore::query()->latest('id')->firstOrFail();
+
+    $this->travel(MaintainPitr::LOST_RESTORE_SECONDS + 60)->seconds();
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
+
+    expect($restore->refresh()->status)->toBe(RestoreStatus::Failed)
+        ->and($restore->error)->toBe('The restore command never finished.');
 });

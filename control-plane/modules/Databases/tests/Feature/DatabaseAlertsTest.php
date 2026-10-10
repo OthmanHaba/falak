@@ -3,6 +3,7 @@
 use Falak\Alerting\Contracts\Severity;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Databases\Application\Actions\PrunePitr;
+use Falak\Databases\Application\Actions\SettlePitr;
 use Falak\Databases\Application\Actions\TakePitrBase;
 use Falak\Databases\Application\Jobs\CheckBackupHealth;
 use Falak\Databases\Application\Jobs\MaintainPitr;
@@ -10,6 +11,7 @@ use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\Data\AgentInfo;
 use Falak\Fleet\Events\AgentDatabasesReported;
@@ -182,7 +184,7 @@ it('alerts when an instance with PITR on stops reporting its spool while its age
     });
     $this->engine->forceFill(['pitr_enabled' => true, 'pitr_storage_provider_id' => $this->provider->id, 'pitr_next_base_at' => now()->addDay(), 'health' => 'healthy',
         'pitr_report' => ['spool_bytes' => 0, 'volume_bytes' => 100, 'pending' => 0, 'at' => now()->subMinutes(5)->toIso8601String()]])->save();
-    $maintain = fn () => (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
+    $maintain = fn () => (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class), app(SettlePitr::class), app(AgentGateway::class));
 
     $maintain();
     expect(db_alerts('pitr.stopped'))->toHaveCount(0);
