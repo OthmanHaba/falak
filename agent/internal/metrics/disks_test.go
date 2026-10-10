@@ -4,12 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 )
 
-const procMounts = `sysfs /sys sysfs rw,nosuid 0 0
+var procMounts = `sysfs /sys sysfs rw,nosuid 0 0
 proc /proc proc rw 0 0
 /dev/sda1 / ext4 rw,relatime 0 0
 /dev/sda15 /boot/efi vfat rw 0 0
@@ -22,6 +23,7 @@ overlay /var/lib/docker/overlay2/abc/merged overlay rw 0 0
 /dev/loop3 /var/lib/falak/volumes/01hzyvol xfs rw 0 0
 /dev/loop4 /snap/core/1 squashfs ro 0 0
 tank/data /tank/data zfs rw 0 0
+/dev/sdc /mnt/` + strings.Repeat("x", 200) + ` ext4 rw 0 0
 `
 
 func TestParseMounts(t *testing.T) {

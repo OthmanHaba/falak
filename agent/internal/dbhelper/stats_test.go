@@ -13,14 +13,12 @@ func TestStats(t *testing.T) {
 		want   string
 	}{
 		{Postgres, func(Cmd) string { return "42|100\n" }, `{"connections":42,"max_connections":100}`},
-		{MySQL, func(Cmd) string { return "151\t151\n" }, `{"connections":151,"max_connections":151}`},
-		{MariaDB, func(Cmd) string { return "3\t500\n" }, `{"connections":3,"max_connections":500}`},
-		{Redis, func(c Cmd) string {
-			if strings.Contains(strings.Join(c.Args, " "), "maxclients") {
-				return "maxclients\n10000\n"
-			}
-			return "# Clients\r\nconnected_clients:7\r\nblocked_clients:0\r\n"
+		{MySQL, func(Cmd) string { return "Threads_connected\t151\nmax_connections\t151\n" }, `{"connections":151,"max_connections":151}`},
+		{MariaDB, func(Cmd) string { return "Threads_connected\t3\nmax_connections\t500\n" }, `{"connections":3,"max_connections":500}`},
+		{Redis, func(Cmd) string {
+			return "# Clients\r\nconnected_clients:7\r\ncluster_connections:0\r\nmaxclients:10000\r\nblocked_clients:0\r\n"
 		}, `{"connections":7,"max_connections":10000}`},
+		{Valkey, func(Cmd) string { return "# Clients\r\nconnected_clients:2\r\nmaxclients:4064\r\n" }, `{"connections":2,"max_connections":4064}`},
 	} {
 		th := newTestHelper(t, c.engine)
 		th.run.handle = func(cmd Cmd) (string, error) { return c.answer(cmd), nil }
@@ -44,11 +42,11 @@ func TestStatsQueries(t *testing.T) {
 	}
 
 	th = newTestHelper(t, MySQL)
-	th.run.handle = func(Cmd) (string, error) { return "1\t100", nil }
+	th.run.handle = func(Cmd) (string, error) { return "Threads_connected\t1\nmax_connections\t100", nil }
 	if err := th.Stats(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if in := th.run.stdins["mysql"]; !strings.Contains(in, "Threads_connected") || !strings.Contains(in, "@@max_connections") {
+	if in := th.run.stdins["mysql"]; !strings.Contains(in, "SHOW GLOBAL STATUS LIKE 'Threads_connected'") || !strings.Contains(in, "@@max_connections") || strings.Contains(in, "performance_schema") {
 		t.Errorf("mysql query %q", in)
 	}
 }
@@ -61,5 +59,24 @@ func TestStatsRejectsGarbage(t *testing.T) {
 	}
 	if code := Main(context.Background(), th.Helper, []string{"stats", "extra"}); code != ExitUsage {
 		t.Errorf("stats with an argument: exit %d", code)
+	}
+}
+
+func TestStatsRedisNeverUsesConfig(t *testing.T) {
+	th := newTestHelper(t, Redis)
+	th.run.handle = func(Cmd) (string, error) { return "connected_clients:1\r\nmaxclients:10000\r\n", nil }
+	if err := th.Stats(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range th.run.calls {
+		if strings.Contains(strings.Join(c.Args, " "), "CONFIG") {
+			t.Errorf("CONFIG used: %v (the default user has -config)", c.Args)
+		}
+	}
+	// Redis before 7 has no maxclients in INFO: no figures rather than a guess.
+	th = newTestHelper(t, Redis)
+	th.run.handle = func(Cmd) (string, error) { return "connected_clients:1\r\n", nil }
+	if err := th.Stats(context.Background()); err == nil {
+		t.Error("stats without maxclients succeeded")
 	}
 }

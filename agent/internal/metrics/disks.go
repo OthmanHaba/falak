@@ -19,8 +19,11 @@ type DiskUsage struct {
 	TotalBytes     int64  `json:"total_bytes"`
 }
 
-// MaxDisks caps the mounts in a heartbeat.
-const MaxDisks = 20
+// MaxDisks caps the mounts in a heartbeat; MaxMountLength the length of a mount path (longer ones are skipped).
+const (
+	MaxDisks       = 20
+	MaxMountLength = 200
+)
 
 // diskFSTypes are the filesystems that hold data (not tmpfs, overlay, squashfs, vfat EFI partitions, network mounts).
 var diskFSTypes = map[string]bool{"ext2": true, "ext3": true, "ext4": true, "xfs": true, "btrfs": true, "zfs": true, "f2fs": true, "jfs": true}
@@ -39,7 +42,7 @@ func ParseMounts(b []byte) []string {
 			continue
 		}
 		mount := unescapeMount(f[1])
-		if skipMount(mount) {
+		if skipMount(mount) || len(mount) > MaxMountLength {
 			continue
 		}
 		// The first mount of a device is the original; later ones are bind mounts. zfs datasets are keyed by name.
