@@ -7,6 +7,7 @@ use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Enums\WwwRedirect;
 use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\PreviewDomain;
 use Falak\Edge\Events\DomainAdded;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SiteData;
@@ -25,8 +26,9 @@ final class AddDomain
 
     /**
      * @param  ?string  $service  public service of a compose site the domain routes to (null: the site / its primary service)
+     * @param  bool  $preview  a preview host routed by PreviewDomains (names under the preview domain are reserved for those)
      */
-    public function __invoke(SiteData $site, string $name, TlsMode $tls = TlsMode::Auto, WwwRedirect $www = WwwRedirect::None, ?string $certificateId = null, ?string $dnsCredentialId = null, ?string $service = null): Domain
+    public function __invoke(SiteData $site, string $name, TlsMode $tls = TlsMode::Auto, WwwRedirect $www = WwwRedirect::None, ?string $certificateId = null, ?string $dnsCredentialId = null, ?string $service = null, bool $preview = false): Domain
     {
         $service = ComposeServiceDomains::normalize($site, $service);
         $name = strtolower(rtrim(trim($name), '.'));
@@ -37,6 +39,10 @@ final class AddDomain
 
         if ($site->testDomain !== null && strtolower($site->testDomain) === $name) {
             throw ValidationException::withMessages(['name' => 'This is the site\'s test domain; it is always routed.']);
+        }
+
+        if (! $preview && (PreviewDomain::current()?->contains(ltrim($name, '*.')) ?? false)) {
+            throw ValidationException::withMessages(['name' => 'Names under the preview domain are reserved for pull request previews.']);
         }
 
         $this->validateDomainTls($site->organizationId, $site->id, $name, $tls, $www, $certificateId, $dnsCredentialId);

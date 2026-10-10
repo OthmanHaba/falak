@@ -13,6 +13,7 @@ use Falak\Edge\Domain\Models\Domain;
 use Falak\Edge\Domain\Models\Header;
 use Falak\Edge\Domain\Models\LoadBalancer;
 use Falak\Edge\Domain\Models\Mount;
+use Falak\Edge\Domain\Models\PreviewDomain;
 use Falak\Edge\Domain\Models\Redirect;
 use Falak\Edge\Domain\Models\SecurityRule;
 use Falak\Edge\Domain\Models\ServiceSetting;
@@ -48,6 +49,9 @@ final class RouteCompiler
 {
     /** @var Collection<int, CloudflareZone> managed Cloudflare zones of the server being compiled (see compile()) */
     private Collection $zones;
+
+    /** The preview domain when the server being compiled is its edge with a managed wildcard certificate */
+    private ?PreviewDomain $wildcard = null;
 
     public function __construct(
         private readonly SiteDirectory $sites,
@@ -104,6 +108,9 @@ final class RouteCompiler
             ? CloudflareZone::query()->where('organization_id', $organizationId)->get()
             : collect();
 
+        $preview = PreviewDomain::current();
+        $this->wildcard = $preview !== null && $preview->managed() && $preview->server_id === strtolower($serverId) ? $preview : null;
+
         foreach ($this->routedSites($serverId) as [$site, $role, $balancer]) {
             array_push($entries, ...$this->siteEntries($site, $serverId, $role, $balancer));
         }
@@ -120,6 +127,11 @@ final class RouteCompiler
             'acme_email' => $this->acmeEmail ?: null,
             'acme_ca' => $this->acmeCa ?: null,
             'trusted_proxies' => $proxied ? [...CloudflareRanges::RANGES, ...$local] : null,
+            // The preview edge: one DNS-01 certificate for every preview host it serves.
+            'wildcard_certificates' => $this->wildcard !== null ? [[
+                'subject' => '*.'.$this->wildcard->domain,
+                'dns' => ['provider' => 'cloudflare', 'api_token' => $this->wildcard->dnsCredential->api_token],
+            ]] : null,
         ]) + ['sites' => $entries];
     }
 
@@ -531,6 +543,10 @@ final class RouteCompiler
      */
     private function tls(Domain $domain, array $installedCertificates): ?array
     {
+        if ($domain->tls_mode === TlsMode::Auto && $this->wildcard?->covers($domain->name)) {
+            return ['mode' => 'wildcard'];
+        }
+
         return match ($domain->tls_mode) {
             TlsMode::Auto => $domain->isWildcard() ? null : $this->acme($domain->name),
             TlsMode::Internal => ['mode' => 'internal'],
