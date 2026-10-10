@@ -13,6 +13,7 @@ use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Sites\Events\SiteDeleted;
+use Falak\Volumes\Application\Jobs\CheckVolumeBackups;
 use Falak\Volumes\Application\Jobs\PruneDownloads;
 use Falak\Volumes\Application\Jobs\RefreshVolumeUsage;
 use Falak\Volumes\Application\Jobs\RunDueVolumeBackups;
@@ -28,6 +29,7 @@ use Falak\Volumes\Domain\Models\Volume;
 use Falak\Volumes\Domain\Models\VolumeBackup;
 use Falak\Volumes\Domain\Policies\VolumePolicy;
 use Falak\Volumes\Events\VolumeAlmostFull;
+use Falak\Volumes\Events\VolumeBackupFinished;
 use Falak\Volumes\Events\VolumeDrillFinished;
 use Falak\Volumes\Infrastructure\ActionServiceVolumes;
 use Falak\Volumes\Infrastructure\EloquentVolumeMounts;
@@ -64,7 +66,10 @@ class VolumesServiceProvider extends ModuleServiceProvider
         $registry->register(VolumePolicy::BROWSE, [Role::Admin], 'Browse and download the files of volumes (audited)', 'volumes');
 
         $types = $this->app->make(AlertTypes::class);
-        $types->register(VolumeAlmostFull::ALERT_TYPE, 'Volume almost full', 'Volumes', Severity::Warning);
+        $types->register(VolumeAlmostFull::ALERT_TYPE, 'Volume almost full', 'Volumes', Severity::Warning, 'Grow volume');
+        $types->register(VolumeBackupFinished::ALERT_FAILED, 'Volume backup failed', 'Volumes', Severity::Critical, 'Review backups');
+        $types->register(VolumeBackupFinished::ALERT_SUCCEEDED, 'Volume backups succeed again', 'Volumes', Severity::Info);
+        $types->register('volumes.backup_missed', 'No volume backup within twice the schedule interval', 'Volumes', Severity::Critical, 'Review backups');
         $types->register(VolumeDrillFinished::ALERT_FAILED, 'Volume restore drill failed', 'Volumes', Severity::Critical);
         $types->register(VolumeDrillFinished::ALERT_PASSED, 'Volume restore drills pass again', 'Volumes', Severity::Info);
 
@@ -80,6 +85,7 @@ class VolumesServiceProvider extends ModuleServiceProvider
             $schedule->job(new RunDueVolumeDrills)->everyTenMinutes()->name('volumes:drills')->withoutOverlapping();
             $schedule->job(new RefreshVolumeUsage)->cron('*/'.max(1, min(59, (int) config('volumes.usage_refresh_minutes', 15))).' * * * *')->name('volumes:usage')->withoutOverlapping();
             $schedule->job(new PruneDownloads)->hourly()->name('volumes:prune-downloads')->withoutOverlapping();
+            $schedule->job(new CheckVolumeBackups)->everyFiveMinutes()->name('volumes:backup-health')->withoutOverlapping();
         });
     }
 }

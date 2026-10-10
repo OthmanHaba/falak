@@ -15,8 +15,10 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/db"
 	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
+	"github.com/OthmanHaba/falak/agent/internal/metrics"
 	"github.com/OthmanHaba/falak/agent/internal/resources"
 	"github.com/OthmanHaba/falak/agent/internal/security"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
@@ -364,7 +366,9 @@ func TestDatabaseSchemas(t *testing.T) {
 	// The heartbeat's database report.
 	hbs, _ := c.Compile(idBase + "heartbeat.schema.json")
 	hb := transport.Heartbeat{At: time.Now(), UptimeS: 5, Load: [3]float64{0.1, 0.2, 0.3}, RunningCommands: []string{},
-		Databases: []db.InstanceReport{{ID: "01hzyinst00000000000000001", State: "exited", Health: "none", SecretsMissing: true}}}
+		Databases: []db.InstanceReport{{ID: "01hzyinst00000000000000001", State: "exited", Health: "none", SecretsMissing: true},
+			{ID: "01hzyinst00000000000000002", State: "running", Health: "healthy", Connections: &db.Connections{Used: 85, Max: 100}}},
+		Disks: []metrics.DiskUsage{{Mount: "/", UsedBytes: 80, AvailableBytes: 20, TotalBytes: 105}, {Mount: "/mnt/data", UsedBytes: 1, AvailableBytes: 9, TotalBytes: 10}}}
 	b, _ := json.Marshal(hb)
 	v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
 	if err := hbs.Validate(v); err != nil {
@@ -458,5 +462,22 @@ func TestVolumeArchiveKeepStoppedNeedsStop(t *testing.T) {
 		if err := sch.Validate(v); (err == nil) != valid {
 			t.Errorf("%s: valid=%v, err=%v", body, valid, err)
 		}
+	}
+}
+
+// Facts with a pending reboot and the edge's ACME certificates validate against facts.schema.json.
+func TestFactsValidate(t *testing.T) {
+	c := compiler(t)
+	sch, err := c.Compile(idBase + "facts.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := facts.Facts{Hostname: "web-1", OS: facts.OS{ID: "ubuntu", Version: "24.04"}, Arch: "amd64", CPUs: 2, MemoryBytes: 1 << 30, DiskBytes: 1 << 34,
+		AgentVersion: "v0.10.0", Runtimes: map[string][]string{}, Features: []string{}, RebootRequired: true,
+		TLSCertificates: []facts.TLSCertificate{{Name: "example.com", NotAfter: "2026-12-30T00:00:00Z"}}}
+	b, _ := json.Marshal(f)
+	v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+	if err := sch.Validate(v); err != nil {
+		t.Fatalf("facts invalid: %v\n%s", err, b)
 	}
 }

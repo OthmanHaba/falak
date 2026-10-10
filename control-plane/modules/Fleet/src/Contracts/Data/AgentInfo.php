@@ -9,7 +9,8 @@ final readonly class AgentInfo
 {
     /**
      * @param  array<string, mixed>  $facts  latest facts (facts.schema.json)
-     * @param  array<string, mixed>  $metrics  latest heartbeat summary: load, cpu_percent, memory_used_bytes, disk_used_bytes, uptime_s, at
+     * @param  array<string, mixed>  $metrics  latest heartbeat summary: load, cpu_percent, memory_used_bytes, disk_used_bytes,
+     *                                         disks (mount => [used, available, total] bytes), uptime_s, at
      * @param  list<string>  $runningCommands
      */
     public function __construct(

@@ -34,6 +34,7 @@ final class RecordHeartbeat
         $at = Carbon::parse((string) $heartbeat['at']);
         $load = array_map('floatval', (array) $heartbeat['load']);
         $running = array_values(array_map('strval', (array) ($heartbeat['running_commands'] ?? [])));
+        $disks = self::disks($heartbeat['disks'] ?? null);
 
         $attributes = [
             'status' => AgentStatus::Online,
@@ -46,6 +47,7 @@ final class RecordHeartbeat
                 'cpu_percent' => isset($heartbeat['cpu_percent']) ? (float) $heartbeat['cpu_percent'] : null,
                 'memory_used_bytes' => (int) $heartbeat['memory_used_bytes'],
                 'disk_used_bytes' => (int) $heartbeat['disk_used_bytes'],
+                'disks' => $disks,
                 'running_commands' => $running,
             ],
         ];
@@ -75,6 +77,7 @@ final class RecordHeartbeat
             'cpu_percent' => isset($heartbeat['cpu_percent']) ? (float) $heartbeat['cpu_percent'] : null,
             'memory_used_bytes' => (int) $heartbeat['memory_used_bytes'],
             'disk_used_bytes' => (int) $heartbeat['disk_used_bytes'],
+            'disks' => $disks === [] ? null : $disks,
         ]);
 
         // Commands the agent reports as running were evidently delivered (to this process).
@@ -131,5 +134,23 @@ final class RecordHeartbeat
                 AgentVersionChanged::dispatch($agent->id, $agent->organization_id, $agent->server_id, $previousVersion, $facts['agent_version'], $agent->features());
             }
         }
+    }
+
+    /**
+     * The heartbeat's data filesystems, compact: mount => [used, available, total] bytes.
+     *
+     * @return array<string, array{0: int, 1: int, 2: int}>
+     */
+    private static function disks(mixed $disks): array
+    {
+        $out = [];
+
+        foreach (is_array($disks) ? $disks : [] as $disk) {
+            if (is_array($disk) && is_string($disk['mount'] ?? null) && count($out) < 20) {
+                $out[$disk['mount']] = [max(0, (int) ($disk['used_bytes'] ?? 0)), max(0, (int) ($disk['available_bytes'] ?? 0)), max(0, (int) ($disk['total_bytes'] ?? 0))];
+            }
+        }
+
+        return $out;
     }
 }

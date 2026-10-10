@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property ?float $cpu_percent
  * @property int $memory_used_bytes
  * @property int $disk_used_bytes
+ * @property ?array<string, array{0: int, 1: int, 2: int}> $disks mount => [used, available, total] bytes
  */
 class AgentMetric extends Model
 {
@@ -32,7 +33,7 @@ class AgentMetric extends Model
      */
     protected function casts(): array
     {
-        return ['at' => 'datetime', 'load1' => 'float', 'load5' => 'float', 'load15' => 'float', 'cpu_percent' => 'float'];
+        return ['at' => 'datetime', 'load1' => 'float', 'load5' => 'float', 'load15' => 'float', 'cpu_percent' => 'float', 'disks' => 'array'];
     }
 
     public function toSample(): MetricSample
@@ -45,6 +46,7 @@ class AgentMetric extends Model
             $this->cpu_percent,
             (int) $this->memory_used_bytes,
             (int) $this->disk_used_bytes,
+            $this->disks ?? [],
         );
     }
 }

@@ -436,6 +436,37 @@ Every managed database is a container of a Falak image (`docs/DB_IMAGES.md`, pla
 - **Restores:** PostgreSQL loads into a scratch database swapped in on success, every object owned by the app's user.
 - **Redis / Valkey passwords** overlap during a rotation (both valid for `FALAK_DB_PASSWORD_OVERLAP_HOURS`, 24 h).
 
+## Alerts coverage (v0.10.0 step 8)
+Plan `docs/plans/V0_10_PRODUCTION.md` §8.
+- **Default rule pack** (`Alerting\Application\DefaultRulePack`): one editable rule per alert type group whose types
+  reach Warning, matching the group's type prefixes (`databases.*`, `pitr.*`) from Warning up, routed to the
+  organization's default channel (the first channel it adds; "Make default" on the channels page), in-app only while it
+  has none (the rules page says so). Organizations that had several channels before get no default (the rules page asks
+  to choose one); pack rules someone edited are never re-routed. Applied on `OrganizationCreated`, by the migration for existing organizations and
+  daily (`alerting:default-rules`), so a group a module registers later (`dr.*`) joins every organization.
+  `alerting_rule_packs` records each area and pattern applied: deleted rules and removed patterns stay deleted. Areas
+  are keyed by their main type prefix (`area:databases`, `area:dr`).
+- **Stateful conditions** (`Alerting\Contracts\AlertConditions`): a periodic check calls `observe($org, $key, $holds, …)`;
+  the alert is raised once (optionally after holding `forSeconds`) and resolved when it clears (recovery to the channels
+  that got it); `null` means "in the hysteresis band": no change. Conditions nobody observes for a week are dropped
+  without a recovery.
+- **In-app details:** `AlertData::$detail` (who, from where, raw errors) is shown in the history and notification center
+  only; third-party channels get the title and a neutral body. Stored text is scrubbed of URL credentials and signed
+  query parameters.
+- **Suggested fix:** `AlertTypes::register(…, $fix)` or `AlertData::$action` labels the alert's link ("Grow volume",
+  "Fix in baseline", "Review backups", "Inspect certificate", "Update agent"); channels and the history show it.
+- **New sources:** `servers.disk_usage` (80 / 90 % per mount, held 5 min, resolved 5 points below), `servers.disk_forecast` (fills within 48 h; least-squares
+  over 6 h, rising and R² ≥ 0.6 only), `servers.memory_high` / `cpu_high` / `load_high` (whole window above; resolved
+  after 5 min 5 points / 10% below), `servers.reboot_required`, `servers.agent_outdated` (one per organization, after
+  1 h) — `Servers\CheckServerHealth`;
+  `edge.certificate_expiring` (14 / 7 / 1 days, ACME expiries from the servers serving the domain, wildcards included,
+  and uploaded certificates in use); `databases.backup_missed` (the schedule's last two runs missed: `Kernel\MissedRuns`), `databases.storage_unreachable` (two failed probes), `databases.connections_high` (80 % for
+  5 min), `pitr.stopped`; `volumes.backup_failed` / `backup_succeeded`, `volumes.backup_missed`, `volumes.almost_full` now
+  resolves; `secrets.rotation_due`, `secrets.unusual_reveals` (> 20 reveals by one user in 10 min).
+- **Agent:** heartbeats carry `disks` (data filesystems as df sees them) and `databases[].connections` (`falak-db stats`,
+  at most once a minute, in the background); facts carry `reboot_required` and `tls_certificates` (the edge's ACME
+  certificates under `/var/lib/caddy`).
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard

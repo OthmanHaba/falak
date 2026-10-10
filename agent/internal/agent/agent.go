@@ -29,6 +29,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/metrics"
 	"github.com/OthmanHaba/falak/agent/internal/netcfg"
 	"github.com/OthmanHaba/falak/agent/internal/provision"
 	"github.com/OthmanHaba/falak/agent/internal/pty"
@@ -267,7 +268,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
 			hb := transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
-				MissingSecrets: missingSecrets(comps.Deployer.MissingSecrets(runCtx), comps.Supervisor.WaitingSites(), comps.Cron.WaitingSites())}
+				Disks: disksOrNil(s.Disks), MissingSecrets: missingSecrets(comps.Deployer.MissingSecrets(runCtx), comps.Supervisor.WaitingSites(), comps.Cron.WaitingSites())}
 			dctx, cancel := context.WithTimeout(runCtx, 5*time.Second)
 			defer cancel()
 			if dbs := comps.DB.Report(dctx); len(dbs) > 0 {
@@ -373,6 +374,14 @@ func installedBinary(fs hostfs.FS) string {
 }
 
 // missingSecrets merges the sites whose secrets are gone (env files, container files, waiting programs and jobs).
+// disksOrNil keeps `disks` out of the heartbeat when no mount was readable (an interface holding a nil slice is not nil).
+func disksOrNil(d []metrics.DiskUsage) any {
+	if len(d) == 0 {
+		return nil
+	}
+	return d
+}
+
 func missingSecrets(lists ...[]string) []string {
 	seen := map[string]bool{}
 	out := []string{}

@@ -9,6 +9,7 @@ use Falak\Deployments\Events\DeploymentSucceeded;
 use Falak\Edge\Application\CertificateInstaller;
 use Falak\Edge\Application\CloudflareRateLimits;
 use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Application\Jobs\CheckCertificateExpiry;
 use Falak\Edge\Application\Jobs\PurgeCloudflareCache;
 use Falak\Edge\Application\Jobs\ReconcileCloudflareTunnels;
 use Falak\Edge\Application\Jobs\SyncCloudflareDns;
@@ -116,7 +117,8 @@ class EdgeServiceProvider extends ModuleServiceProvider
         $registry->register('edge.dns.manage', [Role::Admin], 'Manage DNS provider credentials for DNS-01 certificates and generated domains', 'edge');
 
         $types = $this->app->make(AlertTypes::class);
-        $types->register(CertificateInstallFailed::ALERT_TYPE, 'Certificate install failed', 'Edge', Severity::Critical);
+        $types->register(CertificateInstallFailed::ALERT_TYPE, 'Certificate install failed', 'Edge', Severity::Critical, 'Inspect certificate');
+        $types->register('edge.certificate_expiring', 'Certificate expires in 14, 7 or 1 days', 'Edge', Severity::Warning, 'Inspect certificate');
         $types->register(CertificateIssued::ALERT_TYPE, 'Certificate installed', 'Edge', Severity::Info);
 
         Event::listen(SiteCreated::class, [ReactToSiteChanges::class, 'created']);
@@ -138,6 +140,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new ReconcileCloudflareTunnels)->everyFiveMinutes()->name('edge:cloudflare-tunnels')->withoutOverlapping();
+            $schedule->job(new CheckCertificateExpiry)->hourlyAt(17)->name('edge:certificate-expiry')->withoutOverlapping();
         });
         // Visitors get the new release: purge the site's names at Cloudflare after deploys and rollbacks.
         Event::listen(DeploymentSucceeded::class, fn (DeploymentSucceeded $event) => PurgeCloudflareCache::dispatch($event->siteId));

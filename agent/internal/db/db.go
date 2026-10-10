@@ -84,6 +84,8 @@ type DB struct {
 	locks sync.Map
 	// shipper ships PITR spools (NewShipper); nil until started.
 	shipper *Shipper
+	// stats caches the instances' connection figures for the heartbeat (Report).
+	stats statsCache
 }
 
 // lock takes the instances' locks (in id order, so two commands never deadlock) and returns the release.

@@ -10,6 +10,7 @@ use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Events\PitrAlert;
+use Falak\Fleet\Contracts\AgentDirectory;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -32,9 +33,13 @@ final class MaintainPitr implements ShouldQueue
 
     public function __construct(public bool $prune = false) {}
 
-    public function handle(TakePitrBase $base, PrunePitr $prune): void
+    /** A report older than this, from an online agent for a healthy instance, means shipping stopped (pitr.stopped). */
+    public const STALE_REPORT_SECONDS = 600;
+
+    public function handle(TakePitrBase $base, PrunePitr $prune, AgentDirectory $agents): void
     {
         $instances = DatabaseInstance::query()->where('pitr_enabled', true)->where('status', InstanceStatus::Active)->get();
+        $online = array_map(fn ($agent) => $agent->isOnline(), $instances->isEmpty() ? [] : $agents->forServers($instances->pluck('server_id')->unique()->values()->all()));
 
         foreach ($instances as $instance) {
             try {
@@ -42,7 +47,7 @@ final class MaintainPitr implements ShouldQueue
                     $base($instance, 'scheduled');
                 }
 
-                $this->alerts($instance);
+                $this->alerts($instance, $online[$instance->server_id] ?? false);
             } catch (Throwable $e) {
                 Log::warning('PITR maintenance failed.', ['instance_id' => $instance->id, 'error' => $e->getMessage()]);
             }
@@ -79,10 +84,21 @@ final class MaintainPitr implements ShouldQueue
         }
     }
 
-    private function alerts(DatabaseInstance $instance): void
+    private function alerts(DatabaseInstance $instance, bool $agentOnline): void
     {
         $report = (array) ($instance->pitr_report ?? []);
         $up = $instance->health === 'healthy';
+        $reportedAt = is_string($report['at'] ?? null) ? CarbonImmutable::parse($report['at']) : null;
+        // Never reported: the grace period runs from the instance's last change (PITR turned on, a health change).
+        $since = $reportedAt ?? $instance->updated_at?->toImmutable();
+
+        if ($agentOnline && $up) {
+            $stopped = $since !== null && $since->diffInSeconds(now(), true) > self::STALE_REPORT_SECONDS;
+            $this->toggle($instance, PitrAlert::STOPPED, $stopped, $reportedAt !== null
+                ? "The server last reported the instance's spool {$reportedAt->diffForHumans(now(), true)} ago: write-ahead logs / binlogs are no longer shipped. Turn point-in-time recovery off and on again, or update the agent."
+                : 'The server never reported the instance\'s spool: write-ahead logs / binlogs are not shipped. Turn point-in-time recovery off and on again, or update the agent.');
+        }
+
         $oldest = is_string($report['oldest_pending_at'] ?? null) ? CarbonImmutable::parse($report['oldest_pending_at']) : null;
         $lagging = $up && $oldest !== null && $oldest->diffInSeconds(now(), true) > (int) config('databases.pitr.lag_alert_seconds', 300);
         $spool = (int) ($report['spool_bytes'] ?? 0);

@@ -2,6 +2,7 @@
 
 namespace Falak\Alerting\Application\Actions;
 
+use Falak\Alerting\Application\DefaultRulePack;
 use Falak\Alerting\Domain\Enums\ChannelType;
 use Falak\Alerting\Domain\Models\Channel;
 use Falak\Alerting\Infrastructure\Senders\SenderRegistry;
@@ -12,6 +13,7 @@ final class SaveChannel
     public function __construct(
         private readonly SenderRegistry $senders,
         private readonly AuditLog $audit,
+        private readonly DefaultRulePack $pack,
     ) {}
 
     /**
@@ -48,6 +50,13 @@ final class SaveChannel
             'enabled' => (bool) ($data['enabled'] ?? true),
             'config' => $config,
         ])->save();
+
+        // The organization's first channel becomes its default: the default rule pack (in-app only so far) routes to it.
+        // With several channels and no default, someone picks one (the rules page asks).
+        if ($created && Channel::query()->where('organization_id', $organizationId)->count() === 1) {
+            $channel->forceFill(['is_default' => true])->save();
+            $this->pack->attachDefaultChannel($channel);
+        }
 
         $this->audit->record($created ? 'alerting.channel.created' : 'alerting.channel.updated', 'alerting_channel', $channel->id, [
             'name' => $channel->name,

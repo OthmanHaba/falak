@@ -81,4 +81,25 @@ return [
         // Web servers that would take the edge's ports.
         'web_servers' => ['nginx' => 'nginx', 'apache2' => 'Apache'],
     ],
+
+    // Health alerts (CheckServerHealth, from the agents' heartbeats): disk per mount, a disk filling within
+    // forecast_hours (a line fitted to the last six hours), memory, CPU and load held for their window, a pending
+    // reboot, and an agent older than the one shipped for agent_outdated_minutes.
+    'health' => [
+        'disk_warning_percent' => 80,
+        'disk_critical_percent' => 90,
+        // A disk alert needs the level to hold this long; every alert here resolves only this many points below its
+        // threshold (load: 10% below), for clear_minutes for the sampled ones: no alert/recovery flapping.
+        'disk_hold_minutes' => 5,
+        'hysteresis_points' => 5,
+        'clear_minutes' => 5,
+        'forecast_hours' => 48,
+        'memory_percent' => 90,
+        'memory_minutes' => 10,
+        'cpu_percent' => 90,
+        'cpu_minutes' => 15,
+        'load_per_cpu' => 2.0,
+        'load_minutes' => 15,
+        'agent_outdated_minutes' => 60,
+    ],
 ];

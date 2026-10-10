@@ -8,6 +8,7 @@ use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Secrets\Application\Jobs\CheckSecretRotation;
 use Falak\Secrets\Application\Jobs\PollLinkedSecrets;
 use Falak\Secrets\Application\Jobs\PruneAccessLog;
 use Falak\Secrets\Application\Listeners\DeleteOrganizationSecrets;
@@ -57,15 +58,18 @@ class SecretsServiceProvider extends ModuleServiceProvider
         $registry->register(SecretPolicy::PROVIDERS_MANAGE, [Role::Admin], 'Add, edit, test and delete external secret providers (Vault, AWS, 1Password, …)', 'secrets');
 
         $types = $this->app->make(AlertTypes::class);
-        $types->register(ProviderUnreachable::ALERT_TYPE, 'Secret provider unreachable', 'Secrets', Severity::Warning);
+        $types->register(ProviderUnreachable::ALERT_TYPE, 'Secret provider unreachable', 'Secrets', Severity::Warning, 'Check provider');
         $types->register(ProviderRecovered::ALERT_TYPE, 'Secret provider reachable again', 'Secrets', Severity::Info);
         $types->register(LinkedSecretChanged::ALERT_TYPE, 'Linked secret changed upstream', 'Secrets', Severity::Info);
+        $types->register('secrets.rotation_due', 'Secret due for rotation', 'Secrets', Severity::Warning, 'Rotate secret');
+        $types->register('secrets.unusual_reveals', 'Unusual reveal activity (many secrets read by one user)', 'Secrets', Severity::Warning, 'Review the audit log');
 
         Event::listen(OrganizationDeleted::class, DeleteOrganizationSecrets::class);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new PruneAccessLog)->dailyAt('03:50')->name('secrets:prune-access-log')->withoutOverlapping();
             $schedule->job(new PollLinkedSecrets)->everyMinute()->name('secrets:poll-linked')->withoutOverlapping(10);
+            $schedule->job(new CheckSecretRotation)->hourlyAt(23)->name('secrets:rotation')->withoutOverlapping();
         });
     }
 }

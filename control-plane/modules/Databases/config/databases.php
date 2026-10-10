@@ -70,6 +70,11 @@ return [
     // instance in this many seconds.
     'secrets_restore_throttle' => 300,
 
+    // Open connections above this share of the server's limit (falak-db stats, every heartbeat) for this long alert
+    // (databases.connections_high).
+    'connections_alert_percent' => 80,
+    'connections_alert_seconds' => 300,
+
     // Providers whose servers of one account and region share a private network by default, used when no Falak private
     // network connects an instance's server with a consumer's: DigitalOcean (each region's default VPC) and Lightsail.
     // Not Hetzner, Vultr, Linode: their private networks are opt-in and can differ per server, so a private IPv4 says

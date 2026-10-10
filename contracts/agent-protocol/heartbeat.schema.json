@@ -12,6 +12,22 @@
     "memory_used_bytes": { "type": "integer" },
     "disk_used_bytes": { "type": "integer" },
     "running_commands": { "type": "array", "items": { "type": "string" } },
+    "disks": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mount", "used_bytes", "available_bytes", "total_bytes"],
+        "properties": {
+          "mount": { "type": "string", "maxLength": 200 },
+          "used_bytes": { "type": "integer", "minimum": 0 },
+          "available_bytes": { "type": "integer", "minimum": 0 },
+          "total_bytes": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "description": "The host's data filesystems (ext4, xfs, btrfs, zfs, …; one per device, without Docker's and Falak volumes' mounts), as df reports them: the control plane alerts per mount on used / (used + available) and forecasts when it fills. Omitted when none is readable."
+    },
     "missing_secrets": {
       "type": "array",
       "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
@@ -30,6 +46,16 @@
           "state": { "enum": ["running", "exited", "created", "restarting", "paused", "dead", "missing"] },
           "health": { "enum": ["healthy", "unhealthy", "starting", "none"] },
           "secrets_missing": { "type": "boolean" },
+          "connections": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["used", "max"],
+            "properties": {
+              "used": { "type": "integer", "minimum": 0 },
+              "max": { "type": "integer", "minimum": 1 }
+            },
+            "description": "Open client connections and the server's limit (falak-db stats, refreshed at most once a minute); healthy running instances only, omitted until known or when the image predates the command."
+          },
           "pitr": {
             "type": "object",
             "additionalProperties": false,

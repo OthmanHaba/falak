@@ -17,7 +17,7 @@
 
 @if ($alert->url)
 <x-mail::button :url="$alert->url">
-Open in Falak
+{{ $alert->linkLabel() }}
 </x-mail::button>
 @endif
 

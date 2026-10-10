@@ -1,4 +1,5 @@
 import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
 import { Checkbox } from '@/components/falak/checkbox';
 import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
 import { DataTable } from '@/components/falak/data-table';
@@ -25,9 +26,21 @@ interface ChannelOption {
     enabled: boolean;
 }
 
+interface PackArea {
+    key: string;
+    group: string;
+    patterns: string[];
+}
+
 interface Props {
     rules: RuleRow[];
     channels: ChannelOption[];
+    /** The organization has at least one channel (else the default rules only notify in-app). */
+    hasChannel: boolean;
+    /** Name of the default channel the default rules route to (null: none chosen). */
+    defaultChannel: string | null;
+    /** Areas of the default rule pack (rules with a pack_key), in display order. */
+    packAreas: PackArea[];
     alertTypes: AlertTypeOption[];
     severities: { value: Severity; label: string }[];
     timezones: string[];
@@ -100,7 +113,35 @@ function SeverityTag({ severity }: { severity: Severity }) {
     );
 }
 
-export default function Rules({ rules, channels, alertTypes, severities, timezones, can }: Props) {
+const SEVERITY_RANK: Record<Severity, number> = { info: 10, warning: 20, critical: 30 };
+
+function DeliversTo({ rule }: { rule: RuleRow }) {
+    return rule.channels.length === 0 ? (
+        <span className="text-fg-faint">In-app only</span>
+    ) : (
+        <span className="flex flex-wrap gap-1">
+            {rule.channels.map((channel) => (
+                <Tag key={channel.id} icon={<IntegrationIcon name={channel.type} size={12} />}>
+                    {channel.name}
+                </Tag>
+            ))}
+        </span>
+    );
+}
+
+export default function Rules({ rules: allRules, channels, hasChannel, defaultChannel, packAreas, alertTypes, severities, timezones, can }: Props) {
+    // The default pack is shown by area; "rules" below are the organization's own.
+    const packRules = useMemo(() => new Map(allRules.filter((rule) => rule.pack_key).map((rule) => [rule.pack_key as string, rule])), [allRules]);
+    const rules = useMemo(() => allRules.filter((rule) => !rule.pack_key), [allRules]);
+    const areas = useMemo(() => {
+        const known = packAreas.filter((area) => packRules.has(area.key));
+        // Areas no longer registered (a module removed) still show their rule.
+        const orphans = [...packRules.keys()]
+            .filter((key) => !packAreas.some((area) => area.key === key))
+            .map((key) => ({ key, group: packRules.get(key)?.name ?? key, patterns: [] }));
+
+        return [...known, ...orphans];
+    }, [packAreas, packRules]);
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState<RuleRow | null>(null);
     const [deleting, setDeleting] = useState<RuleRow | null>(null);
@@ -192,7 +233,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
             description="Rules decide which events notify which channels. Every issue alerts once until it resolves; members always see alerts in their notification center."
             actions={
                 can.manage &&
-                rules.length > 0 && (
+                (rules.length > 0 || areas.length > 0) && (
                     <Button variant="primary" icon={<Plus />} onClick={startCreate}>
                         Add rule
                     </Button>
@@ -200,7 +241,105 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
             }
             wide
         >
-            {rules.length === 0 ? (
+            {!hasChannel && (
+                <Callout
+                    tone="warning"
+                    title="Alerts only reach the notification center"
+                    action={
+                        can.manage && (
+                            <Button asChild size="sm" variant="primary">
+                                <Link href={route('alerting.channels.index')}>
+                                    <Plus /> Add a channel
+                                </Link>
+                            </Button>
+                        )
+                    }
+                >
+                    Add a channel (email, Slack, Discord, Telegram or a webhook): the default rules route to it, so a full disk or a failed backup
+                    reaches you outside Falak.
+                </Callout>
+            )}
+
+            {hasChannel && defaultChannel === null && (
+                <Callout
+                    tone="warning"
+                    title="Choose a default channel"
+                    action={
+                        can.manage && (
+                            <Button asChild size="sm" variant="primary">
+                                <Link href={route('alerting.channels.index')}>Choose a channel</Link>
+                            </Button>
+                        )
+                    }
+                >
+                    The default rules only notify in-app until one of your channels is the default (Make default on the channels page). Rules you
+                    edited keep their own routing.
+                </Callout>
+            )}
+
+            {areas.length > 0 && (
+                <Section
+                    title="Default rules"
+                    description="Falak's recommended alerts, one rule per area, from warning up. Switch an area off, or edit it like any rule; a deleted default rule is not re-created."
+                    bare
+                >
+                    <ul className="border-border bg-surface-1 divide-border divide-y rounded-lg border" aria-label="Default rules">
+                        {areas.map((area) => {
+                            const rule = packRules.get(area.key) as RuleRow;
+                            const types = alertTypes.filter(
+                                (type) =>
+                                    rule.event_types.some(
+                                        (pattern) =>
+                                            pattern === '*' ||
+                                            pattern === type.type ||
+                                            (pattern.endsWith('.*') && type.type.startsWith(pattern.slice(0, -1))),
+                                    ) && SEVERITY_RANK[type.severity] >= SEVERITY_RANK[rule.min_severity],
+                            );
+
+                            return (
+                                <li key={area.key} className="flex flex-wrap items-start gap-3 px-3 py-2.5 sm:flex-nowrap">
+                                    <Switch
+                                        checked={rule.enabled}
+                                        disabled={!can.manage || pending === `enabled-${rule.id}`}
+                                        onCheckedChange={(enabled) => update(rule, `enabled-${rule.id}`, { enabled })}
+                                        aria-label={`${rule.enabled ? 'Turn off' : 'Turn on'} default ${area.group} alerts`}
+                                        className="mt-0.5"
+                                    />
+                                    <span className={cn('grid min-w-0 flex-1 gap-1', !rule.enabled && 'opacity-60')}>
+                                        <span className="flex items-center gap-2">
+                                            <span className="font-medium">{area.group}</span>
+                                            <SeverityTag severity={rule.min_severity} />
+                                        </span>
+                                        <span className="flex flex-wrap gap-1">
+                                            {types.map((type) => (
+                                                <Tag key={type.type} tone={SEVERITY_TONE[type.severity]}>
+                                                    {type.label}
+                                                </Tag>
+                                            ))}
+                                        </span>
+                                    </span>
+                                    <span className="hidden text-xs sm:block">
+                                        <DeliversTo rule={rule} />
+                                    </span>
+                                    {can.manage && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            icon={<Pencil />}
+                                            onClick={() => startEdit(rule)}
+                                            aria-label={`Edit default ${area.group} rule`}
+                                        >
+                                            Edit
+                                        </Button>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </Section>
+            )}
+
+            {rules.length === 0 && areas.length > 0 ? null : rules.length === 0 ? (
                 <EmptyState
                     icon={<BellRing />}
                     title="No alert rules yet"
@@ -271,18 +410,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                             id: 'channels',
                             header: 'Delivers to',
                             hideOnMobile: true,
-                            cell: (rule) =>
-                                rule.channels.length === 0 ? (
-                                    <span className="text-fg-faint">In-app only</span>
-                                ) : (
-                                    <span className="flex flex-wrap gap-1">
-                                        {rule.channels.map((channel) => (
-                                            <Tag key={channel.id} icon={<IntegrationIcon name={channel.type} size={12} />}>
-                                                {channel.name}
-                                            </Tag>
-                                        ))}
-                                    </span>
-                                ),
+                            cell: (rule) => <DeliversTo rule={rule} />,
                         },
                         {
                             id: 'limits',
@@ -317,7 +445,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                 />
             )}
 
-            {rules.length > 0 && channels.length > 0 && (
+            {allRules.length > 0 && channels.length > 0 && (
                 <Section
                     title="Routing"
                     description="Which rule delivers to which channel. Click a cell to route or unroute; changes apply immediately."
@@ -342,7 +470,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                 </tr>
                             </thead>
                             <tbody>
-                                {rules.map((rule) => {
+                                {allRules.map((rule) => {
                                     const routed = rule.channels.map((channel) => channel.id);
 
                                     return (

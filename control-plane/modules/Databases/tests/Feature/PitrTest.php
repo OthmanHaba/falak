@@ -18,6 +18,7 @@ use Falak\Databases\Domain\Models\PitrSegment;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\PitrAlert;
+use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Domain\Models\Certificate;
 use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Identity\Contracts\Role;
@@ -537,15 +538,15 @@ it('alerts on a lagging or full spool from the heartbeat, once, and resolves', f
     ]));
 
     $report(['spool_bytes' => 3 * 1024 ** 3, 'volume_bytes' => 10 * 1024 ** 3, 'pending' => 40, 'oldest_pending_at' => now()->subMinutes(12)->toIso8601ZuluString(), 'error' => 'HTTP 502']);
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class));
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
     Event::assertDispatchedTimes(PitrAlert::class, 2);
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::LAG && str_contains($alert->body, 'HTTP 502'));
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::SPOOL_FULL && str_contains($alert->body, '30%'));
     expect($this->engine->refresh()->pitr_report['pending'])->toBe(40);
 
     $report(['spool_bytes' => 1024, 'volume_bytes' => 10 * 1024 ** 3, 'pending' => 0]);
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::RECOVERED && $alert->resolves === PitrAlert::LAG && $alert->toAlert()->resolves);
     Event::assertDispatched(PitrAlert::class, fn (PitrAlert $alert) => $alert->type === PitrAlert::RECOVERED && $alert->resolves === PitrAlert::SPOOL_FULL);
     Event::assertDispatchedTimes(PitrAlert::class, 4);
@@ -553,12 +554,12 @@ it('alerts on a lagging or full spool from the heartbeat, once, and resolves', f
 
 it('takes due base backups', function () {
     pitr_on($this, ['pitr_next_base_at' => now()->subMinute()]);
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
     expect($this->agents->dispatched('db.pitr.base'))->toHaveCount(1)
         ->and($this->engine->refresh()->pitr_next_base_at->toDateTimeString())->toBe('2026-10-16 12:00:00');
     // One at a time.
     $this->engine->forceFill(['pitr_next_base_at' => now()->subMinute()])->save();
-    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class));
+    (new MaintainPitr)->handle(app(TakePitrBase::class), app(PrunePitr::class), app(AgentDirectory::class));
     expect($this->agents->dispatched('db.pitr.base'))->toHaveCount(1);
 });
 

@@ -15,8 +15,10 @@ use Illuminate\Support\Carbon;
  * @property string $type
  * @property Severity $severity
  * @property string $title
- * @property ?string $body
+ * @property ?string $body sent to channels
+ * @property ?string $detail in-app only
  * @property ?string $url
+ * @property ?string $action suggested fix at $url ("Grow volume")
  * @property ?string $dedup_key
  * @property bool $recovery
  * @property ?array<string, scalar|null> $context

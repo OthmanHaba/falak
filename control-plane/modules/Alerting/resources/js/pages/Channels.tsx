@@ -14,7 +14,7 @@ import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { Link, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, Send, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { useState, type FormEventHandler } from 'react';
 import { jsonRequest } from '../components/alerting-ui';
 import { type ChannelRow, type ChannelType } from '../types';
@@ -218,7 +218,7 @@ export default function Channels({ channels, types, can }: Props) {
                     <Link href={route('alerting.rules.index')} className="text-primary hover:underline">
                         Rules
                     </Link>{' '}
-                    decide which alerts reach which channel.
+                    decide which alerts reach which channel; the default rules route to the default channel.
                 </>
             }
             actions={
@@ -265,6 +265,7 @@ export default function Channels({ channels, types, can }: Props) {
                                     <span className="grid min-w-0">
                                         <span className="flex items-center gap-2">
                                             <span className="truncate font-medium">{channel.name}</span>
+                                            {channel.is_default && <Tag tone="info">Default</Tag>}
                                             {!channel.enabled && <Tag tone="faint">Disabled</Tag>}
                                         </span>
                                         <span className="text-fg-faint max-w-[14rem] truncate font-mono text-xs sm:max-w-xs">
@@ -349,7 +350,17 @@ export default function Channels({ channels, types, can }: Props) {
                             ? (channel) => [
                                   { label: 'Send test message', icon: <Send />, onSelect: () => void sendTest(channel) },
                                   { label: 'Edit', icon: <Pencil />, onSelect: () => startEdit(channel) },
-                                  { type: 'separator' },
+                                  ...(channel.is_default
+                                      ? []
+                                      : [
+                                            {
+                                                label: 'Make default',
+                                                icon: <Star />,
+                                                onSelect: () =>
+                                                    router.post(route('alerting.channels.default', channel.id), {}, { preserveScroll: true }),
+                                            },
+                                        ]),
+                                  { type: 'separator' as const },
                                   { label: 'Delete', icon: <Trash2 />, danger: true, onSelect: () => setDeleting(channel) },
                               ]
                             : undefined

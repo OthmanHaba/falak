@@ -71,6 +71,8 @@ type Heartbeat struct {
 	MemoryUsedBytes int64      `json:"memory_used_bytes"`
 	DiskUsedBytes   int64      `json:"disk_used_bytes"`
 	RunningCommands []string   `json:"running_commands"`
+	// Disks are the host's data filesystems (metrics.ReadDisks): per-mount alerts and fill forecasts.
+	Disks any `json:"disks,omitempty"`
 	// MissingSecrets are sites whose env file or container secret files are gone (a reboot emptied /run): the
 	// control plane answers with site.env.write.
 	MissingSecrets []string `json:"missing_secrets,omitempty"`

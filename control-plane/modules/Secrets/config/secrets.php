@@ -7,6 +7,12 @@ return [
     // Revealing a value needs the password (and a 2FA code, when enabled) confirmed within this many seconds.
     'reveal_confirm_seconds' => (int) env('FALAK_SECRETS_REVEAL_CONFIRM_SECONDS', 300),
 
+    // More than `count` reveals by one user (dashboard or API token) within `minutes` alert (secrets.unusual_reveals).
+    'reveal_alert' => [
+        'count' => (int) env('FALAK_SECRETS_REVEAL_ALERT_COUNT', 20),
+        'minutes' => 10,
+    ],
+
     'providers' => [
         // Lets organizations mark a provider "allow private network" (a self-hosted Vault / Infisical on the LAN).
         // Off by default: the control plane's own network (database, cache, internal services) stays out of reach.

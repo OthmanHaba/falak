@@ -4,6 +4,7 @@
 #   images/db/test.sh <engine> <version>          # build (images/db/build.sh), then test
 #   IMAGE=falak-postgres:17-ci images/db/test.sh postgres 17   # test an image that is already loaded
 #   SKIP_PITR=1 images/db/test.sh mysql 8.4       # skip physical backup + point-in-time recovery
+#   ONLY_STATS=1 images/db/test.sh redis 8         # start, healthcheck and `falak-db stats` only
 #
 # Checks: start with *_FILE secrets and a TLS certificate, healthcheck, config tuned to the memory limit, TLS
 # served, create a database, logical backup + restore, WAL archiving into the spool (postgres) or binlog rotation and
@@ -149,6 +150,19 @@ docker exec "$c" falak-db health | jq -e '.status == "healthy"' >/dev/null || fa
 docker exec "$c" falak-db version | jq -e ".engine == \"$engine\"" >/dev/null || fail "version JSON"
 if docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" | grep -q "$password"; then
 	fail "the password is in the container's environment"
+fi
+
+step "stats (connections for the heartbeat)"
+stats=$(docker exec "$c" falak-db stats) || fail "falak-db stats failed"
+echo "$stats"
+echo "$stats" | jq -e '(.connections | type == "number") and .connections >= 0 and .max_connections > 0 and .connections <= .max_connections' >/dev/null ||
+	fail "stats JSON: $stats"
+case "$engine" in
+mysql | mariadb) echo "performance_schema: $(sql "$c" mysql 'SELECT @@performance_schema')" ;; # 0 below 1 GiB: stats must not need it
+esac
+if [ -n "${ONLY_STATS:-}" ]; then
+	echo "ok: stats only"
+	exit 0
 fi
 
 step "config render / tuning (512 MiB)"

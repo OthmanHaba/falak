@@ -36,7 +36,7 @@ final class TelegramSender extends HttpSender
         }
 
         if ($message->url) {
-            $text .= "\n".'<a href="'.e($message->url).'">Open in Falak</a>';
+            $text .= "\n".'<a href="'.e($message->url).'">'.e($message->linkLabel()).'</a>';
         }
 
         $response = $this->post(rtrim((string) config('alerting.telegram_api'), '/')."/bot{$token}/sendMessage", [

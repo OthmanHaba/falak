@@ -30,6 +30,10 @@ final class DiscordSender extends HttpSender
             ['name' => 'Type', 'value' => $message->type, 'inline' => true],
         ];
 
+        if ($message->url && $message->action) {
+            $fields[] = ['name' => 'Suggested fix', 'value' => '['.mb_substr($message->action, 0, 200).']('.$message->url.')', 'inline' => false];
+        }
+
         foreach ($message->context as $key => $value) {
             if ($value !== null && $value !== '' && count($fields) < 12) {
                 $fields[] = ['name' => mb_substr((string) $key, 0, 256), 'value' => mb_substr(is_bool($value) ? ($value ? 'yes' : 'no') : (string) $value, 0, 1024), 'inline' => true];

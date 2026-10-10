@@ -41,6 +41,10 @@ type Facts struct {
 	AgentVersion string              `json:"agent_version"`
 	Features     []string            `json:"features"`
 	AgentSHA256  string              `json:"agent_sha256,omitempty"`
+	// RebootRequired: the distribution asked for a reboot (kernel or libc updates).
+	RebootRequired bool `json:"reboot_required"`
+	// TLSCertificates are the edge's ACME certificates and their expiry.
+	TLSCertificates []TLSCertificate `json:"tls_certificates,omitempty"`
 }
 
 // Interface is one network interface that is up, with its addresses.
@@ -124,6 +128,8 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 			}
 		}
 	}
+	f.RebootRequired = RebootRequired(fs)
+	f.TLSCertificates = TLSCertificates(fs)
 	if v := dirVersions(fs, "/etc/php", func(n string) bool { _, err := strconv.ParseFloat(n, 64); return err == nil }); len(v) > 0 {
 		f.Runtimes["php"] = v
 	}

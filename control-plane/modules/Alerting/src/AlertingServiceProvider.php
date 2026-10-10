@@ -2,11 +2,14 @@
 
 namespace Falak\Alerting;
 
+use Falak\Alerting\Application\Console\DefaultRulesCommand;
 use Falak\Alerting\Application\Jobs\PruneAlerting;
+use Falak\Alerting\Application\Listeners\ApplyDefaultRulePack;
 use Falak\Alerting\Application\Listeners\DeleteOrganizationAlerting;
 use Falak\Alerting\Application\Listeners\MapModuleEvents;
 use Falak\Alerting\Application\Listeners\RouteAlertableEvents;
 use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\AlertConditions;
 use Falak\Alerting\Contracts\Alerts;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Domain\Models\Channel;
@@ -14,6 +17,7 @@ use Falak\Alerting\Domain\Models\Rule;
 use Falak\Alerting\Domain\Policies\ChannelPolicy;
 use Falak\Alerting\Domain\Policies\RulePolicy;
 use Falak\Alerting\Http\Channels\UserNotificationsChannel;
+use Falak\Alerting\Infrastructure\DatabaseAlertConditions;
 use Falak\Alerting\Infrastructure\InMemoryAlertTypes;
 use Falak\Alerting\Infrastructure\QueuedAlerts;
 use Falak\Alerting\Infrastructure\Senders\DiscordSender;
@@ -26,6 +30,7 @@ use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentWentOffline;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationCreated;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Insights\Events\HeartbeatMissed;
 use Falak\Insights\Events\IssueOpened;
@@ -51,6 +56,7 @@ class AlertingServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         AlertTypes::class => InMemoryAlertTypes::class,
         Alerts::class => QueuedAlerts::class,
+        AlertConditions::class => DatabaseAlertConditions::class,
     ];
 
     public function register(): void
@@ -89,6 +95,7 @@ class AlertingServiceProvider extends ModuleServiceProvider
         Event::listen(ServerProvisioned::class, [MapModuleEvents::class, 'serverProvisioned']);
         Event::listen(ServerNeedsAttention::class, [MapModuleEvents::class, 'serverNeedsAttention']);
         Event::listen(ServerAttentionCleared::class, [MapModuleEvents::class, 'serverAttentionCleared']);
+        Event::listen(OrganizationCreated::class, ApplyDefaultRulePack::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationAlerting::class);
 
         // Any module event implementing Alerting\Contracts\Alertable (instanceof check before resolving anything).
@@ -103,6 +110,12 @@ class AlertingServiceProvider extends ModuleServiceProvider
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new PruneAlerting)->dailyAt('03:40')->name('alerting:prune')->withoutOverlapping();
+            // Alert groups registered since (a module's new area) join every organization's default rule pack.
+            $schedule->command(DefaultRulesCommand::class)->dailyAt('03:45')->name('alerting:default-rules')->withoutOverlapping();
         });
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([DefaultRulesCommand::class]);
+        }
     }
 }
