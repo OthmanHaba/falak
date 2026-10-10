@@ -42,6 +42,8 @@ return [
     // release served at least min_requests; at most one automatic rollback per site per cooldown_minutes.
     'watch' => [
         'min_requests' => (int) env('FALAK_WATCH_MIN_REQUESTS', 20),
+        // …and at least this many 5xx answers (a rate over a handful of errors is noise).
+        'min_errors' => 5,
         'error_rate' => 0.05,
         'baseline_factor' => 3,
         'baseline_minutes' => 60,

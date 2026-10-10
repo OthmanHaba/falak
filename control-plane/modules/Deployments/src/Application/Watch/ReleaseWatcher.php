@@ -2,6 +2,7 @@
 
 namespace Falak\Deployments\Application\Watch;
 
+use Carbon\CarbonInterface;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Application\Health\SiteHealthProbe;
 use Falak\Deployments\Application\Orchestration\DeploymentLog;
@@ -36,6 +37,11 @@ use Throwable;
  */
 final class ReleaseWatcher
 {
+    /** The schedule's interval less some slack: a watch is never evaluated twice within it. */
+    public const MIN_ROUND_SECONDS = 25;
+
+    private const HEALTH_OFF = "The site's health check is off (Settings → Deploy), so this trigger is skipped.";
+
     public function __construct(
         private readonly SiteDirectory $sites,
         private readonly SiteHealthProbe $probe,
@@ -70,9 +76,26 @@ final class ReleaseWatcher
             return null;
         }
 
+        // A re-delivered event never reopens a window (one that tripped or ended stays so).
+        if (($existing = ReleaseWatch::query()->find($deployment->id)) !== null) {
+            return $existing;
+        }
+
+        // Only the release the site runs now, with nothing queued behind it: a newer deployment replaces it anyway.
+        if (Release::current($site->id)?->id !== $deployment->release_id
+            || Deployment::query()->where('site_id', $site->id)->whereKeyNot($deployment->id)
+                ->whereIn('status', [DeploymentStatus::Queued, ...DeploymentStatus::occupying()])->exists()) {
+            return null;
+        }
+
+        // The health trigger uses the site's health check: without one (e.g. a login wall answering 302) it is skipped.
+        $healthCheck = (bool) $deployment->setting('health.enabled', true);
+        $settings['health'] = $settings['health'] && $healthCheck;
+
         $this->stopForSite($site->id, "Deployment #{$deployment->number} went live.", $deployment->id);
 
-        $watch = ReleaseWatch::query()->updateOrCreate(['deployment_id' => $deployment->id], [
+        $watch = ReleaseWatch::query()->create([
+            'deployment_id' => $deployment->id,
             'organization_id' => $deployment->organization_id,
             'site_id' => $deployment->site_id,
             'release_id' => $deployment->release_id,
@@ -88,7 +111,7 @@ final class ReleaseWatcher
             'on_trigger' => $settings['on_trigger'],
             'migrations' => Migrations::forSite($site, Release::query()->find($deployment->release_id)),
             'baseline' => $settings['errors'] ? $this->baseline($deployment) : null,
-            'checks' => null,
+            'checks' => $healthCheck ? null : ['health' => ['unavailable' => self::HEALTH_OFF]],
             'health_failures' => 0,
             'started_at' => now(),
             'ends_at' => now()->addMinutes($settings['minutes']),
@@ -117,6 +140,12 @@ final class ReleaseWatcher
             return;
         }
 
+        // Rounds are queued one per window and unique, but a slow round can still meet the next one: consecutive
+        // health failures must be at least a probe interval apart.
+        if ($watch->checked_at !== null && $watch->checked_at->greaterThan(now()->subSeconds(self::MIN_ROUND_SECONDS))) {
+            return;
+        }
+
         $deployment = Deployment::query()->find($watch->deployment_id);
 
         if ($deployment === null || $this->sites->find($watch->site_id) === null) {
@@ -129,14 +158,23 @@ final class ReleaseWatcher
         $failures = $watch->health_failures;
         $tripped = null;
 
-        if ($watch->triggers['health'] ?? false) {
+        if (($watch->triggers['health'] ?? false) && ! $deployment->setting('health.enabled', true)) {
+            $checks['health'] = ['unavailable' => self::HEALTH_OFF];
+        } elseif ($watch->triggers['health'] ?? false) {
             $threshold = max(1, (int) ($watch->triggers['health_failures'] ?? 3));
             $health = (array) $deployment->setting('health', []);
             $failed = null;
             $message = null;
 
             foreach ($deployment->targets()->pluck('server_id') as $serverId) {
-                [$ok, $message] = $this->probe->probe($watch->site_id, (string) $serverId, $health);
+                [$ok, $probed] = $this->probe->probe($watch->site_id, (string) $serverId, $health);
+
+                // A server deleted since, or without an address: nothing to check there, not a failure.
+                if ($probed === SiteHealthProbe::NO_ADDRESS) {
+                    continue;
+                }
+
+                $message = $probed;
 
                 if (! $ok) {
                     $failed = $message;
@@ -175,13 +213,19 @@ final class ReleaseWatcher
     }
 
     /**
-     * A crash, OOM kill or new error of a site: trips the watch windows of the site that watch for it.
+     * A crash, OOM kill or new error of a site: trips the watch windows of the site that watch for it, when it happened
+     * ($at) after the release went live.
      */
-    public function signal(string $organizationId, string $siteId, WatchTrigger $trigger, string $reason): void
+    public function signal(string $organizationId, string $siteId, WatchTrigger $trigger, string $reason, ?CarbonInterface $at = null): void
     {
         $watches = ReleaseWatch::query()->where('organization_id', strtolower($organizationId))->where('site_id', $siteId)->where('status', WatchStatus::Watching)->where('ends_at', '>', now())->get();
 
         foreach ($watches as $watch) {
+            // The previous release's crashes (an event delivered late, a restart window that began before) don't count.
+            if ($at !== null && $at->lessThan($watch->started_at)) {
+                continue;
+            }
+
             $enabled = match ($trigger) {
                 WatchTrigger::Crash => $watch->triggers['crashes'] ?? false,
                 WatchTrigger::Issue => $watch->triggers['issues'] ?? false,
@@ -276,7 +320,9 @@ final class ReleaseWatcher
                 throw new RuntimeException('the site no longer exists.');
             }
 
-            $rollback = ($this->trigger)($site, Trigger::Rollback, releaseId: $watch->previous_release_id, rollbackOf: $deployment->id);
+            // Checked again under the site's trigger lock: a deploy queued since the decision is never reverted.
+            $rollback = ($this->trigger)($site, Trigger::Rollback, releaseId: $watch->previous_release_id, rollbackOf: $deployment->id,
+                guard: fn () => $this->superseded($watch));
         } catch (Throwable $e) {
             $why = $e instanceof ValidationException ? (string) collect($e->errors())->flatten()->first() : $e->getMessage();
             Log::warning('deployments: automatic rollback not queued', ['deployment' => $deployment->id, 'error' => $why]);
@@ -296,6 +342,23 @@ final class ReleaseWatcher
     }
 
     /**
+     * Why the watched release can't be rolled back any more: the site moved on (null: it is still the live one).
+     */
+    private function superseded(ReleaseWatch $watch): ?string
+    {
+        if (Release::current($watch->site_id)?->id !== $watch->release_id) {
+            return 'the site no longer runs the watched release.';
+        }
+
+        if (Deployment::query()->where('site_id', $watch->site_id)->whereKeyNot($watch->deployment_id)
+            ->whereIn('status', [DeploymentStatus::Queued, ...DeploymentStatus::occupying()])->exists()) {
+            return 'another deployment of the site is in progress.';
+        }
+
+        return null;
+    }
+
+    /**
      * The loop guard: why an automatic rollback must not happen now (null: it may).
      */
     private function heldBack(ReleaseWatch $watch): ?string
@@ -310,9 +373,8 @@ final class ReleaseWatcher
             return 'the previous release was itself rolled back automatically.';
         }
 
-        if (Deployment::query()->where('site_id', $watch->site_id)->whereKeyNot($watch->deployment_id)
-            ->whereIn('status', [DeploymentStatus::Queued, ...DeploymentStatus::occupying()])->exists()) {
-            return 'another deployment of the site is in progress.';
+        if (($superseded = $this->superseded($watch)) !== null) {
+            return $superseded;
         }
 
         $cooldown = (int) config('deployments.watch.cooldown_minutes', 60);
@@ -332,6 +394,7 @@ final class ReleaseWatcher
     private function errorRate(ReleaseWatch $watch): array
     {
         $minimum = max(1, (int) config('deployments.watch.min_requests', 20));
+        $minimumErrors = max(1, (int) config('deployments.watch.min_errors', 5));
         $absolute = (float) config('deployments.watch.error_rate', 0.05);
         $factor = (float) config('deployments.watch.baseline_factor', 3);
         $baseline = $watch->baseline !== null ? (float) ($watch->baseline['rate'] ?? 0) : null;
@@ -343,9 +406,10 @@ final class ReleaseWatcher
             return [['unavailable' => 'The edge access log could not be read: '.$e->getMessage(), 'threshold' => $threshold, 'min_requests' => $minimum], null];
         }
 
-        $check = [...$counts->toArray(), 'threshold' => round($threshold, 4), 'min_requests' => $minimum];
+        $check = [...$counts->toArray(), 'threshold' => round($threshold, 4), 'min_requests' => $minimum, 'min_errors' => $minimumErrors];
 
-        if ($counts->total < $minimum || $counts->errorRate() <= $threshold) {
+        // A rate over a handful of errors is noise: it needs enough requests and enough 5xx answers.
+        if ($counts->total < $minimum || $counts->errors < $minimumErrors || $counts->errorRate() <= $threshold) {
             return [$check, null];
         }
 

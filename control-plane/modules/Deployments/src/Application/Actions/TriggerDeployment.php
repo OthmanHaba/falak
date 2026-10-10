@@ -2,6 +2,7 @@
 
 namespace Falak\Deployments\Application\Actions;
 
+use Closure;
 use Falak\Deployments\Application\Orchestration\DeploymentLog;
 use Falak\Deployments\Application\Orchestration\DeploymentQueue;
 use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
@@ -42,6 +43,7 @@ final class TriggerDeployment
      *                                 or coalescing. Checked under the site's trigger lock, so a push queued or started
      *                                 meanwhile is never followed by an older commit.
      * @param  ?string  $rollbackOf  a rollback started automatically by the watch window of that deployment
+     * @param  ?Closure(): ?string  $guard  checked under the site's trigger lock before queueing: a reason refuses it
      *
      * @throws DeploymentTriggerBusy when another trigger of the site holds the lock for too long
      */
@@ -57,6 +59,7 @@ final class TriggerDeployment
         ?string $releaseId = null,
         ?int $unlessNewerThan = null,
         ?string $rollbackOf = null,
+        ?Closure $guard = null,
     ): Deployment {
         $branch = $branch !== null && $branch !== '' ? $branch : $site->branch;
 
@@ -101,7 +104,11 @@ final class TriggerDeployment
         // Triggers of one site are serialized: a follow-up's "nothing newer" check and the coalescing into a waiting
         // deployment must not interleave with another trigger queueing a newer commit. Only database work runs locked.
         try {
-            [$deployment, $outcome] = Cache::lock("deployments:trigger:{$site->id}", 30)->block((int) config('deployments.trigger_lock_wait', 15), function () use ($site, $trigger, $attributes, $releaseId, $unlessNewerThan, $rollbackOf) {
+            [$deployment, $outcome] = Cache::lock("deployments:trigger:{$site->id}", 30)->block((int) config('deployments.trigger_lock_wait', 15), function () use ($site, $trigger, $attributes, $releaseId, $unlessNewerThan, $rollbackOf, $guard) {
+                if ($guard !== null && ($refused = $guard()) !== null) {
+                    throw ValidationException::withMessages(['site' => $refused]);
+                }
+
                 if ($unlessNewerThan !== null) {
                     $newest = Deployment::query()->where('site_id', $site->id)->orderByDesc('number')->first();
 

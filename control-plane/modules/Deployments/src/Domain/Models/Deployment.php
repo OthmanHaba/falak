@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -51,6 +52,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon $created_at
  * @property Collection<int, DeploymentTarget> $targets
  * @property Collection<int, DeploymentStep> $steps
+ * @property ?ReleaseWatch $watch
+ * @property ?ReleaseWatch $watch
  */
 class Deployment extends Model
 {
@@ -101,6 +104,16 @@ class Deployment extends Model
     public function steps(): HasMany
     {
         return $this->hasMany(DeploymentStep::class)->orderBy('position');
+    }
+
+    /**
+     * The watch window after its release went live (sites that watch releases).
+     *
+     * @return HasOne<ReleaseWatch, $this>
+     */
+    public function watch(): HasOne
+    {
+        return $this->hasOne(ReleaseWatch::class, 'deployment_id');
     }
 
     /**

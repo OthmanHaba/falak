@@ -17,6 +17,7 @@ use Falak\Deployments\Domain\Enums\StepStatus;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Enums\TargetStatus;
 use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Enums\WatchStatus;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\DeploymentStep;
 use Falak\Deployments\Domain\Models\DeploymentTarget;
@@ -99,6 +100,10 @@ final class Orchestrator
     {
         $this->locked($deploymentId, function (Deployment $deployment) {
             if ($deployment->status->isTerminal() || $deployment->steps()->exists()) {
+                return;
+            }
+
+            if ($this->staleAutomaticRollback($deployment)) {
                 return;
             }
 
@@ -294,6 +299,41 @@ final class Orchestrator
         });
 
         return $cancelled;
+    }
+
+    /**
+     * An automatic rollback (a live release's watch tripped) only reverts the release it was started for: when the site
+     * runs another release by the time it starts (a deploy went live in between), it is cancelled with the reason and
+     * the watched deployment is no longer marked rolled back.
+     */
+    private function staleAutomaticRollback(Deployment $deployment): bool
+    {
+        if ($deployment->trigger !== Trigger::Rollback || $deployment->auto_rollback_of === null) {
+            return false;
+        }
+
+        $watched = Deployment::query()->find($deployment->auto_rollback_of);
+
+        if ($watched !== null && $watched->release_id !== null && Release::current($deployment->site_id)?->id === $watched->release_id) {
+            return false;
+        }
+
+        $reason = 'Cancelled: the site no longer runs the release whose watch asked for this rollback.';
+        $deployment->forceFill(['status' => DeploymentStatus::Cancelled, 'finished_at' => now(), 'error' => $reason])->save();
+        $this->log->note($deployment->id, $reason, stream: 'stderr');
+
+        if ($watched !== null) {
+            $watched->forceFill(['rolled_back' => false, 'rolled_back_at' => null])->save();
+            ReleaseWatch::query()->whereKey($watched->id)->update(['status' => WatchStatus::Alerted, 'updated_at' => now()]);
+            Release::query()->whereKey($watched->release_id)->update(['auto_rolled_back_at' => null, 'updated_at' => now()]);
+            $this->log->note($watched->id, "Watch: the automatic rollback (deployment #{$deployment->number}) was cancelled; the site had moved on to another release.", stream: 'stderr');
+        }
+
+        $this->updated($deployment);
+        $siteId = $deployment->site_id;
+        $this->afterCommit(fn () => $this->queue->startNext($siteId));
+
+        return true;
     }
 
     // ---- planning -----------------------------------------------------------------------------

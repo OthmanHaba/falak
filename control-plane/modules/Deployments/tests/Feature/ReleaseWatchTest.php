@@ -1,8 +1,10 @@
 <?php
 
 use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Application\Jobs\EvaluateReleaseWatch;
 use Falak\Deployments\Application\Jobs\EvaluateReleaseWatches;
 use Falak\Deployments\Application\Watch\Migrations;
+use Falak\Deployments\Application\Watch\ReleaseWatcher;
 use Falak\Deployments\Contracts\DeploymentBadges;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Enums\Trigger;
@@ -22,8 +24,11 @@ use Falak\Limits\Events\ServiceRestartLoop;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Telemetry\Contracts\AccessLogCounts;
 use Falak\Telemetry\Contracts\Data\RequestCounts;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -69,9 +74,10 @@ function watch_deploy(DeployWorld $world, Trigger $trigger = Trigger::Manual, ?s
     return $deployment->refresh();
 }
 
-/** One evaluation round of every open window (the 30 s schedule). */
+/** One evaluation round of every open window, 30 s after the last one (the schedule). */
 function watch_round(): void
 {
+    test()->travel(30)->seconds();
     app()->call([new EvaluateReleaseWatches, 'handle']);
 }
 
@@ -205,6 +211,7 @@ it('rolls back when the 5xx rate is above three times the previous release\'s', 
     'baseline 4% → 12%, 13% trips' => [[1000, 40], [100, 13], true],
     'no baseline → 5% absolute' => [[0, 0], [100, 6], true],
     'too few requests' => [[1000, 10], [10, 9], false],
+    'too few 5xx (6.7% of 60, but 4 errors)' => [[1000, 10], [60, 4], false],
 ]);
 
 it('records the baseline it compares against', function () {
@@ -445,4 +452,145 @@ it('badges the canvas card while watching', function () {
     watch_deploy($world);
 
     expect(app(DeploymentBadges::class)->forSites([$world->site->id]))->toBe([$world->site->id => ['Watching']]);
+});
+
+it('skips the health trigger when the site\'s health check is off', function () {
+    $world = deploy_world();
+    watch_settings($world);
+    SiteSettings::query()->whereKey($world->site->id)->update(['health_enabled' => false]);
+    watch_deploy($world);
+    $second = watch_deploy($world);
+
+    // A login wall answering 302 (or anything) never rolls the release back.
+    deploy_http(['http://203.0.113.1' => 302]);
+    foreach (range(1, 5) as $round) {
+        watch_round();
+    }
+
+    $watch = watch_of($second);
+    expect($watch->status)->toBe(WatchStatus::Watching)
+        ->and($watch->triggers['health'])->toBeFalse()
+        ->and($watch->health_failures)->toBe(0)
+        ->and($watch->checks['health']['unavailable'])->toContain('health check is off');
+});
+
+it('counts a health failure once per probe interval, and queues one round per window', function () {
+    $world = deploy_world();
+    watch_settings($world);
+    watch_deploy($world);
+    $second = watch_deploy($world);
+    deploy_http(['http://203.0.113.1' => 500]);
+
+    // Overlapping rounds (a slow one meets the next): the second is skipped.
+    $this->travel(30)->seconds();
+    app(ReleaseWatcher::class)->evaluate(watch_of($second));
+    app(ReleaseWatcher::class)->evaluate(watch_of($second));
+    app(ReleaseWatcher::class)->evaluate(watch_of($second));
+    expect(watch_of($second)->health_failures)->toBe(1);
+
+    Queue::fake();
+    app()->call([new EvaluateReleaseWatches, 'handle']);
+    app()->call([new EvaluateReleaseWatches, 'handle']);
+    Queue::assertPushed(EvaluateReleaseWatch::class, 1);
+});
+
+it('skips a server without an address instead of counting it as a failure', function () {
+    $world = deploy_world(servers: 2);
+    watch_settings($world);
+    watch_deploy($world);
+    $second = watch_deploy($world);
+    $world->servers[1]->forceFill(['ipv4' => null, 'private_ipv4' => null])->save();
+
+    watch_round();
+    watch_round();
+    watch_round();
+
+    expect(watch_of($second)->status)->toBe(WatchStatus::Watching)
+        ->and(watch_of($second)->checks['health']['ok'])->toBeTrue()
+        ->and(watch_of($second)->health_failures)->toBe(0);
+});
+
+it('ignores crashes from before the release went live', function () {
+    $world = deploy_world();
+    watch_settings($world);
+    watch_deploy($world);
+    $second = watch_deploy($world);
+    $before = now()->subMinutes(2)->toIso8601String();
+
+    ServiceOomKilled::dispatch($world->organization->id, $world->servers[0]->id, 'web-1', 'site', $world->site->id, $world->site->id, 'shop', 1, 512, '/x', $before);
+    ServiceRestartLoop::dispatch($world->organization->id, $world->servers[0]->id, 'web-1', 'site', $world->site->id, $world->site->id, 'shop', 6, 10, '/x', $before);
+
+    expect(watch_of($second)->status)->toBe(WatchStatus::Watching);
+
+    $this->travel(1)->minutes();
+    ServiceRestartLoop::dispatch($world->organization->id, $world->servers[0]->id, 'web-1', 'site', $world->site->id, $world->site->id, 'shop', 6, 10, '/x', now()->toIso8601String());
+    expect(watch_of($second)->status)->toBe(WatchStatus::RolledBack);
+});
+
+it('opens no window for a release that is no longer live or with a deployment queued behind it, and never reopens one', function () {
+    $world = deploy_world();
+    watch_settings($world);
+    watch_deploy($world);
+    $second = watch_deploy($world);
+    $watcher = app(ReleaseWatcher::class);
+
+    watch_oom($world);
+    deploy_run_all($world->agents);
+    expect(watch_of($second)->status)->toBe(WatchStatus::RolledBack);
+
+    // A re-delivered DeploymentSucceeded: the tripped window stays as it is.
+    expect($watcher->start($second->id)->status)->toBe(WatchStatus::RolledBack);
+
+    $this->travel(61)->minutes();
+    $third = watch_deploy($world);
+    ReleaseWatch::query()->whereKey($third->id)->delete();
+    Deployment::query()->forceCreate(['organization_id' => $world->organization->id, 'site_id' => $world->site->id, 'site_slug' => $world->site->slug,
+        'number' => 99, 'trigger' => Trigger::Push, 'status' => DeploymentStatus::Queued]);
+    expect($watcher->start($third->id))->toBeNull();
+
+    Deployment::query()->where('number', 99)->delete();
+    $fourth = watch_deploy($world);
+    ReleaseWatch::query()->whereKey($third->id)->delete();
+    expect($watcher->start($third->id))->toBeNull() // no longer the live release
+        ->and(watch_of($fourth)->status)->toBe(WatchStatus::Watching);
+});
+
+it('refuses an automatic rollback when the site moved on: under the trigger lock and when it starts', function () {
+    $world = deploy_world();
+    watch_settings($world);
+    $first = watch_deploy($world);
+    $second = watch_deploy($world);
+    $site = app(SiteDirectory::class)->find($world->site->id);
+
+    // The guard runs under the site's trigger lock: a reason refuses the rollback.
+    expect(fn () => app(TriggerDeployment::class)($site, Trigger::Rollback, releaseId: $first->release_id, rollbackOf: $second->id, guard: fn () => 'the site moved on.'))
+        ->toThrow(ValidationException::class, 'the site moved on.');
+    expect(Deployment::query()->where('trigger', Trigger::Rollback)->exists())->toBeFalse();
+
+    // A rollback queued for $second that only starts once $third is live is cancelled with the reason.
+    $third = watch_deploy($world);
+    Release::query()->whereKey($second->release_id)->update(['auto_rolled_back_at' => now()]);
+    $second->forceFill(['rolled_back' => true, 'rolled_back_at' => now()])->save();
+    $rollback = app(TriggerDeployment::class)($site, Trigger::Rollback, releaseId: $first->release_id, rollbackOf: $second->id);
+
+    expect($rollback->status)->toBe(DeploymentStatus::Cancelled)
+        ->and($rollback->error)->toContain('no longer runs the release')
+        ->and(Release::current($world->site->id)->id)->toBe($third->release_id)
+        ->and($second->refresh()->rolled_back)->toBeFalse()
+        ->and(Release::query()->find($second->release_id)->auto_rolled_back_at)->toBeNull();
+    $world->agents->assertNothingDispatched('deploy.rollback');
+});
+
+it('loads the watches of a deployment list in one query', function () {
+    $world = deploy_world();
+    watch_settings($world);
+    foreach (range(1, 4) as $i) {
+        watch_deploy($world);
+    }
+
+    DB::enableQueryLog();
+    $this->getJson("/sites/{$world->site->id}/deployments")->assertOk()->assertJsonPath('data.history.data.0.watch.status', 'watching');
+    $watchQueries = array_filter(DB::getQueryLog(), fn (array $q) => str_contains($q['query'], 'deployments_release_watches'));
+
+    expect(count($watchQueries))->toBeLessThanOrEqual(2); // history + queued
 });

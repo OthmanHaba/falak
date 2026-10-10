@@ -33,7 +33,7 @@ final class DeploymentApiController extends Controller
     {
         $data = $this->site($request->user(), $site);
         $perPage = max(1, min(100, (int) $request->query('per_page', '20')));
-        $page = Deployment::query()->where('site_id', $data->id)->orderByDesc('number')->paginate($perPage)->withQueryString();
+        $page = Deployment::query()->where('site_id', $data->id)->orderByDesc('number')->with('watch')->paginate($perPage)->withQueryString();
 
         return response()->json([
             'data' => $page->getCollection()->map(fn (Deployment $d) => $this->deploymentResource($d))->values(),
