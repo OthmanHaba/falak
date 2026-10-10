@@ -6,6 +6,7 @@ use Falak\Databases\Contracts\DatabaseRecovery;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Edge\Contracts\DomainRecords;
+use Falak\Fleet\Contracts\Enrollment;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Recovery\Domain\Models\ServerRecovery;
@@ -38,6 +39,7 @@ final class ServerRecoveryRunner
         private readonly DeploymentTrigger $deploys,
         private readonly DeploymentDirectory $deployments,
         private readonly DomainRecords $domains,
+        private readonly Enrollment $enrollment,
         private readonly AuditLog $audit,
     ) {}
 
@@ -50,6 +52,10 @@ final class ServerRecoveryRunner
     {
         if (ServerRecovery::query()->where('lost_server_id', $lost->id)->where('status', 'running')->exists()) {
             throw ValidationException::withMessages(['server' => "A recovery of {$lost->name} is already running."]);
+        }
+
+        if (($plan['blocking'] ?? []) !== []) {
+            throw ValidationException::withMessages(['server' => implode(' ', $plan['blocking'])]);
         }
 
         $recovery = ServerRecovery::query()->create([
@@ -65,6 +71,9 @@ final class ServerRecoveryRunner
             'requested_by' => $actorId,
         ]);
 
+        // The lost server must never act again: if it comes back, its agent can't reconnect (no commands, no reports),
+        // so nothing it still runs (the old containers) interferes with what moved. Re-enroll it to use it again.
+        $this->enrollment->revokeServer($lost->id, "Recovered onto {$target->name}: this server was declared gone.");
         $this->audit->record('recovery.server_recovery_started', 'server', $lost->id, ['recovery_id' => $recovery->id, 'target' => $target->id], $lost->organizationId);
         $this->advance($recovery);
 
@@ -73,6 +82,14 @@ final class ServerRecoveryRunner
 
     /** Failed items of a step go back to pending; the recovery runs again from there. */
     public function retry(ServerRecovery $recovery, string $stepKey): void
+    {
+        // Under the lock advance() takes: a scheduler tick never sees half-reset steps.
+        Cache::lock("recovery:server-recovery:{$recovery->id}", 120)->block(30, fn () => $this->reset($recovery->refresh(), $stepKey));
+        $this->audit->record('recovery.server_recovery_retried', 'server', $recovery->lost_server_id, ['recovery_id' => $recovery->id, 'step' => $stepKey], $recovery->organization_id);
+        $this->advance($recovery);
+    }
+
+    private function reset(ServerRecovery $recovery, string $stepKey): void
     {
         $steps = $recovery->steps;
 
@@ -87,8 +104,8 @@ final class ServerRecoveryRunner
 
             foreach ($step['items'] as $j => $item) {
                 if ($item['state'] === 'failed') {
-                    // A database whose container exists retries only its restore.
-                    $steps[$i]['items'][$j] = [...$item, 'state' => 'pending', 'message' => null];
+                    // A database retries the phase it failed in (the container, or its restore).
+                    $steps[$i]['items'][$j] = [...$item, 'state' => 'pending', 'message' => null, 'retry' => true];
                 }
             }
 
@@ -97,8 +114,6 @@ final class ServerRecoveryRunner
         }
 
         $recovery->forceFill(['steps' => $steps, 'status' => 'running', 'finished_at' => null])->save();
-        $this->audit->record('recovery.server_recovery_retried', 'server', $recovery->lost_server_id, ['recovery_id' => $recovery->id, 'step' => $stepKey], $recovery->organization_id);
-        $this->advance($recovery);
     }
 
     public function advance(ServerRecovery $recovery): void
@@ -229,10 +244,12 @@ final class ServerRecoveryRunner
         $id = (string) $item['id'];
         $phase = (string) ($item['phase'] ?? 'create');
 
+        $pitr = ($item['method'] ?? 'backup') === 'pitr';
+
         if ($phase === 'create') {
             if ($item['state'] === 'pending') {
-                $this->databases->relocate($id, $recovery->target_server_id, $recovery->requested_by);
-                $item = [...$item, 'state' => 'running'];
+                $this->databases->relocate($id, $recovery->target_server_id, $recovery->requested_by, suspendPitr: $pitr);
+                $item = [...$item, 'state' => 'running', 'retry' => false];
             }
 
             $progress = $this->databases->progress($id);
@@ -241,7 +258,11 @@ final class ServerRecoveryRunner
                 return [...$item, 'state' => $progress['state'] === 'failed' ? 'failed' : 'running', 'message' => $progress['message']];
             }
 
-            $item = [...$item, 'phase' => 'restore', 'state' => 'pending'];
+            $item = [...$item, 'phase' => 'restore', 'state' => 'pending', 'retry' => false];
+        }
+
+        if ($pitr) {
+            return $this->pitr($recovery, $item);
         }
 
         if ($item['state'] === 'pending') {
@@ -262,6 +283,40 @@ final class ServerRecoveryRunner
             'failed' => [...$item, 'state' => 'failed', 'message' => $progress['message']],
             default => [...$item, 'state' => 'running', 'message' => 'Restoring from the latest backup.'],
         };
+    }
+
+    /**
+     * A PITR database: restored to the latest point of its shipped log, the copy swapped in, PITR on again. Without a
+     * recovery point after all (the log was pruned meanwhile) it falls back to the latest backup.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function pitr(ServerRecovery $recovery, array $item): array
+    {
+        $id = (string) $item['id'];
+        $restore = $item['restore'] ?? null;
+
+        if ($item['state'] === 'pending' && is_string($restore) && ($item['retry'] ?? false)) {
+            // A retry: a failed swap is tried again; a failed restore starts over.
+            $progress = $this->databases->pitrProgress($restore, $recovery->requested_by, retry: true);
+            $restore = $progress['state'] === 'failed' ? null : $restore;
+            $item = [...$item, 'restore' => $restore, 'state' => $restore !== null ? 'running' : 'pending', 'retry' => false];
+        }
+
+        if ($item['state'] === 'pending') {
+            try {
+                $item = [...$item, 'state' => 'running', 'restore' => $this->databases->restoreToLatest($id, $recovery->requested_by)];
+            } catch (ValidationException $e) {
+                $why = (string) collect($e->errors())->flatten()->first();
+
+                return $this->database($recovery, [...$item, 'method' => 'backup', 'state' => 'pending', 'note' => "PITR: {$why}"]);
+            }
+        }
+
+        $progress = $this->databases->pitrProgress((string) $item['restore'], $recovery->requested_by);
+
+        return [...$item, 'state' => $progress['state'], 'message' => $progress['message']];
     }
 
     /**
@@ -344,7 +399,7 @@ final class ServerRecoveryRunner
         $items = [
             'replacement' => [$item($target->id, $target->name)],
             'sites' => array_map(fn (array $site) => $item($site['id'], $site['name']), $plan['sites']),
-            'databases' => array_map(fn (array $instance) => $item($instance['id'], $instance['name'], extra: ['phase' => 'create']), $plan['databases']),
+            'databases' => array_map(fn (array $instance) => $item($instance['id'], $instance['name'], extra: ['phase' => 'create', 'method' => $instance['method'] ?? 'backup']), $plan['databases']),
             'volumes' => array_map(fn (array $volume) => match ($volume['method']) {
                 'none' => $item($volume['id'], $volume['name'], 'skipped', 'No backup: it starts empty.'),
                 'manual' => $item($volume['id'], $volume['name'], 'manual', 'Its backups use your own key: restore the latest one on the Volumes page with your age identity.'),

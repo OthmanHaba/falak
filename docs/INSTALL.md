@@ -463,6 +463,10 @@ that gets memory, CPU or process limits moves into its own PHP-FPM master (a sho
   from `.env`. Encrypted backups taken before need that passphrase.
 - The cron line from earlier docs (`/etc/cron.d/falak-backup`) is replaced by `falak-backup.timer`: remove it.
 - Backups now also hold `edge-pki`; restoring an older backup keeps this host's.
+- Backups are `*.fdr` now (encrypted and authenticated). Older `*.tar.gz.enc` backups restore from local files only
+  (no MAC: with a warning), never from the bucket: take a new backup (`falak-ctl backup --upload`) after upgrading.
+- Single-organization installs need nothing; on installs with several organizations, set `FALAK_DR_ORGANIZATION`
+  (the operator organization's id) in `.env` and run `falak-ctl up`, or nobody sees the control plane's DR.
 - The PHP containers mount `/opt/falak/state` read-only (`state/dr.json`, written by falak-ctl, no secrets).
 
 ### Upgrading the server agents
@@ -560,21 +564,21 @@ A backup contains:
 > any of them, every server must be re-enrolled and every secret entered again. Keep copies **off the host**.
 
 - Retention: the newest `FALAK_BACKUP_KEEP` backups are kept on the host (default 14). Expire old uploads with
-  a lifecycle rule on the bucket.
+  a lifecycle rule on the bucket, and turn on versioning or object lock there.
 - **Off-site, encrypted, on a schedule: `falak-ctl dr setup`.** It asks for an S3-compatible bucket (endpoint,
   bucket, region, keys, prefix) and a DR passphrase, tests the bucket, and installs `falak-backup.timer`
   (every 6 h by default, `falak-ctl backup --upload --scheduled`) and a monthly `falak-drill.timer`. The settings
   live in `/opt/falak/dr/dr.env` (root only, never mounted into a container, never in a backup). Uploads are always
-  encrypted (`*.tar.gz.enc`, AES-256, `openssl enc -pbkdf2`); `backup --upload` without the passphrase is refused.
-  Each upload has a `.sha256` next to it. `falak-ctl dr status` and Settings → Disaster recovery show the last
+  encrypted and authenticated (`*.fdr`: AES-256 then HMAC-SHA256, PBKDF2 with 600 000 iterations; see
+  DISASTER_RECOVERY.md "Backup format"); `backup --upload` without the passphrase is refused. `falak-ctl dr status` and Settings → Disaster recovery show the last
   backup, its age and size, and the last drill. Until it is configured the panel shows its owners and admins a
   banner, `doctor` warns and a weekly `dr.not_configured` alert goes out.
 - **Restore drills:** `falak-ctl dr drill` downloads the latest upload, restores it into a throwaway compose
   project (`falak-drill`: its own directory, volumes, network and subnet; postgres, valkey and the control plane
   only, so nothing talks to your servers), checks the migrations, that the KEK unwraps every data key and the row
   counts, then removes it.
-- `restore` takes a file, a name in `backups/`, `s3://latest` or `s3://<backup name>` (downloaded, checked against
-  its `.sha256`, decrypted with the DR passphrase).
+- `restore` takes a file, a name in `backups/`, `s3://latest` or `s3://<backup name>` (downloaded, authenticated
+  with the DR passphrase before it is decrypted; only `.fdr` objects).
 
 **Move to a new host, or the host is lost:** see [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md). In short, on a
 fresh VPS with the same `--domain`:

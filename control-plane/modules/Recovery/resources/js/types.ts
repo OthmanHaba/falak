@@ -46,6 +46,8 @@ export interface RecoveryPlan {
     lost: { id: string; name: string; ipv4: string | null; ipv6: string | null; status: string };
     target: { id: string; name: string; ipv4: string | null; ipv6: string | null; status: string } | null;
     problems: string[];
+    /** The server is not gone (its agent still reports): the recovery can't start. */
+    blocking: string[];
     sites: { id: string; name: string; runtime: string; other_servers: number }[];
     databases: {
         id: string;
@@ -53,6 +55,7 @@ export interface RecoveryPlan {
         engine: string;
         version: string;
         pitr_enabled: boolean;
+        method: 'pitr' | 'backup';
         worst_loss_seconds: number | null;
         databases: {
             id: string;
@@ -61,7 +64,8 @@ export interface RecoveryPlan {
             data_loss_seconds: number | null;
             customer_held: boolean;
             pitr_enabled: boolean;
-            method: 'backup' | 'manual' | 'none';
+            pitr_latest_at: string | null;
+            method: 'pitr' | 'backup' | 'manual' | 'none';
         }[];
     }[];
     volumes: {

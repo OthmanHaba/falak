@@ -6,6 +6,8 @@ use Falak\Databases\Contracts\Data\DatabaseRecoveryPoint;
 use Falak\Databases\Contracts\Data\InstanceRecoveryPoint;
 use Falak\Databases\Contracts\DatabaseRecovery;
 use Falak\Edge\Contracts\DomainRecords;
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\Data\SiteData;
@@ -26,6 +28,7 @@ final class ServerRecoveryPlanner
         private readonly DatabaseRecovery $databases,
         private readonly VolumeRecovery $volumes,
         private readonly DomainRecords $domains,
+        private readonly AgentDirectory $agents,
     ) {}
 
     /**
@@ -37,6 +40,16 @@ final class ServerRecoveryPlanner
     {
         $target = $targetServerId !== null ? $this->servers->find(strtolower($targetServerId)) : null;
         $problems = [];
+        $blocking = [];
+
+        // A server whose agent still reports isn't gone: moving its databases now would fork their data.
+        $agent = $this->agents->forServer($lost->id);
+        $minutes = max(1, (int) config('recovery.lost_after_minutes', 10));
+        $seen = $agent?->lastHeartbeatAt;
+
+        if ($agent !== null && $agent->status !== AgentStatus::Revoked && $seen !== null && $seen->getTimestamp() > now()->subMinutes($minutes)->getTimestamp()) {
+            $blocking[] = "{$lost->name}'s agent reported ".max(1, (int) ceil((now()->getTimestamp() - $seen->getTimestamp()) / 60))." min ago: it is not gone. Stop it (or wait until it has been silent for {$minutes} min) before recovering it.";
+        }
 
         if ($targetServerId !== null && ($target === null || $target->organizationId !== $lost->organizationId)) {
             throw ValidationException::withMessages(['target_server_id' => 'Choose a server of this organization.']);
@@ -69,6 +82,7 @@ final class ServerRecoveryPlanner
             'lost' => self::server($lost),
             'target' => $target !== null ? self::server($target) : null,
             'problems' => $problems,
+            'blocking' => $blocking,
             'sites' => array_map(fn (SiteData $site) => [
                 'id' => $site->id,
                 'name' => $site->name,
@@ -81,6 +95,8 @@ final class ServerRecoveryPlanner
                 'engine' => $instance->engine,
                 'version' => $instance->version,
                 'pitr_enabled' => $instance->pitrEnabled,
+                // PITR to the latest point when every database of it can (it is instance-wide), else the latest backups.
+                'method' => $instance->databases !== [] && collect($instance->databases)->every(fn (DatabaseRecoveryPoint $p) => $p->usesPitr()) ? 'pitr' : 'backup',
                 'databases' => array_map(fn (DatabaseRecoveryPoint $point) => self::databasePoint($point), $instance->databases),
                 'worst_loss_seconds' => self::worst(array_map(fn (DatabaseRecoveryPoint $p) => $p->dataLossSeconds(now()->toDateTimeImmutable()), $instance->databases)),
             ], $instances),
@@ -107,12 +123,13 @@ final class ServerRecoveryPlanner
             'id' => $point->databaseId,
             'name' => $point->name,
             'backup_at' => $point->lastBackupAt?->format(DATE_ATOM),
-            // PITR replays to the latest shipped WAL / binlog when the PITR restore path is available; this estimate is
-            // the latest full backup's age, the upper bound.
+            // PITR: the time since the last shipped WAL / binlog; otherwise the latest backup's age.
             'data_loss_seconds' => $point->dataLossSeconds(now()->toDateTimeImmutable()),
+            'pitr_latest_at' => $point->pitrLatestAt?->format(DATE_ATOM),
             'customer_held' => $point->customerHeld,
             'pitr_enabled' => $point->pitrEnabled,
             'method' => match (true) {
+                $point->usesPitr() => 'pitr',
                 $point->backupId === null => 'none',
                 $point->customerHeld => 'manual',
                 default => 'backup',

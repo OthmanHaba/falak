@@ -110,7 +110,7 @@ export default function ServerRecovery({ server, candidates, recovery: initial }
 
                         {plan && !planning && (
                             <div className="flex justify-end">
-                                <Button variant="danger" icon={<LifeBuoy />} onClick={() => setConfirming(true)}>
+                                <Button variant="danger" icon={<LifeBuoy />} disabled={plan.blocking.length > 0} onClick={() => setConfirming(true)}>
                                     Recover onto {plan.target?.name}
                                 </Button>
                             </div>
@@ -148,6 +148,11 @@ export default function ServerRecovery({ server, candidates, recovery: initial }
 function PlanView({ plan }: { plan: RecoveryPlan }) {
     return (
         <>
+            {plan.blocking.map((problem) => (
+                <Callout key={problem} tone="danger" title="This server is not gone">
+                    {problem}
+                </Callout>
+            ))}
             {plan.problems.map((problem) => (
                 <Callout key={problem} tone="warning">
                     {problem}
@@ -156,7 +161,7 @@ function PlanView({ plan }: { plan: RecoveryPlan }) {
 
             <Section
                 title="2. Databases"
-                description="Each container is recreated on the replacement with the same name and DNS name, then restored from its latest encrypted backup."
+                description="Each container is recreated on the replacement with the same name and DNS name, then restored: to the latest point of its shipped log when point-in-time recovery is on, else from its latest encrypted backup."
             >
                 {plan.databases.length === 0 ? (
                     <p className="text-fg-muted text-sm">No database containers on this server.</p>
@@ -171,6 +176,12 @@ function PlanView({ plan }: { plan: RecoveryPlan }) {
                                     <Tag>{instance.engine}</Tag>
                                     {instance.pitr_enabled && <Tag>PITR on</Tag>}
                                     <span className="text-fg-muted ml-auto">
+                                        {db.method === 'pitr' && (
+                                            <>
+                                                Data loss: {lossLabel(db.data_loss_seconds)} (PITR to the latest point,{' '}
+                                                {db.pitr_latest_at ? new Date(db.pitr_latest_at).toLocaleString() : '?'})
+                                            </>
+                                        )}
                                         {db.method === 'backup' && (
                                             <>
                                                 Data loss: {lossLabel(db.data_loss_seconds)} (backup of{' '}

@@ -91,6 +91,14 @@ it('never shows the control plane to other organizations of the install', functi
     expect(recovery_banner($this))->toMatchArray(['banner' => true]);
     $this->actingAs($this->owner);
     expect(recovery_banner($this))->toBeNull();
+
+    // Several organizations and none recorded (install.sh writes FALAK_DR_ORGANIZATION): nobody, not "the oldest".
+    config(['recovery.operator_organization' => '']);
+    expect(recovery_banner($this))->toBeNull();
+    $this->get('/settings/disaster-recovery')->assertNotFound();
+    $alerts = recovery_alerts();
+    dispatch_sync(new CheckControlPlaneRecovery);
+    expect($alerts->raised)->toBe([]);
 });
 
 it('hides the banner for 30 days after a dismissal, then shows it again', function () {

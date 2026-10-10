@@ -6,6 +6,8 @@ use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Domain\Models\Agent;
 use Falak\Identity\Contracts\Role;
 use Falak\Recovery\Application\Jobs\AdvanceServerRecoveries;
 use Falak\Recovery\Domain\Models\ServerRecovery;
@@ -234,4 +236,46 @@ it('is for admins of the server\'s organization only', function () {
 
     // Their own server can't be recovered onto another organization's server.
     $this->postJson("/servers/{$foreign->id}/recovery/plan", ['target_server_id' => $this->target->id])->assertJsonValidationErrors('target_server_id');
+});
+
+it('refuses while the lost server\'s agent still reports, and revokes it when the recovery starts', function () {
+    $agent = Agent::factory()->create(['server_id' => $this->lost->id, 'organization_id' => $this->organization->id, 'last_heartbeat_at' => now()->subMinutes(3)]);
+
+    $plan = $this->postJson("/servers/{$this->lost->id}/recovery/plan", ['target_server_id' => $this->target->id])->json('data');
+    expect($plan['blocking'][0])->toContain('reported 3 min ago')->toContain('not gone');
+    $this->post("/servers/{$this->lost->id}/recovery", ['target_server_id' => $this->target->id, 'confirm' => 'app-lost'])->assertSessionHasErrors('server');
+    expect(ServerRecovery::query()->count())->toBe(0)->and($this->instance->refresh()->server_id)->toBe($this->lost->id);
+
+    // Silent for longer than recovery.lost_after_minutes: it is gone. Its agent can never reconnect afterwards.
+    $agent->forceFill(['last_heartbeat_at' => now()->subMinutes(11)])->save();
+    expect($this->postJson("/servers/{$this->lost->id}/recovery/plan", ['target_server_id' => $this->target->id])->json('data.blocking'))->toBe([]);
+    $this->post("/servers/{$this->lost->id}/recovery", ['target_server_id' => $this->target->id, 'confirm' => 'app-lost'])->assertSessionHasNoErrors();
+    expect($agent->refresh()->status)->toBe(AgentStatus::Revoked);
+});
+
+it('retries a database whose container came up but whose database failed to be created', function () {
+    $this->post("/servers/{$this->lost->id}/recovery", ['target_server_id' => $this->target->id, 'confirm' => 'app-lost']);
+    $recovery = ServerRecovery::query()->firstOrFail();
+    SiteTarget::query()->where('site_id', $this->site->id)->update(['status' => TargetStatus::Ready]);
+    recovery_advance();
+
+    foreach ($this->agents->dispatched('db.instance.create', $this->target->id) as $command) {
+        $this->agents->succeed($command['handle']);
+    }
+
+    $create = collect($this->agents->dispatched('db.create', $this->target->id))->last();
+    $this->agents->fail($create['handle'], 'disk full');
+    recovery_advance();
+    expect($recovery->refresh()->status)->toBe('failed')
+        ->and(collect(recovery_step($recovery, 'databases')['items'])->firstWhere('label', 'main'))->toMatchArray(['state' => 'failed', 'phase' => 'create']);
+
+    $before = count($this->agents->dispatched('db.create', $this->target->id));
+    $this->postJson("/recoveries/{$recovery->id}/steps/databases/retry")->assertOk();
+    $again = $this->agents->dispatched('db.create', $this->target->id);
+    expect(count($again))->toBe($before + 1);
+    $this->agents->succeed(collect($again)->last()['handle']);
+    recovery_advance();
+
+    expect(collect(recovery_step($recovery, 'databases')['items'])->firstWhere('label', 'main'))->toMatchArray(['phase' => 'restore'])
+        ->and($this->agents->last('db.restore', $this->target->id)['payload']['database'])->toBe('shop');
 });

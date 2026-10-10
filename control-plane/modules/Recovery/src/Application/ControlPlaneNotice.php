@@ -10,7 +10,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * Who sees the control plane's disaster recovery, and the "set up disaster recovery" prompt: owners and admins
- * (recovery.control_plane) of the operator organization (recovery.operator_organization, else the oldest one). Members
+ * (recovery.control_plane) of the operator organization (FALAK_DR_ORGANIZATION, which install.sh records; unset, the
+ * only organization of a single-organization install, else none). Members
  * of other organizations on a shared install never see it. The banner stays until DR is configured; a dismissal hides
  * it for recovery.dismiss_days, then it returns.
  */
@@ -39,7 +40,11 @@ final class ControlPlaneNotice
             return null;
         }
 
-        return $this->organizations->all()[0]->id ?? null;
+        // Not recorded (install.sh writes it after creating the first admin): only an install with a single
+        // organization has an obvious operator; with several, nobody is shown the control plane.
+        $all = $this->organizations->all();
+
+        return count($all) === 1 ? $all[0]->id : null;
     }
 
     public function canManage(?Authenticatable $user, ?string $organizationId): bool

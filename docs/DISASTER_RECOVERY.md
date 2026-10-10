@@ -18,8 +18,8 @@ It asks for (or takes as flags, see `falak-ctl dr setup --help`):
   …), bucket, region, key prefix (default `falak`), access key and secret key. Use a bucket of its own, in another
   provider or region than the control plane, with keys that can `PutObject`, `GetObject` and `ListBucket` there
   only. Secrets come from files (`--secret-key-file`, `--passphrase-file`) or the terminal, never the command line;
-- a **DR passphrase** (12+ characters). Every uploaded backup is encrypted with it (AES-256, `openssl enc -pbkdf2`).
-  Without it a backup can't be restored, so store it in your password manager, apart from the host;
+- a **DR passphrase** (12+ characters). Every uploaded backup is encrypted and authenticated with it (see "Backup
+  format" below). Without it a backup can't be restored, so store it in your password manager, apart from the host;
 - the schedule: every 6 hours by default (`--every 1|2|3|4|6|8|12|24`), and a monthly restore drill (`--drill monthly|off`).
 
 It tests the bucket (writes `.falak-dr-check`, lists the prefix), stores the settings in `/opt/falak/dr/dr.env`
@@ -53,13 +53,15 @@ Alerts (route them in Settings → Alert rules, group "Disaster recovery"):
 | `dr.backup_missing` | no backup for twice the schedule; cleared by the next backup |
 | `dr.drill_failed` | a restore drill failed (once per drill) |
 
-The **operator organization** is the oldest organization (the one install.sh's first admin created). On an install
-shared by several organizations, set `FALAK_DR_ORGANIZATION=<organization id or slug>` in `custom.env`; members of
+The **operator organization** is recorded by install.sh as `FALAK_DR_ORGANIZATION` in `.env` (the first admin's
+organization). Unset, an install with a single organization uses it and one with several shows nobody the control
+plane's DR: set `FALAK_DR_ORGANIZATION=<organization id or slug>` in `.env` and run `falak-ctl up`. Members of
 other organizations never see the control plane's DR.
 
 ## 2. What is in a backup
 
-`falak-ctl backup` writes `/opt/falak/backups/falak-backup-<UTC time>[-label].tar.gz[.enc]`:
+`falak-ctl backup` writes `/opt/falak/backups/falak-backup-<UTC time>[-label].fdr` (with the DR passphrase), or
+`….tar.gz` without one:
 
 | Part | Why |
 | --- | --- |
@@ -73,9 +75,33 @@ other organizations never see the control plane's DR.
 | `manifest` | Falak version, image digests, volumes, KEK id(s), row counts of the main tables, Docker version |
 
 An unencrypted (local) backup leaves the KEK and the KMS / Vault credentials out and says so; it never leaves the
-host (`--upload` refuses it). Uploads go to `s3://<bucket>/<prefix>/<name>.tar.gz.enc` with a `<name>.sha256` next to
-them. The host keeps the newest `FALAK_BACKUP_KEEP` (14); expire old uploads with a bucket lifecycle rule (keep at
-least as long as your oldest needed restore point, and at least one month).
+host (`--upload` refuses it). Uploads go to `s3://<bucket>/<prefix>/<name>.fdr`. The host keeps the newest
+`FALAK_BACKUP_KEEP` (14).
+
+**The bucket.** Use one for the control plane alone, with:
+
+- **versioning** on, or better **object lock** (compliance or governance mode, a retention of at least a month): a
+  stolen key or a compromised host can then neither delete nor overwrite the backups you need;
+- a **lifecycle rule** expiring old objects (and old versions) after your retention, at least 30 days;
+- keys for the control plane that can `PutObject`, `GetObject` and `ListBucket` on the prefix, nothing else.
+
+### Backup format
+
+`.fdr` is `FALAK-DR-BACKUP 2`: the archive is encrypted with AES-256-CBC (`openssl enc`, key from PBKDF2-SHA256 with
+600 000 iterations and a random salt), then authenticated with HMAC-SHA256 over a small header and the whole
+ciphertext, keyed by a second PBKDF2 derivation with its own salt (encrypt-then-MAC, standard tools only, the same on
+every supported OS). The header binds the backup's name and creation time. A restore checks the MAC before anything
+is decrypted or unpacked; a missing or wrong MAC, a wrong passphrase, or a name that doesn't match the bucket object
+(a renamed or replayed backup) is a hard error, and the manifest inside must say `encrypted=1` and name the same
+backup. From the bucket only `.fdr` objects are considered: a plaintext or old-format object someone dropped there is
+ignored. Backups from before this format (`.tar.gz.enc`, no MAC) and unencrypted ones restore from local files only,
+with a warning.
+
+A restore never takes from the backup's `.env` which images run or how: this host's `FALAK_VERSION`,
+`FALAK_IMAGE_PREFIX`, `FALAK_REPO`, `FALAK_DEPLOY_SOURCE`, `FALAK_PULL`, `FALAK_EDGE_SUBNET` and `COMPOSE_PROFILES` are
+kept, and `COMPOSE_*` / `DOCKER_*` lines of the backup are dropped. A backup made by a newer Falak than this host's is
+refused (install that version first, or `--force`). backup, restore, update and drill run one at a time
+(`/opt/falak/.ctl.lock`): the timers wait, a command run by hand while another runs stops with a message.
 
 ## 3. The emergency kit
 
@@ -151,8 +177,18 @@ Servers → the lost server → **This server is gone…** (owners and admins; `
 
 Not automatic: databases or volumes whose backups use **your own age key** (they need your identity — restore them
 from the Databases / Volumes page; the wizard marks them "Your turn"), and DNS records Falak doesn't manage.
-Point-in-time recovery: the estimate shown is the latest full backup's age, the upper bound of the loss; the wizard
-restores that backup.
+Point-in-time recovery: a database container with PITR on (and keys Falak holds) comes back at the **latest point of
+its shipped log**: the container is recreated with shipping off (its empty log never joins the history), a PITR
+restore of the newest base and every segment after it is made on the replacement and swapped in (it takes over the
+name, DNS name, databases and users; the empty placeholder is retired, delete it once you checked), then PITR is
+turned on again with a new base. Its data loss in the dry run is the PITR lag, the time since the last shipped
+segment; otherwise it is the latest backup's age.
+
+**The lost server must really be gone.** The wizard refuses while its agent reported within the last 10 minutes
+(`FALAK_RECOVERY_LOST_AFTER_MINUTES`): moving databases off a server that still writes to them forks their data. When
+the recovery starts, the lost server's agent is **revoked**: if the machine comes back, its agent can't reconnect, so
+nothing is sent to it and its old containers never interfere (they keep running there until you delete the machine).
+To use that machine again, delete the server in Falak and add it anew.
 
 ### Readiness
 
