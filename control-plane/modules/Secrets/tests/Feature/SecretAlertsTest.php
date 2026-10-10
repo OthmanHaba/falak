@@ -71,8 +71,10 @@ it('alerts once when one user reveals more than the limit within ten minutes', f
     $reveal($secrets[3], $this->user->id);
     $reveal($secrets[4], $this->user->id);
     $alert = secret_alerts('secrets.unusual_reveals')->sole();
-    expect($alert->title)->toBe("{$this->user->email} revealed more than 3 secrets in 10 minutes")
-        ->and($alert->body)->toContain('KEY_4')->and($alert->body)->not->toContain('value-4')
+    expect($alert->title)->toBe('Unusual secret reveal activity')
+        ->and($alert->body)->toContain('more than 3 secrets in 10 minutes')
+        ->and($alert->body)->not->toContain($this->user->email)->not->toContain('198.51.100.7')->not->toContain('KEY_4')
+        ->and($alert->detail)->toContain($this->user->email)->toContain('198.51.100.7')->toContain('KEY_4')->not->toContain('value-4')
         ->and($alert->organization_id)->toBe($this->organization->id);
 
     // A later burst alerts again.

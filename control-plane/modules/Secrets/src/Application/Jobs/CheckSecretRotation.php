@@ -7,6 +7,7 @@ use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Secrets\Application\Scopes;
 use Falak\Secrets\Domain\Models\Secret;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -14,9 +15,12 @@ use Illuminate\Foundation\Queue\Queueable;
  * Hourly: secrets with a rotation policy whose current value is older than it (secrets.rotation_due), resolved once a
  * new version is written (or the policy removed).
  */
-final class CheckSecretRotation implements ShouldQueue
+final class CheckSecretRotation implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
+
+    /** Unique while queued or running. */
+    public int $uniqueFor = 3600;
 
     public function handle(AlertConditions $conditions, Scopes $scopes): void
     {

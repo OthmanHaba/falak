@@ -86,12 +86,14 @@ final class RevealSecret
             $secret->organization_id,
             'secrets.unusual_reveals',
             Severity::Warning,
-            "{$who} revealed more than {$limit} secrets in {$minutes} minutes",
-            "Latest: {$secret->name} ({$accessor->reason}".($accessor->ip ? ", from {$accessor->ip}" : '').'). If this was not expected, revoke the session or API token and rotate what was read.',
+            'Unusual secret reveal activity',
+            "A member revealed more than {$limit} secrets in {$minutes} minutes. If this was not expected, revoke the session or API token and rotate what was read.",
             '/settings/audit-log',
             'secrets.unusual_reveals:'.$accessor->userId.':'.now()->format('YmdHi'),
-            context: ['user_id' => $accessor->userId, 'ip' => $accessor->ip],
+            context: ['user_id' => $accessor->userId],
             action: 'Review the audit log',
+            // Who, from where and what: in-app only (channels to third parties get the summary above).
+            detail: "By {$who}; latest: {$secret->name} ({$accessor->reason}".($accessor->ip ? ", from {$accessor->ip}" : '').').',
         ));
     }
 }
