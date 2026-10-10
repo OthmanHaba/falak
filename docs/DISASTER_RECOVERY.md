@@ -87,11 +87,14 @@ host (`--upload` refuses it). Uploads go to `s3://<bucket>/<prefix>/<name>.fdr`.
 
 ### Backup format
 
-`.fdr` is `FALAK-DR-BACKUP 2`: the archive is encrypted with AES-256-CBC (`openssl enc`, key from PBKDF2-SHA256 with
-600 000 iterations and a random salt), then authenticated with HMAC-SHA256 over a small header and the whole
-ciphertext, keyed by a second PBKDF2 derivation with its own salt (encrypt-then-MAC, standard tools only, the same on
-every supported OS). The header binds the backup's name and creation time. A restore checks the MAC before anything
-is decrypted or unpacked; a missing or wrong MAC, a wrong passphrase, or a name that doesn't match the bucket object
+`.fdr` is `FALAK-DR-BACKUP 3`: the archive is encrypted with AES-256-CBC (`openssl enc`, key from PBKDF2-SHA256 with
+600 000 iterations and a random salt), then authenticated with HMAC-SHA256 over a seven-line header and the whole
+ciphertext. The MAC key is `HMAC(PBKDF2(passphrase, mac_salt), "falak-dr-mac-v3")`, with a salt of its own that must
+differ from the ciphertext's (encrypt-then-MAC, standard tools only, the same on every supported OS). The header binds
+the backup's name and creation time and is parsed strictly by line position. A restore first copies the file into a
+private directory and reads only that copy (a file swapped meanwhile can't slip past the check), checks the MAC
+before anything is decrypted or unpacked, and prints the backup's creation time and age, warning when it is older
+than twice the backup schedule (newer backups deleted?); a missing or wrong MAC, a wrong passphrase, or a name that doesn't match the bucket object
 (a renamed or replayed backup) is a hard error, and the manifest inside must say `encrypted=1` and name the same
 backup. From the bucket only `.fdr` objects are considered: a plaintext or old-format object someone dropped there is
 ignored. Backups from before this format (`.tar.gz.enc`, no MAC) and unencrypted ones restore from local files only,

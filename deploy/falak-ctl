@@ -781,25 +781,27 @@ dr_set() { # dr_set KEY VALUE  (atomic; dr/ 0700, dr.env 0600)
   mv "$tmp" "$DR_FILE"
 }
 
-# --- authenticated backup encryption (format FALAK-DR-BACKUP 2, *.fdr) -----------------------------------------
+# --- authenticated backup encryption (format FALAK-DR-BACKUP 3, *.fdr) -----------------------------------------
 # encrypt-then-MAC with standard tools only: AES-256-CBC (openssl enc, PBKDF2-SHA256, 600 000 iterations, random salt)
-# and HMAC-SHA256 over the header and the whole ciphertext, keyed by a second PBKDF2 derivation with its own random
-# salt. The MAC is checked before anything is decrypted or extracted; a missing or wrong one is a hard error. The
-# header binds the backup's name and creation time (a restore from the bucket checks them against the object key).
-# The passphrase only ever reaches openssl through its environment; the derived MAC key never leaves this shell
-# (bash builtins build the HMAC pads), so neither shows up in a process list.
+# and HMAC-SHA256 over the header and the whole ciphertext. The MAC key is HMAC(PBKDF2(passphrase, mac_salt),
+# "falak-dr-mac-v3"): its own salt (never the ciphertext's) and a label, so it is never a key openssl encrypts with.
+# Opening copies the file into a private directory first and reads only that copy (a file swapped after the MAC check
+# can't be decrypted instead), parses the header strictly by position, checks the MAC before anything is decrypted or
+# extracted and returns the authenticated name and creation time. The passphrase only reaches openssl through its
+# environment; the derived keys never leave this shell (bash builtins build the HMAC pads).
 #
-#   FALAK-DR-BACKUP 2
-#   name: falak-backup-20261010T060000Z-scheduled
-#   created_at: 20261010T060000Z
-#   kdf: pbkdf2-sha256-600000
-#   mac_salt: <16 hex>          (8 bytes: openssl enc -S; the ciphertext has its own)
-#   mac: <64 hex>          HMAC-SHA256(mac key, first 5 lines || ciphertext)
-#   <empty line>
-#   <ciphertext: openssl enc output, "Salted__" + salt + AES-256-CBC>
-DR_FORMAT="FALAK-DR-BACKUP 2"
+#   line 1  FALAK-DR-BACKUP 3
+#   line 2  name: falak-backup-20261010T060000Z-scheduled
+#   line 3  created_at: 20261010T060000Z
+#   line 4  kdf: pbkdf2-sha256-600000
+#   line 5  mac_salt: <16 hex>   (8 bytes, openssl enc -S; must differ from the ciphertext's salt)
+#   line 6  mac: <64 hex>        HMAC-SHA256(mac key, lines 1-5 || ciphertext)
+#   line 7  (empty)
+#   then    the ciphertext: openssl enc output, "Salted__" + 8-byte salt + AES-256-CBC blocks
+DR_FORMAT="FALAK-DR-BACKUP 3"
 DR_KDF_ITER=600000
 DR_HEADER_LINES=7
+DR_MAC_LABEL="falak-dr-mac-v3"
 
 hex_of() { od -An -tx1 | tr -d ' \n'; }
 
@@ -824,43 +826,87 @@ hmac_sha256() {
   { printf "$opad"; printf "$(printf '%s' "$inner" | sed 's/../\\x&/g')"; } | openssl dgst -sha256 -binary | hex_of
 }
 
+# dr_mac_key SALT_HEX -> the MAC key (hex): the PBKDF2 output, separated from any encryption use by a label.
+dr_mac_key() {
+  local kdf
+  kdf="$(dr_kdf "$1")"
+  [ "${#kdf}" = 64 ] || return 1
+  printf '%s' "$DR_MAC_LABEL" | hmac_sha256 "$kdf"
+}
+
+# ct_salt FILE OFFSET -> the 8-byte salt (hex) openssl enc wrote after "Salted__", or nothing.
+ct_salt() {
+  [ "$(tail -c +"$(($2 + 1))" "$1" | head -c 8)" = "Salted__" ] || return 0
+  tail -c +"$(($2 + 9))" "$1" | head -c 8 | hex_of
+}
+
 # dr_seal PLAIN OUT NAME CREATED : encrypt and authenticate a backup archive (passphrase in FALAK_DR_PASS).
 dr_seal() {
   local plain="$1" out="$2" name="$3" created="$4" salt key header mac ct
   ct="$out.ct"
   TMP_LIST="$TMP_LIST $ct"
-  salt="$(rand_hex 8)"
-  key="$(dr_kdf "$salt")"
-  [ "${#key}" = 64 ] || { rm -f "$ct"; return 1; }
   openssl enc -aes-256-cbc -pbkdf2 -iter "$DR_KDF_ITER" -md sha256 -salt -pass env:FALAK_DR_PASS -in "$plain" -out "$ct" || { rm -f "$ct"; return 1; }
+  salt="$(rand_hex 8)"
+  while [ "$salt" = "$(ct_salt "$ct" 0)" ]; do salt="$(rand_hex 8)"; done
+  key="$(dr_mac_key "$salt")" || { rm -f "$ct"; return 1; }
+  [ "${#key}" = 64 ] || { rm -f "$ct"; return 1; }
   header="$(printf '%s\nname: %s\ncreated_at: %s\nkdf: pbkdf2-sha256-%s\nmac_salt: %s\n' "$DR_FORMAT" "$name" "$created" "$DR_KDF_ITER" "$salt")"$'\n'
   mac="$({ printf '%s' "$header"; cat "$ct"; } | hmac_sha256 "$key")"
   { printf '%s' "$header"; printf 'mac: %s\n\n' "$mac"; cat "$ct"; } > "$out" || { rm -f "$ct"; return 1; }
   rm -f "$ct"
 }
 
-dr_header() { head -n "$DR_HEADER_LINES" "$1" 2>/dev/null | sed -n "s/^$2: //p" | head -1; }
+# dr_header FILE FIELD -> a header field read by its position (name 2, created_at 3, kdf 4, mac_salt 5, mac 6), or
+# nothing when that line is not exactly "FIELD: value". Informational (dr status, tests); dr_open parses on its own.
+dr_header() {
+  local n
+  case "$2" in name) n=2 ;; created_at) n=3 ;; kdf) n=4 ;; mac_salt) n=5 ;; mac) n=6 ;; *) return 0 ;; esac
+  head -n "$n" "$1" 2>/dev/null | tail -n 1 | sed -n "s/^$2: //p"
+}
 
 is_sealed() { [ "$(head -n 1 "$1" 2>/dev/null)" = "$DR_FORMAT" ]; }
 
-# dr_open FILE PLAIN_OUT [EXPECTED_NAME] : verify the MAC (and the bound name), then decrypt. Dies on any mismatch.
+# dr_open FILE PLAIN_OUT [EXPECTED_NAME] : copy, parse, verify the MAC (and the bound name), then decrypt the copy.
+# Sets DR_OPEN_NAME / DR_OPEN_CREATED from the authenticated header. Dies on any mismatch.
 dr_open() {
-  local file="$1" out="$2" expect="${3:-}" salt key want have hlen name
-  is_sealed "$file" || die "$(basename "$file") is not an authenticated Falak backup ($DR_FORMAT)"
-  [ "$(dr_header "$file" kdf)" = "pbkdf2-sha256-$DR_KDF_ITER" ] || die "$(basename "$file"): unknown key derivation"
-  salt="$(dr_header "$file" mac_salt)"; want="$(dr_header "$file" mac)"; name="$(dr_header "$file" name)"
-  case "$salt$want" in *[!0-9a-f]*) die "$(basename "$file"): damaged header" ;; esac
-  if [ "${#salt}" != 16 ] || [ "${#want}" != 64 ]; then die "$(basename "$file"): damaged header"; fi
-  key="$(dr_kdf "$salt")"
-  [ "${#key}" = 64 ] || die "could not derive the backup key (openssl with PBKDF2 needed)"
-  hlen="$(head -n "$DR_HEADER_LINES" "$file" | wc -c | tr -d ' ')"
-  have="$({ head -n 5 "$file"; tail -c +"$((hlen + 1))" "$file"; } | hmac_sha256 "$key")"
-  [ "$have" = "$want" ] || die "$(basename "$file") failed authentication: wrong DR passphrase, or the file was changed"
-  if [ -n "$expect" ] && [ "$name" != "$expect" ]; then
-    die "$(basename "$file") is backup '$name', not '$expect' (renamed or replayed object)"
+  local file="$1" out="$2" expect="${3:-}" label priv copy hlen line1 name created kdf salt want key have size
+  label="$(basename "$file")"
+  priv="$(tmpdir)"; chmod 700 "$priv"
+  copy="$priv/backup.fdr"
+  cp -- "$file" "$copy" || die "$label could not be read"
+  chmod 600 "$copy"
+  # Exactly seven newline-terminated header lines, each where it belongs.
+  local header=()
+  mapfile -t header < <(head -n "$DR_HEADER_LINES" "$copy" | LC_ALL=C tr -d '\r' | head -n "$DR_HEADER_LINES")
+  hlen="$(head -n "$DR_HEADER_LINES" "$copy" | wc -c | tr -d ' ')"
+  line1="${header[0]:-}"
+  [ "$line1" = "$DR_FORMAT" ] || die "$label is not an authenticated Falak backup ($DR_FORMAT)"
+  if [ "${#header[@]}" != "$DR_HEADER_LINES" ] || [ "$(head -c "$hlen" "$copy" | tail -c 1 | hex_of)" != 0a ]; then
+    die "$label: truncated header"
   fi
-  tail -c +"$((hlen + 1))" "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter "$DR_KDF_ITER" -md sha256 -pass env:FALAK_DR_PASS -out "$out" 2>/dev/null \
-    || die "$(basename "$file") could not be decrypted"
+  [[ "${header[1]}" =~ ^name:\ (falak-backup-[A-Za-z0-9._-]+)$ ]] || die "$label: damaged header (name)"; name="${BASH_REMATCH[1]}"
+  [[ "${header[2]}" =~ ^created_at:\ ([0-9]{8}T[0-9]{6}Z)$ ]] || die "$label: damaged header (created_at)"; created="${BASH_REMATCH[1]}"
+  kdf="${header[3]}"
+  [ "$kdf" = "kdf: pbkdf2-sha256-$DR_KDF_ITER" ] || die "$label: unknown key derivation"
+  [[ "${header[4]}" =~ ^mac_salt:\ ([0-9a-f]{16})$ ]] || die "$label: damaged header (mac_salt)"; salt="${BASH_REMATCH[1]}"
+  [[ "${header[5]}" =~ ^mac:\ ([0-9a-f]{64})$ ]] || die "$label: damaged header (mac)"; want="${BASH_REMATCH[1]}"
+  [ -z "${header[6]}" ] || die "$label: damaged header (no empty line before the ciphertext)"
+  # The ciphertext: "Salted__", its own salt (never the MAC's), whole AES blocks.
+  size=$(( $(wc -c < "$copy" | tr -d ' ') - hlen ))
+  if [ "$size" -lt 32 ] || [ $(( (size - 16) % 16 )) != 0 ]; then die "$label: truncated or damaged ciphertext"; fi
+  [ "$(ct_salt "$copy" "$hlen")" != "" ] || die "$label: damaged ciphertext"
+  [ "$(ct_salt "$copy" "$hlen")" != "$salt" ] || die "$label: the MAC salt is the ciphertext's salt"
+  key="$(dr_mac_key "$salt")" || die "could not derive the backup key (openssl with PBKDF2 needed)"
+  [ "${#key}" = 64 ] || die "could not derive the backup key (openssl with PBKDF2 needed)"
+  have="$({ head -n 5 "$copy"; tail -c +"$((hlen + 1))" "$copy"; } | hmac_sha256 "$key")"
+  [ "$have" = "$want" ] || die "$label failed authentication: wrong DR passphrase, or the file was changed"
+  if [ -n "$expect" ] && [ "$name" != "$expect" ]; then
+    die "$label is backup '$name', not '$expect' (renamed or replayed object)"
+  fi
+  tail -c +"$((hlen + 1))" "$copy" | openssl enc -d -aes-256-cbc -pbkdf2 -iter "$DR_KDF_ITER" -md sha256 -pass env:FALAK_DR_PASS -out "$out" 2>/dev/null \
+    || die "$label could not be decrypted"
+  rm -rf "$priv"
+  DR_OPEN_NAME="$name"; DR_OPEN_CREATED="$created"
 }
 
 # --- one stateful command at a time ------------------------------------------------------------------------------
@@ -1222,9 +1268,10 @@ extract_backup() {
       [ -n "$pass" ] || die "$(basename "$file") is encrypted: the DR passphrase is needed (FALAK_BACKUP_PASSPHRASE in the environment, or falak-ctl dr setup)"
       plain="$(mktemp "$dir/.plain.XXXXXX")"
       FALAK_DR_PASS="$pass" dr_open "$file" "$plain" "$expect"
+      # From the authenticated header dr_open parsed (never the file again: it may have changed since).
+      name="$DR_OPEN_NAME"; created="$DR_OPEN_CREATED"
       tar -xzf "$plain" -C "$dir" || { rm -f "$plain"; die "$(basename "$file") could not be unpacked"; }
       rm -f "$plain"
-      name="$(dr_header "$file" name)"; created="$(dr_header "$file" created_at)"
       [ "$(sed -n 's/^encrypted=//p' "$dir/manifest" 2>/dev/null)" = 1 ] || die "$(basename "$file"): its manifest does not say encrypted"
       [ "$(sed -n 's/^backup_name=//p' "$dir/manifest")" = "$name" ] || die "$(basename "$file"): the manifest names another backup"
       [ "$(sed -n 's/^created_at=//p' "$dir/manifest")" = "$created" ] || die "$(basename "$file"): the manifest has another creation time"
@@ -1383,6 +1430,21 @@ restore_volumes() { # restore_volumes WORK_DIR VOLUME... : those the backup has;
   printf '%s' "$list"
 }
 
+# restore_age_note WORK_DIR : say how old the backup is; warn when it is older than twice the backup schedule (someone
+# may have deleted the newer ones: a rollback).
+restore_age_note() {
+  local c at age
+  c="$(sed -n 's/^created_at=//p' "$1/manifest" 2>/dev/null | tail -1)"
+  [[ "$c" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || { warn "the backup records no creation time"; return 0; }
+  at="${c:0:4}-${c:4:2}-${c:6:2}T${c:9:2}:${c:11:2}:${c:13:2}Z"
+  age=$(( $(date -u +%s) - $(iso_epoch "$at") ))
+  [ "$age" -ge 0 ] || age=0
+  say "  backup taken $at ($(human_age "$age") ago)"
+  if [ "$age" -gt $(( $(dr_every_hours) * 2 * 3600 )) ]; then
+    warn "this backup is older than twice the $(dr_every_hours) h schedule: everything since $at is lost. If a newer one should exist, check the bucket (deleted objects?) before going on"
+  fi
+}
+
 do_restore() { # do_restore FILE KEEP_ENV [FORCE]
   local file="$1" keep_env="$2" force="${3:-0}" work
   work="$(tmpdir)"
@@ -1395,6 +1457,7 @@ do_restore() { # do_restore FILE KEEP_ENV [FORCE]
     if [ "$force" = 1 ]; then warn "the backup was made by Falak $made_by, newer than this host's $(env_get FALAK_VERSION) (--force)"
     else die "the backup was made by Falak $made_by, newer than this host's $(env_get FALAK_VERSION): install $made_by (or newer) first (install.sh --version $made_by), or restore anyway with --force"; fi
   fi
+  restore_age_note "$work"
   restore_kek_check "$work" "$force"
 
   # shellcheck disable=SC2086

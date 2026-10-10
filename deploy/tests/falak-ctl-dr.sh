@@ -148,6 +148,7 @@ FALAK_DR_PASS='correct horse battery staple' dr_seal "$work/plain.bin" "$work/se
 is_sealed "$work/sealed.fdr" || fail "no FALAK-DR-BACKUP header"
 grep -q 'archive bytes' "$work/sealed.fdr" && fail "the sealed file holds the plaintext"
 [ "$(dr_header "$work/sealed.fdr" kdf)" = pbkdf2-sha256-600000 ] || fail "kdf header"
+[ "$(head -n 1 "$work/sealed.fdr")" = "FALAK-DR-BACKUP 3" ] || fail "format version"
 FALAK_DR_PASS='correct horse battery staple' dr_open "$work/sealed.fdr" "$work/opened.bin" falak-backup-x
 cmp -s "$work/plain.bin" "$work/opened.bin" || fail "seal/open round trip"
 (FALAK_DR_PASS='wrong passphrase!!' dr_open "$work/sealed.fdr" "$work/o2" >/dev/null 2>&1) && fail "a wrong passphrase opened it"
@@ -161,6 +162,57 @@ sed 's/^mac: .*/mac: /' "$work/sealed.fdr" > "$work/nomac.fdr"
 sed 's/^created_at: .*/created_at: 20991231T000000Z/' "$work/sealed.fdr" > "$work/hdr.fdr"
 (FALAK_DR_PASS='correct horse battery staple' dr_open "$work/hdr.fdr" "$work/o5" >/dev/null 2>&1) && fail "a changed header was accepted"
 pass "backups are encrypt-then-MAC (PBKDF2 600k, HMAC-SHA256 checked before decrypting); tampering, a wrong passphrase, a missing MAC or another name fail"
+
+# Every header line is bound or checked; the file is parsed by position; truncations and insertions fail.
+P='correct horse battery staple'
+refused() { # refused FILE WHAT : dr_open must refuse it without writing any plaintext
+  rm -f "$work/r.out"
+  if (FALAK_DR_PASS="$P" dr_open "$1" "$work/r.out" >/dev/null 2>&1); then fail "$2 was accepted"; fi
+  [ ! -s "$work/r.out" ] || fail "$2 was decrypted"
+}
+sed 's/^name: .*/name: falak-backup-y/' "$work/sealed.fdr" > "$work/t1.fdr"; refused "$work/t1.fdr" "a changed name: line"
+sed 's/^mac_salt: .*/mac_salt: 0011223344556677/' "$work/sealed.fdr" > "$work/t2.fdr"; refused "$work/t2.fdr" "a changed mac_salt"
+sed 's/^kdf: .*/kdf: pbkdf2-sha256-1000/' "$work/sealed.fdr" > "$work/t3.fdr"; refused "$work/t3.fdr" "a weaker kdf line"
+sed '1s/.*/FALAK-DR-BACKUP 2/' "$work/sealed.fdr" > "$work/t4.fdr"; refused "$work/t4.fdr" "another version line"
+size="$(wc -c < "$work/sealed.fdr" | tr -d ' ')"
+head -c $((size - 16)) "$work/sealed.fdr" > "$work/t5.fdr"; refused "$work/t5.fdr" "a ciphertext cut by a block"
+head -c $((size - 5)) "$work/sealed.fdr" > "$work/t6.fdr"; refused "$work/t6.fdr" "a ciphertext cut mid-block"
+head -c 60 "$work/sealed.fdr" > "$work/t7.fdr"; refused "$work/t7.fdr" "a file cut inside its header"
+head -n 7 "$work/sealed.fdr" > "$work/t8.fdr"; refused "$work/t8.fdr" "a file without ciphertext"
+{ head -n 7 "$work/sealed.fdr"; printf 'extra\n'; tail -c +"$(($(head -n 7 "$work/sealed.fdr" | wc -c) + 1))" "$work/sealed.fdr"; } > "$work/t9.fdr"
+refused "$work/t9.fdr" "an extra line before the ciphertext"
+{ head -n 6 "$work/sealed.fdr"; printf 'junk\n'; tail -c +"$(($(head -n 7 "$work/sealed.fdr" | wc -c) + 1))" "$work/sealed.fdr"; } > "$work/t10.fdr"
+refused "$work/t10.fdr" "a non-empty line 7"
+{ head -n 1 "$work/sealed.fdr"; printf 'note: x\n'; tail -n +2 "$work/sealed.fdr"; } > "$work/t11.fdr"
+refused "$work/t11.fdr" "a header with a line inserted"
+[ "$(dr_header "$work/t11.fdr" name)" = "" ] || fail "dr_header did not parse by position"
+# The MAC key is labelled (domain-separated) and its salt never the ciphertext's.
+salt="$(dr_header "$work/sealed.fdr" mac_salt)"
+[ "$(FALAK_DR_PASS="$P" dr_mac_key "$salt")" != "$(FALAK_DR_PASS="$P" dr_kdf "$salt")" ] || fail "the MAC key is the raw KDF output"
+[ "$salt" != "$(ct_salt "$work/sealed.fdr" "$(head -n 7 "$work/sealed.fdr" | wc -c | tr -d ' ')")" ] || fail "MAC salt equals the ciphertext salt"
+grep -q 'the MAC salt is the ciphertext' "$here/../falak-ctl" || fail "no check that the salts differ"
+# Copy first: a local file swapped after the MAC check is never what gets decrypted.
+FALAK_DR_PASS="$P" dr_seal "$work/plain.bin" "$work/swap.fdr" falak-backup-x 20261010T000000Z
+printf 'evil archive' > "$work/evil.bin"
+FALAK_DR_PASS='an attacker passphrase' dr_seal "$work/evil.bin" "$work/evil.fdr" falak-backup-x 20261010T000000Z
+hmac_sha256() { local out; out="$(command_hmac "$@")"; cp "$work/evil.fdr" "$work/swap.fdr"; printf '%s' "$out"; }
+command_hmac() { # the real HMAC, from a copy of its definition
+  local key="$1" ipad="" opad="" i b x inner
+  for ((i = 0; i < 64; i++)); do b=0; if [ $((i * 2)) -lt ${#key} ]; then b=$((16#${key:i*2:2})); fi
+    printf -v x '\\x%02x' $((b ^ 0x36)); ipad+="$x"; printf -v x '\\x%02x' $((b ^ 0x5c)); opad+="$x"; done
+  # shellcheck disable=SC2059
+  inner="$({ printf "$ipad"; cat; } | openssl dgst -sha256 -binary | hex_of)"
+  # shellcheck disable=SC2059
+  { printf "$opad"; printf "$(printf '%s' "$inner" | sed 's/../\\x&/g')"; } | openssl dgst -sha256 -binary | hex_of
+}
+rm -f "$work/swap.out"
+(FALAK_DR_PASS="$P" dr_open "$work/swap.fdr" "$work/swap.out" >/dev/null 2>&1) || fail "the copy was not what got opened"
+cmp -s "$work/plain.bin" "$work/swap.out" || fail "a file swapped during the check was decrypted"
+cmp -s "$work/swap.fdr" "$work/evil.fdr" || fail "the swap did not happen (test broken)"
+unset -f hmac_sha256 command_hmac
+# shellcheck source=/dev/null
+. <(sed -n '/^hmac_sha256() {/,/^}/p' "$here/../falak-ctl")
+pass "the header is parsed by position; every line, truncations and insertions are caught; the MAC key is labelled; a swapped local file can't bypass the MAC (copy first)"
 
 # --- s3://latest and s3://NAME ----------------------------------------------------------------------------------
 mk_backup() { # mk_backup NAME [UPLOAD_AS] : an authenticated fake backup in the bucket
@@ -328,6 +380,17 @@ grep -q 'encryption keys' "$DR_STATE" || fail "failed check not named: $(grep dr
 grep -q 'row counts: differ: users 1/2' "$DR_STATE" || fail "row count mismatch not named: $(grep drill_message "$DR_STATE")"
 [ ! -e "$FALAK_DIR/drill" ] || fail "a failed drill left its directory"
 pass "a failed drill names the failing checks in dr.json and is torn down too"
+
+# --- a restore says how old the backup is, and warns past twice the schedule (newer objects deleted?) -----------
+ag="$work/age"; mkdir -p "$ag"
+printf 'created_at=%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" > "$ag/manifest"
+out="$(restore_age_note "$ag" 2>&1)"
+grep -q 'backup taken' <<<"$out" || fail "no age shown: $out"
+if grep -q 'older than twice' <<<"$out"; then fail "a fresh backup was called old"; fi
+printf 'created_at=20200101T000000Z\n' > "$ag/manifest"
+out="$(restore_age_note "$ag" 2>&1)"
+grep -q 'older than twice the 4 h schedule' <<<"$out" || fail "an old backup was not flagged: $out"
+pass "a restore prints the backup's time and age and warns when it is older than twice the schedule"
 
 # --- install.sh --restore-from ----------------------------------------------------------------------------
 # shellcheck disable=SC2030,SC2031  # each run sources install.sh in its own subshell
