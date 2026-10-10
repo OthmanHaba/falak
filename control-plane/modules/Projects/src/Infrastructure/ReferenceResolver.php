@@ -262,7 +262,7 @@ final class ReferenceResolver implements VariableReferences
 
         $this->forPreview = true;
         $this->noSecrets = $environment->is_fork_preview;
-        $shared = array_map(fn ($name) => Service::handle((string) $name), $environment->shared_services ?? []);
+        $shared = $environment->is_fork_preview ? [] : array_map(fn ($name) => Service::handle((string) $name), $environment->shared_services ?? []);
 
         if ($shared === [] || $environment->forked_from_id === null) {
             return;

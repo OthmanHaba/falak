@@ -3,6 +3,8 @@
 namespace Falak\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Application\Compose\ComposeNetworks;
 use Falak\Sites\Application\Compose\FalakAdjustments;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
@@ -152,6 +154,14 @@ final class EloquentComposeSites implements ComposeSites
         });
     }
 
+    private function forkPreview(string $siteId): bool
+    {
+        $projects = app(ProjectDirectory::class);
+        $placed = $projects->projectOf(ServiceKind::Site, $siteId);
+
+        return $placed !== null && ($projects->environment($placed->environmentId)?->isForkPreview ?? false);
+    }
+
     public function allowsPrivileged(string $organizationId): bool
     {
         return OrganizationSettings::for($organizationId)->allow_privileged_compose;
@@ -199,6 +209,11 @@ final class EloquentComposeSites implements ComposeSites
 
         if (! $summary->valid()) {
             throw new ComposeRenderException('Invalid compose file: '.implode(' ', $summary->errors));
+        }
+
+        // A preview of a fork's pull request runs untrusted code: the strict policy, whatever the organization allows.
+        if ($summary->violations !== [] && $this->forkPreview($site->id)) {
+            throw new ComposeRenderException('The compose file violates the compose policy ('.implode(' ', $summary->violations).') Previews of pull requests from forks always run under the strict policy.');
         }
 
         if ($summary->violations !== [] && ! $this->allowsPrivileged($site->organization_id)) {

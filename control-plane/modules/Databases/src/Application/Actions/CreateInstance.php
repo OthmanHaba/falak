@@ -196,13 +196,15 @@ final class CreateInstance
     }
 
     /**
-     * PITR on for SQL instances of production environments when the organization has somewhere to ship to.
+     * PITR on for SQL instances of production environments when the organization has somewhere to ship to. Never for a
+     * preview's databases: no copy of production data lingers in backup storage.
      *
      * @return array<string, mixed>
      */
     private function pitrDefaults(string $organizationId, Engine $engine, ?string $environmentId): array
     {
-        $production = $environmentId !== null && ($this->projects->environment(strtolower($environmentId))?->isProduction ?? false);
+        $environment = $environmentId !== null ? $this->projects->environment(strtolower($environmentId)) : null;
+        $production = $environment !== null && $environment->isProduction && ! $environment->isPreview;
         $provider = $production && ! $engine->isKeyValue()
             ? StorageProvider::query()->where('organization_id', $organizationId)->orderBy('created_at')->orderBy('id')->value('id')
             : null;

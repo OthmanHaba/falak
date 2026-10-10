@@ -66,7 +66,8 @@ final class CreateEnvironment
             'created_by' => $userId,
             'is_preview' => $preview !== null,
             'is_fork_preview' => (bool) ($preview['fork'] ?? false),
-            'shared_services' => $preview !== null ? array_values($preview['shared']) : null,
+            // A fork's preview shares nothing with its base (it would read the base's values).
+            'shared_services' => $preview !== null && ! ($preview['fork'] ?? false) ? array_values($preview['shared']) : null,
         ]);
 
         $this->audit->record('project.environment_created', 'project', $project->id, [
@@ -107,9 +108,12 @@ final class CreateEnvironment
             ['x' => $x, 'y' => $y] = MoveService::absolute($service);
 
             try {
+                // Previews: always their own Linux user (never the shared one the base's neighbours use), no secret value
+                // written in the variables, never deployed on push.
                 $overrides = $preview !== null ? [
                     ...(array) ($preview['sites'][$service->name] ?? []),
-                    'strip_secrets' => (bool) $preview['fork'],
+                    'strip_secrets' => true,
+                    'isolated' => true,
                     'push_to_deploy' => false,
                 ] : [];
                 $copy = $this->sites->duplicate(

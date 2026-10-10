@@ -4,6 +4,7 @@ use Falak\Databases\Application\Actions\PrunePitr;
 use Falak\Databases\Application\Actions\TakePitrBase;
 use Falak\Databases\Application\Jobs\MaintainPitr;
 use Falak\Databases\Application\PitrTimeline;
+use Falak\Databases\Contracts\DatabaseProvisioner;
 use Falak\Databases\Contracts\DatabaseRecovery;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\Compression;
@@ -209,6 +210,20 @@ it('is on by default for SQL instances created in production environments', func
 
     $this->post('/databases/instances', ['engine' => 'redis', 'server_id' => $this->server->id, 'name' => 'cache'])->assertSessionHasNoErrors();
     expect(DatabaseInstance::query()->where('name', 'cache')->value('pitr_enabled'))->toBeFalse();
+});
+
+it('never turns PITR on for a preview\'s databases, and gives them no backup schedule', function () {
+    $environment = strtolower((string) Str::ulid());
+    $preview = new EnvironmentData($environment, $this->organization->id, strtolower((string) Str::ulid()), 'PR #1', 'pr-1', true, $environment, isPreview: true);
+    $projects = Mockery::mock(ProjectDirectory::class);
+    $projects->shouldReceive('defaultEnvironment')->andReturn($preview);
+    $projects->shouldReceive('environment')->andReturn($preview);
+    app()->instance(ProjectDirectory::class, $projects);
+
+    $created = app(DatabaseProvisioner::class)->create($this->organization->id, $this->server->id, 'postgresql', 'orders-pr-1', options: ['environment_id' => $environment]);
+    $instance = DatabaseInstance::query()->findOrFail($created->instanceId);
+
+    expect($instance->pitr_enabled)->toBeFalse()->and($instance->schedules()->count())->toBe(0);
 });
 
 it('hands upload URLs only to the agent of the instance\'s own server and organization', function () {
