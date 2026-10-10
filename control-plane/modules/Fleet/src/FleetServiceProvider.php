@@ -134,7 +134,7 @@ class FleetServiceProvider extends ModuleServiceProvider
 
         $types = $this->app->make(AlertTypes::class);
         $types->register(AgentRevoked::ALERT_TYPE, 'Server agent revoked', 'Fleet', Severity::Warning);
-        $types->register(AgentUpgradeFailed::ALERT_TYPE, 'Agent upgrade failed', 'Fleet', Severity::Warning);
+        $types->register(AgentUpgradeFailed::ALERT_TYPE, 'Agent upgrade failed', 'Fleet', Severity::Warning, 'Update agent');
         $types->register(AgentUpgradeSucceeded::ALERT_TYPE, 'Agent upgraded after a failure', 'Fleet', Severity::Info);
 
         Event::listen(CommandFinished::class, [TrackAgentUpgrades::class, 'finished']);

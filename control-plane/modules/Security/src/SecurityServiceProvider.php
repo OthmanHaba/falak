@@ -39,9 +39,9 @@ class SecurityServiceProvider extends ModuleServiceProvider
         $registry->register('security.fix', [Role::Admin], 'Run security audits and apply or undo their fixes on servers', 'security');
 
         $types = $this->app->make(AlertTypes::class);
-        $types->register(SecurityScoreDropped::ALERT_TYPE, 'Security score dropped by 10 points or more', 'Security', Severity::Warning);
-        $types->register(CriticalFindingDetected::ALERT_TYPE, 'New high or critical security finding', 'Security', Severity::Critical);
-        $types->register(UnexpectedPortDetected::ALERT_TYPE, 'Unexpected public port', 'Security', Severity::Warning);
+        $types->register(SecurityScoreDropped::ALERT_TYPE, 'Security score dropped by 10 points or more', 'Security', Severity::Warning, 'Fix in baseline');
+        $types->register(CriticalFindingDetected::ALERT_TYPE, 'New high or critical security finding', 'Security', Severity::Critical, 'Fix in baseline');
+        $types->register(UnexpectedPortDetected::ALERT_TYPE, 'Unexpected public port', 'Security', Severity::Warning, 'Review open ports');
 
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
