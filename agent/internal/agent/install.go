@@ -73,6 +73,10 @@ func Install(ctx context.Context, o InstallOptions) error {
 	if err := fs.MkdirAll(o.Config.EtcDir, 0o711); err != nil {
 		return err
 	}
+	// MkdirAll leaves an existing directory as it was: make sure it is traversable (0711).
+	if _, err := hostfs.EnsureTraversable(fs, o.Config.EtcDir); err != nil {
+		return err
+	}
 	var env strings.Builder
 	add := func(k, v string) {
 		if v != "" {

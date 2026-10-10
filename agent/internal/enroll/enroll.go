@@ -17,6 +17,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"io"
 	"net/http"
 	"os"
@@ -140,6 +141,9 @@ func Enroll(ctx context.Context, o Options) (*State, error) {
 	// 0711: traversable (falak-edge reads caddy/ and certs/ as the caddy user) but not listable;
 	// every secret inside is 0600.
 	if err := os.MkdirAll(o.Paths.Dir, 0o711); err != nil {
+		return nil, err
+	}
+	if _, err := hostfs.EnsureTraversable(hostfs.FS{}, o.Paths.Dir); err != nil {
 		return nil, err
 	}
 	// Write key/cert/ca first, state last: Enrolled() only becomes true once everything is on disk.

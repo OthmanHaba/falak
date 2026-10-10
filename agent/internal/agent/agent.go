@@ -164,6 +164,9 @@ func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger, re
 		if err := os.MkdirAll(cfg.EtcDir, 0o711); err != nil {
 			return nil, err
 		}
+		if _, err := hostfs.EnsureTraversable(hostfs.FS{}, cfg.EtcDir); err != nil {
+			return nil, err
+		}
 		if _, err := enrollInto(ctx, cfg, log, paths); err != nil {
 			return nil, err
 		}
