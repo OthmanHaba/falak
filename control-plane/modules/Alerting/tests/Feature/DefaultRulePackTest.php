@@ -142,15 +142,18 @@ it('adds an area registered later (a new module group) to every organization', f
     [, $organization] = memberOf();
     $before = pack_rules($organization->id)->count();
 
-    app(AlertTypes::class)->register('dr.backup_missing', 'Control plane backup missing', 'Disaster recovery', Severity::Critical);
+    // Disaster recovery (the Recovery module) is in the pack like every module's group.
+    expect(pack_rules($organization->id)->firstWhere('pack_key', 'area:dr')?->event_types)->toBe(['dr.*']);
+
+    app(AlertTypes::class)->register('example.backup_missing', 'A later module\'s alert', 'Example module', Severity::Critical);
     app(AlertTypes::class)->register('servers.extra_check', 'Extra', 'Servers', Severity::Warning);
     app(AlertTypes::class)->register('extra.thing', 'Another prefix in an existing area', 'Servers', Severity::Warning);
 
     app(DefaultRulePack::class)->apply($organization->id);
 
-    $dr = pack_rules($organization->id)->firstWhere('pack_key', 'area:dr');
+    $example = pack_rules($organization->id)->firstWhere('pack_key', 'area:example');
     expect(pack_rules($organization->id))->toHaveCount($before + 1)
-        ->and($dr->event_types)->toBe(['dr.*'])
+        ->and($example->event_types)->toBe(['example.*'])
         ->and(pack_rules($organization->id)->firstWhere('pack_key', 'area:servers')->event_types)->toContain('servers.*', 'extra.*');
 });
 
