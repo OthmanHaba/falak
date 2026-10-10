@@ -801,3 +801,11 @@ it('brings a lost server\'s PITR database back on another server at the latest p
         ->and($this->agents->last('db.pitr.base')['payload']['instance'])->toBe($copy->id)
         ->and($instance->refresh()->status)->toBe(InstanceStatus::Retired);
 });
+
+it('keeps every restore status within the status column (32 wide; postgres and mysql enforce it, sqlite does not)', function () {
+    // databases_restores.status is varchar(32) (2026_11_08_110001_widen_restore_status): SQLite, which the tests run on,
+    // ignores lengths, so a longer status would only fail on a real database.
+    foreach (RestoreStatus::cases() as $status) {
+        expect(strlen($status->value))->toBeLessThanOrEqual(32);
+    }
+});
