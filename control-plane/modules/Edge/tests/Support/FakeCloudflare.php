@@ -38,6 +38,9 @@ final class FakeCloudflare
     /** The token lacks Zone → Zone WAF (rate limiting rules answer "request is not authorized"). */
     public bool $wafDenied = false;
 
+    /** DNS record deletions answer a server error (Cloudflare down). */
+    public bool $failDeletes = false;
+
     /** @var list<array{zone: string, hosts: list<string>}> */
     public array $purges = [];
 
@@ -99,6 +102,9 @@ final class FakeCloudflare
             (bool) preg_match('#^/zones/([^/]+)/dns_records$#', $path, $m) && $request->method() === 'POST' => $ok($this->records[$m[1]][$id = $this->put($m[1], $body)]),
             (bool) preg_match('#^/zones/([^/]+)/dns_records/([^/]+)$#', $path, $m) && $request->method() === 'PATCH' => $ok($this->records[$m[1]][$m[2]] = [...$this->records[$m[1]][$m[2]], ...$body]),
             (bool) preg_match('#^/zones/([^/]+)/dns_records/([^/]+)$#', $path, $m) && $request->method() === 'DELETE' => (function () use ($m, $ok) {
+                if ($this->failDeletes) {
+                    return Http::response(['success' => false, 'errors' => [['code' => 10000, 'message' => 'Internal error']]], 500);
+                }
                 if (! isset($this->records[$m[1]][$m[2]])) {
                     return Http::response(['success' => false, 'errors' => [['code' => 81044, 'message' => 'Record does not exist.']]], 404);
                 }

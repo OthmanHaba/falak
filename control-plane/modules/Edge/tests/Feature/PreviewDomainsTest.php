@@ -2,6 +2,7 @@
 
 use Falak\Edge\Application\Actions\AddDomain;
 use Falak\Edge\Application\CloudflareConnections;
+use Falak\Edge\Application\PreviewRecords;
 use Falak\Edge\Contracts\PreviewDomains;
 use Falak\Edge\Domain\Models\Domain;
 use Falak\Edge\Domain\Models\PreviewRecord;
@@ -126,4 +127,43 @@ it('protects a preview with basic auth (hashed)', function () {
     $rule = SecurityRule::query()->where('site_id', $site->id)->sole();
     expect($rule->username)->toBe('preview')->and($rule->password_hash)->not->toContain('p4ssw0rd')
         ->and(Domain::query()->count())->toBe(0);
+});
+
+it('keeps a tombstone for a record Cloudflare failed to delete and retries it until it is gone', function () {
+    $this->previews->configure($this->org, 'prv.falak.sh', $this->credential->id, $this->edge->id);
+    $site = edge_site($this->sites, $this->org, [$this->other->id], ['id' => strtolower((string) Str::ulid())]);
+    $this->previews->route($site->id, 'pr-8-web.prv.falak.sh');
+
+    $this->cf->failDeletes = true;
+    $this->previews->release($site->id);
+
+    $tombstone = PreviewRecord::query()->sole();
+    expect($tombstone->deleting)->toBeTrue()->and($tombstone->attempts)->toBe(1)
+        ->and(collect($this->cf->recordsOf($this->zoneId))->firstWhere('name', 'pr-8-web.prv.falak.sh'))->not->toBeNull()
+        // The name stays taken while its record may still exist.
+        ->and($this->previews->available('pr-8-web.prv.falak.sh'))->toBeFalse();
+
+    app(PreviewRecords::class)->reconcile();
+    expect(PreviewRecord::query()->sole()->attempts)->toBe(2);
+
+    $this->cf->failDeletes = false;
+    app(PreviewRecords::class)->reconcile();
+    expect(PreviewRecord::query()->count())->toBe(0)
+        ->and(collect($this->cf->recordsOf($this->zoneId))->firstWhere('name', 'pr-8-web.prv.falak.sh'))->toBeNull();
+});
+
+it('deletes records of preview sites that no longer exist, and a wildcard that failed to go', function () {
+    $this->previews->configure($this->org, 'prv.falak.sh', $this->credential->id, $this->edge->id);
+    $site = edge_site($this->sites, $this->org, [$this->other->id], ['id' => strtolower((string) Str::ulid())]);
+    $this->previews->route($site->id, 'pr-9-web.prv.falak.sh');
+    unset($this->sites->sites[$site->id]);
+
+    $this->cf->failDeletes = true;
+    $this->previews->clear();
+    expect(PreviewRecord::query()->where('host', '*.prv.falak.sh')->sole()->deleting)->toBeTrue();
+
+    $this->cf->failDeletes = false;
+    app(PreviewRecords::class)->reconcile();
+
+    expect(PreviewRecord::query()->count())->toBe(0)->and($this->cf->recordsOf($this->zoneId))->toBe([]);
 });

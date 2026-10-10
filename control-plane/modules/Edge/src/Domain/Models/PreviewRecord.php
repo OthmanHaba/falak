@@ -10,7 +10,11 @@ use Illuminate\Database\Eloquent\Model;
  *
  * @property string $id
  * @property string $organization_id the preview site's
- * @property string $site_id
+ * @property ?string $site_id null: a former wildcard record
+ * @property ?string $dns_credential_id the credential that created it (deleted with it)
+ * @property bool $deleting a tombstone, retried until Cloudflare deleted the record
+ * @property int $attempts
+ * @property ?string $error
  * @property string $host
  * @property string $zone_id
  * @property ?string $record_id
@@ -24,4 +28,12 @@ class PreviewRecord extends Model
 
     /** @var list<string> */
     protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return ['deleting' => 'boolean', 'attempts' => 'integer'];
+    }
 }

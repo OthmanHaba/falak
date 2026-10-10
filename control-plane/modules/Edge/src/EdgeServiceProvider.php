@@ -12,6 +12,7 @@ use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Application\Jobs\CheckCertificateExpiry;
 use Falak\Edge\Application\Jobs\PurgeCloudflareCache;
 use Falak\Edge\Application\Jobs\ReconcileCloudflareTunnels;
+use Falak\Edge\Application\Jobs\ReconcilePreviewRecords;
 use Falak\Edge\Application\Jobs\SyncCloudflareDns;
 use Falak\Edge\Application\Listeners\ForgetDeletedOrganization;
 use Falak\Edge\Application\Listeners\ForgetDeletedServer;
@@ -154,6 +155,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new ReconcileCloudflareTunnels)->everyFiveMinutes()->name('edge:cloudflare-tunnels')->withoutOverlapping();
             $schedule->job(new CheckCertificateExpiry)->hourlyAt(17)->name('edge:certificate-expiry')->withoutOverlapping();
+            $schedule->job(new ReconcilePreviewRecords)->everyTenMinutes()->name('edge:preview-records')->withoutOverlapping();
         });
         // Visitors get the new release: purge the site's names at Cloudflare after deploys and rollbacks.
         Event::listen(DeploymentSucceeded::class, fn (DeploymentSucceeded $event) => PurgeCloudflareCache::dispatch($event->siteId));

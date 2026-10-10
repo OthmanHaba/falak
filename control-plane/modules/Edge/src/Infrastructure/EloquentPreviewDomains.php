@@ -4,6 +4,7 @@ namespace Falak\Edge\Infrastructure;
 
 use Falak\Edge\Application\Actions\AddDomain;
 use Falak\Edge\Application\Actions\AddSecurityRule;
+use Falak\Edge\Application\PreviewRecords;
 use Falak\Edge\Contracts\Data\PreviewDomainData;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Contracts\PreviewDomains;
@@ -19,7 +20,6 @@ use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteDirectory;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -159,17 +159,9 @@ final class EloquentPreviewDomains implements PreviewDomains
 
     public function release(string $siteId): void
     {
-        $preview = PreviewDomain::current();
-
+        // A failed deletion stays a tombstone, retried until Cloudflare confirms (PreviewRecords).
         foreach (PreviewRecord::query()->where('site_id', strtolower($siteId))->get() as $record) {
-            try {
-                if ($preview?->managed() && $record->record_id !== null) {
-                    CloudflareApi::with($preview->dnsCredential->api_token)->deleteRecord($record->zone_id, $record->record_id);
-                }
-                $record->delete();
-            } catch (CloudflareError $e) {
-                Log::warning('edge: preview record not deleted', ['host' => $record->host, 'error' => $e->getMessage()]);
-            }
+            app(PreviewRecords::class)->delete($record);
         }
     }
 
@@ -222,11 +214,17 @@ final class EloquentPreviewDomains implements PreviewDomains
             return;
         }
 
-        try {
-            CloudflareApi::with($preview->dnsCredential->api_token)->deleteRecord($preview->zone_id, $preview->record_id);
-        } catch (CloudflareError $e) {
-            Log::warning('edge: preview wildcard record not deleted', ['domain' => $preview->domain, 'error' => $e->getMessage()]);
-        }
+        // Through a tombstone: retried until deleted when Cloudflare fails now.
+        $tombstone = PreviewRecord::query()->firstOrNew(['host' => '*.'.$preview->domain]);
+        $tombstone->forceFill([
+            'organization_id' => $preview->organization_id,
+            'site_id' => null,
+            'dns_credential_id' => $preview->dns_credential_id,
+            'zone_id' => $preview->zone_id,
+            'record_id' => $preview->record_id,
+            'content' => '',
+        ])->save();
+        app(PreviewRecords::class)->delete($tombstone);
 
         $preview->forceFill(['zone_id' => null, 'record_id' => null])->save();
     }
@@ -239,7 +237,7 @@ final class EloquentPreviewDomains implements PreviewDomains
         }
 
         $record = PreviewRecord::query()->firstOrNew(['host' => $host]);
-        $record->forceFill(['organization_id' => $organizationId, 'site_id' => $siteId, 'zone_id' => $preview->zone_id, 'content' => $ipv4]);
+        $record->forceFill(['organization_id' => $organizationId, 'site_id' => $siteId, 'dns_credential_id' => $preview->dns_credential_id, 'zone_id' => $preview->zone_id, 'content' => $ipv4, 'deleting' => false]);
 
         try {
             $api = CloudflareApi::with($preview->dnsCredential->api_token);
