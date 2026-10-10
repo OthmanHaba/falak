@@ -4,13 +4,17 @@ namespace Falak\Databases\Application\Jobs;
 
 use Carbon\CarbonImmutable;
 use Falak\Databases\Application\Actions\PrunePitr;
+use Falak\Databases\Application\Actions\SettlePitr;
 use Falak\Databases\Application\Actions\TakePitrBase;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\InstanceStatus;
+use Falak\Databases\Domain\Enums\RestoreStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\DatabaseInstance;
+use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Events\PitrAlert;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Fleet\Contracts\AgentGateway;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -25,7 +29,8 @@ use Throwable;
  * what the heartbeat reports of its spool (pitr.lag: the oldest unshipped segment older than
  * databases.pitr.lag_alert_seconds while the instance is up; pitr.spool_full: the spool above
  * databases.pitr.spool_alert_percent of the volume), resolving them once they are fine again. With $prune (hourly), old
- * bases and segments are pruned too (PrunePitr), also for instances that turned PITR off.
+ * bases and segments are pruned too (PrunePitr), also for instances that turned PITR off. Restores whose outcome was
+ * never settled (the listener failed) are settled from their command, so they don't block the database's next restore.
  */
 final class MaintainPitr implements ShouldQueue
 {
@@ -33,11 +38,19 @@ final class MaintainPitr implements ShouldQueue
 
     public function __construct(public bool $prune = false) {}
 
+    /** A restore still pending or running this long is settled from its command's own status. */
+    public const STALE_RESTORE_SECONDS = 600;
+
+    /** A restore whose command never finished in this long is failed. */
+    public const LOST_RESTORE_SECONDS = 21600;
+
     /** A report older than this, from an online agent for a healthy instance, means shipping stopped (pitr.stopped). */
     public const STALE_REPORT_SECONDS = 600;
 
-    public function handle(TakePitrBase $base, PrunePitr $prune, AgentDirectory $agents): void
+    public function handle(TakePitrBase $base, PrunePitr $prune, AgentDirectory $agents, SettlePitr $settle, AgentGateway $gateway): void
     {
+        $this->settleStaleRestores($settle, $gateway);
+
         $instances = DatabaseInstance::query()->where('pitr_enabled', true)->where('status', InstanceStatus::Active)->get();
         $online = array_map(fn ($agent) => $agent->isOnline(), $instances->isEmpty() ? [] : $agents->forServers($instances->pluck('server_id')->unique()->values()->all()));
 
@@ -131,5 +144,33 @@ final class MaintainPitr implements ShouldQueue
         }
 
         PitrAlert::dispatch($now ? $problem : PitrAlert::RECOVERED, $instance->organization_id, $instance->id, $instance->name, $instance->server_name, $body, $now ? null : $problem);
+    }
+
+    /**
+     * A point-in-time restore stays pending while it runs and only one runs per database: when settling its outcome
+     * failed (an exception in the listener), it would block every later restore. The command keeps its outcome, so it
+     * is settled from there; one that never finished is failed.
+     */
+    private function settleStaleRestores(SettlePitr $settle, AgentGateway $gateway): void
+    {
+        $stale = Restore::query()->where('type', Restore::PITR)
+            ->whereIn('status', [RestoreStatus::Pending, RestoreStatus::Running])
+            ->whereNotNull('command_id')
+            ->where('created_at', '<', now()->subSeconds(self::STALE_RESTORE_SECONDS))
+            ->get();
+
+        foreach ($stale as $restore) {
+            try {
+                $command = $gateway->status((string) $restore->command_id);
+
+                if ($command->status->isTerminal()) {
+                    $settle->restored((string) $restore->command_id, $command->isSuccessful(), $command->error, $command->result ?? []);
+                } elseif ($restore->created_at < now()->subSeconds(self::LOST_RESTORE_SECONDS)) {
+                    $settle->restored((string) $restore->command_id, false, 'The restore command never finished.', []);
+                }
+            } catch (Throwable $e) {
+                Log::warning('Settling a stale point-in-time restore failed.', ['restore_id' => $restore->id, 'error' => $e->getMessage()]);
+            }
+        }
     }
 }
