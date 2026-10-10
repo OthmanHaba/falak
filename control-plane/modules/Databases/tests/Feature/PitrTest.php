@@ -612,6 +612,21 @@ it('keeps binlogs numbered again after a reset apart (epochs)', function () {
     expect(collect($old['segments'])->every(fn ($s) => $s->epoch === 0))->toBeTrue();
 });
 
+it('turns the event scheduler off only on a MySQL / MariaDB copy', function () {
+    pitr_on($this);
+    [, , $mysql] = databases_service($this->organization, 'mysql', 'orders', $this->server);
+    $mysql->forceFill(['pitr_enabled' => true, 'pitr_storage_provider_id' => $this->provider->id])->save();
+    $this->engine = $mysql;
+    pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30', 'binlog.000003');
+    pitr_ship($this, 'binlog.000003', '2026-10-09T08:01:00Z', kind: 'binlog');
+
+    $this->postJson("/databases/instances/{$mysql->id}/pitr/restore", ['target_time' => 'latest'])->assertStatus(202);
+    $command = $this->agents->last('db.pitr.restore');
+
+    expect($command['payload']['instance']['settings'])->toMatchArray(['read_only' => true, 'event_scheduler' => false])
+        ->and(databases_schema_errors($command))->toBe([]);
+});
+
 it('restores to the latest point, and treats a target at the end of the log as the latest', function () {
     pitr_on($this);
     pitr_base($this, '2026-10-09 08:00:00', '2026-10-09 08:00:30');
@@ -624,8 +639,10 @@ it('restores to the latest point, and treats a target at the end of the log as t
     expect($command['payload'])->not->toHaveKey('target_time')
         ->and(array_column($command['payload']['segments'], 'name'))->toBe(['000000010000000000000003', '000000010000000000000004'])
         ->and($restore->to_latest)->toBeTrue()->and($restore->target_time->toIso8601ZuluString())->toBe('2026-10-09T09:00:00Z')
-        // The copy is read-only in its config; people inspect it through a read-only account.
-        ->and($command['payload']['instance']['settings'])->toMatchArray(['read_only' => true, 'event_scheduler' => false])
+        // The copy is read-only in its config; people inspect it through a read-only account. event_scheduler is
+        // MySQL / MariaDB only: falak-db refuses it for postgres (the copy would never start).
+        ->and($command['payload']['instance']['settings'])->toMatchArray(['read_only' => true])
+        ->and($command['payload']['instance']['settings'])->not->toHaveKey('event_scheduler')
         ->and($command['payload']['inspection']['username'])->toBe('falak_inspect')
         ->and(databases_schema_errors($command))->toBe([]);
     $this->agents->fail($command['handle'], 'x');
