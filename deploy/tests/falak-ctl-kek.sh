@@ -177,16 +177,14 @@ leftover="$(find "$BACKUP_DIR" -name 'falak-backup-*' 2>/dev/null)"
 [ -z "$leftover" ] || fail "a failed encryption left $leftover"
 pass "a backup whose encryption fails leaves no plaintext archive behind"
 
-openssl() { # stub: copies -in to -out
-  local in="" out=""
-  while [ $# -gt 0 ]; do case "$1" in -in) in="$2"; shift ;; -out) out="$2"; shift ;; esac; shift; done
-  cp "$in" "$out"
-}
+unset -f openssl
+dr_set FALAK_BACKUP_PASSPHRASE 'a long enough passphrase'
 cmd_backup --quiet >/dev/null 2>&1 || fail "backup failed with a working openssl"
-enc="$(find "$BACKUP_DIR" -name 'falak-backup-*.tar.gz.enc')"
+enc="$(find "$BACKUP_DIR" -name 'falak-backup-*.fdr')"
 [ -n "$enc" ] || fail "no encrypted backup written"
-[ -z "$(find "$BACKUP_DIR" -name '*.tmp')" ] || fail "temporary archives left behind"
-tar -tzf "$enc" | grep -q '^\./secrets/kek$' || fail "the encrypted backup lacks the KEK"
+[ -z "$(find "$BACKUP_DIR" -name '*.tmp' -o -name '*.ct')" ] || fail "temporary archives left behind"
+FALAK_DR_PASS='a long enough passphrase' dr_open "$enc" "$work/opened.tar.gz"
+tar -tzf "$work/opened.tar.gz" | grep -q '^\./secrets/kek$' || fail "the encrypted backup lacks the KEK"
 pass "an encrypted backup carries the KEK and leaves no temporary archive"
 
 # --- entrypoint: roles other than web wait for the migrations, every role checks the KEK first -------------

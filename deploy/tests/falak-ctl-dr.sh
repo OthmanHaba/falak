@@ -8,6 +8,7 @@
 # Docker, systemd and S3 are stubbed.
 #   deploy/tests/falak-ctl-dr.sh
 set -euo pipefail
+export LC_ALL=C   # sed over the binary test fixtures
 
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/falak-ctl-dr.XXXXXX")"
@@ -17,7 +18,7 @@ pass() { printf 'ok - %s\n' "$*"; }
 
 export FALAK_DIR="$work/falak" FALAK_CTL_SOURCED=1 FALAK_SYSTEMD_DIR="$work/systemd"
 mkdir -p "$FALAK_DIR/deploy" "$FALAK_DIR/observability"
-: > "$FALAK_DIR/deploy/compose.yml"
+printf 'services:\n  postgres:\n    restart: unless-stopped\n' > "$FALAK_DIR/deploy/compose.yml"
 printf 'FALAK_DOMAIN=falak.example.com\nFALAK_VERSION=v0.10.0\nFALAK_IMAGE_PREFIX=ghcr.io/x\nFALAK_EDGE_SUBNET=10.213.77.0/24\nDB_PASSWORD=db\n' > "$FALAK_DIR/.env"
 unset FALAK_BACKUP_PASSPHRASE FALAK_BACKUP_S3_ENDPOINT FALAK_BACKUP_S3_BUCKET FALAK_BACKUP_S3_SECRET_KEY FALAK_BACKUP_S3_ACCESS_KEY
 
@@ -134,37 +135,138 @@ grep -q '"last_failure":{"at":"' "$DR_JSON" || fail "dr.json has no failure"
 mv "$work/dr.env.saved" "$DR_FILE"
 pass "uploads are refused without the DR passphrase and never send a plaintext backup; scheduled failures are recorded"
 
+# --- authenticated encryption -------------------------------------------------------------------------------------
+# RFC 4231 test case 2 (key "Jefe"), against this HMAC built from shell builtins.
+[ "$(printf 'what do ya want for nothing?' | hmac_sha256 4a656665)" = 5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843 ] \
+  || fail "hmac_sha256 does not match RFC 4231"
+key="$(FALAK_DR_PASS='correct horse battery staple' dr_kdf 0011223344556677)"
+[ "${#key}" = 64 ] || fail "dr_kdf: $key"
+[ "$(FALAK_DR_PASS='correct horse battery staple' dr_kdf 0011223344556677)" = "$key" ] || fail "dr_kdf is not deterministic"
+[ "$(FALAK_DR_PASS='other passphrase here' dr_kdf 0011223344556677)" != "$key" ] || fail "dr_kdf ignores the passphrase"
+printf 'archive bytes' > "$work/plain.bin"
+FALAK_DR_PASS='correct horse battery staple' dr_seal "$work/plain.bin" "$work/sealed.fdr" falak-backup-x 20261010T000000Z
+is_sealed "$work/sealed.fdr" || fail "no FALAK-DR-BACKUP header"
+grep -q 'archive bytes' "$work/sealed.fdr" && fail "the sealed file holds the plaintext"
+[ "$(dr_header "$work/sealed.fdr" kdf)" = pbkdf2-sha256-600000 ] || fail "kdf header"
+FALAK_DR_PASS='correct horse battery staple' dr_open "$work/sealed.fdr" "$work/opened.bin" falak-backup-x
+cmp -s "$work/plain.bin" "$work/opened.bin" || fail "seal/open round trip"
+(FALAK_DR_PASS='wrong passphrase!!' dr_open "$work/sealed.fdr" "$work/o2" >/dev/null 2>&1) && fail "a wrong passphrase opened it"
+(FALAK_DR_PASS='correct horse battery staple' dr_open "$work/sealed.fdr" "$work/o2" falak-backup-y >/dev/null 2>&1) && fail "another name was accepted"
+cp "$work/sealed.fdr" "$work/flip.fdr"; printf 'X' | dd of="$work/flip.fdr" bs=1 seek=$(($(wc -c < "$work/flip.fdr") - 3)) conv=notrunc 2>/dev/null
+out="$( (FALAK_DR_PASS='correct horse battery staple' dr_open "$work/flip.fdr" "$work/o3") 2>&1)" && fail "a changed ciphertext was decrypted"
+grep -q 'failed authentication' <<<"$out" || fail "tamper message: $out"
+[ ! -s "$work/o3" ] || fail "a tampered file was decrypted before the MAC check"
+sed 's/^mac: .*/mac: /' "$work/sealed.fdr" > "$work/nomac.fdr"
+(FALAK_DR_PASS='correct horse battery staple' dr_open "$work/nomac.fdr" "$work/o4" >/dev/null 2>&1) && fail "a missing MAC was accepted"
+sed 's/^created_at: .*/created_at: 20991231T000000Z/' "$work/sealed.fdr" > "$work/hdr.fdr"
+(FALAK_DR_PASS='correct horse battery staple' dr_open "$work/hdr.fdr" "$work/o5" >/dev/null 2>&1) && fail "a changed header was accepted"
+pass "backups are encrypt-then-MAC (PBKDF2 600k, HMAC-SHA256 checked before decrypting); tampering, a wrong passphrase, a missing MAC or another name fail"
+
 # --- s3://latest and s3://NAME ----------------------------------------------------------------------------------
-mk_backup() { # mk_backup NAME : an encrypted (stub openssl: copy) fake backup uploaded with its .sha256
-  local d="$work/mk.$1"; mkdir -p "$d"
+mk_backup() { # mk_backup NAME [UPLOAD_AS] : an authenticated fake backup in the bucket
+  local name="$1" d="$work/mk.$1"; mkdir -p "$d"
   printf 'dump' > "$d/db.dump"; printf 'FALAK_DOMAIN=falak.example.com\nDB_PASSWORD=db\n' > "$d/env"
-  printf 'falak_version=v0.10.0\nrows=users:2\n' > "$d/manifest"
+  printf 'falak_version=v0.10.0\nbackup_name=%s\ncreated_at=%s\nencrypted=1\nrows=users:2\n' "$name" "${name#falak-backup-}" > "$d/manifest"
   tar -C "$d" -czf "$work/ca.tar.gz" manifest; mv "$work/ca.tar.gz" "$d/falak-ca.tar.gz"
-  tar -C "$d" -czf "$work/$1" .
-  s3_upload "$work/$1" 1 >/dev/null
+  tar -C "$d" -czf "$work/$name.tar.gz" .
+  FALAK_DR_PASS='correct horse battery staple' dr_seal "$work/$name.tar.gz" "$work/$name.fdr" "$name" "${name#falak-backup-}"
+  s3_upload "$work/$name.fdr" 1 >/dev/null
 }
-openssl() { local in="" out=""; while [ $# -gt 0 ]; do case "$1" in -in) in="$2"; shift ;; -out) out="$2"; shift ;; esac; shift; done
-  if [ -n "$out" ]; then cp "$in" "$out"; else cat "$in"; fi; }
-for ts in 20261001T000000Z 20261003T000000Z 20261002T000000Z 20261004T060000Z-pre-update-v0.9.0; do mk_backup "falak-backup-$ts.tar.gz.enc"; done
-[ "$(s3_list "falak/falak-backup-" | grep -vc sha256)" = 4 ] || fail "paged listing: $(s3_list "falak/falak-backup-")"
-[ "$(s3_backup_key latest)" = falak/falak-backup-20261004T060000Z-pre-update-v0.9.0.tar.gz.enc ] || fail "latest: $(s3_backup_key latest)"
-[ "$(s3_backup_key falak-backup-20261002T000000Z)" = falak/falak-backup-20261002T000000Z.tar.gz.enc ] || fail "name without extension"
-[ "$(s3_backup_key falak-backup-20261001T000000Z.tar.gz.enc)" = falak/falak-backup-20261001T000000Z.tar.gz.enc ] || fail "name with extension"
+for ts in 20261001T000000Z 20261003T000000Z 20261002T000000Z 20261004T060000Z; do mk_backup "falak-backup-$ts"; done
+# Plaintext and old-format objects a bucket writer could drop there: newer by name, never picked.
+printf 'evil' > "$S3/dr-bucket/falak/falak-backup-20991231T000000Z.tar.gz"
+printf 'evil' > "$S3/dr-bucket/falak/falak-backup-20991230T000000Z.tar.gz.enc"
+[ "$(s3_list "falak/falak-backup-" | grep -c fdr)" = 4 ] || fail "paged listing: $(s3_list "falak/falak-backup-")"
+[ "$(s3_backup_key latest)" = falak/falak-backup-20261004T060000Z.fdr ] || fail "latest: $(s3_backup_key latest)"
+[ "$(s3_backup_key falak-backup-20261002T000000Z)" = falak/falak-backup-20261002T000000Z.fdr ] || fail "name without extension"
+[ "$(s3_backup_key falak-backup-20261001T000000Z.fdr)" = falak/falak-backup-20261001T000000Z.fdr ] || fail "name with extension"
+(s3_backup_key falak-backup-20991231T000000Z.tar.gz >/dev/null 2>&1) && fail "a plaintext object was accepted by name"
+(s3_backup_key falak-backup-20991230T000000Z.tar.gz.enc >/dev/null 2>&1) && fail "an unauthenticated object was accepted by name"
 (s3_backup_key falak-backup-19990101T000000Z >/dev/null 2>&1) && fail "an unknown name resolved"
 (s3_backup_key ../other/falak-backup-x >/dev/null 2>&1) && fail "a path was accepted"
-pass "s3://latest picks the newest backup over paged listings; s3://NAME works with or without .tar.gz.enc"
+pass "s3://latest picks the newest authenticated backup (.fdr) over paged listings, never a plaintext or old-format object"
 
 got="$(restore_source s3://latest 2>/dev/null)"
-[ "$got" = "$BACKUP_DIR/falak-backup-20261004T060000Z-pre-update-v0.9.0.tar.gz.enc" ] || fail "restore_source: $got"
+[ "$got" = "$BACKUP_DIR/falak-backup-20261004T060000Z.fdr" ] || fail "restore_source: $got"
 [ "$(file_mode "$got")" = 600 ] || fail "downloaded backup mode $(file_mode "$got")"
-x="$work/x"; mkdir -p "$x"; extract_backup "$got" "$x"; [ -s "$x/db.dump" ] || fail "downloaded backup does not extract"
-printf 'tampered' >> "$S3/dr-bucket/falak/falak-backup-20261003T000000Z.tar.gz.enc"
-(restore_source s3://falak-backup-20261003T000000Z >/dev/null 2>&1) && fail "a tampered download was accepted"
-[ ! -f "$BACKUP_DIR/falak-backup-20261003T000000Z.tar.gz.enc" ] || fail "a tampered download was kept"
+x="$work/x"; mkdir -p "$x"; extract_backup "$got" "$x" falak-backup-20261004T060000Z; [ -s "$x/db.dump" ] || fail "downloaded backup does not extract"
+# A replayed object: an older (authentic) backup copied over the newest key fails the name binding.
+cp "$S3/dr-bucket/falak/falak-backup-20261001T000000Z.fdr" "$S3/dr-bucket/falak/falak-backup-20261004T060000Z.fdr"
+rm -f "$got"; got="$(restore_source s3://latest 2>/dev/null)"
+out="$( (extract_backup "$got" "$work/x2" "$(basename "$got" .fdr)") 2>&1)" && fail "a replayed object was accepted"
+grep -q "is backup 'falak-backup-20261001T000000Z'" <<<"$out" || fail "replay message: $out"
+# A manifest that says it is not encrypted (or names another backup) inside an authentic file is refused too.
+d="$work/mk.bad"; mkdir -p "$d"; printf 'dump' > "$d/db.dump"; : > "$d/env"
+printf 'backup_name=falak-backup-20261005T000000Z\ncreated_at=20261005T000000Z\nencrypted=0\n' > "$d/manifest"
+tar -C "$d" -czf "$work/bad.tar.gz" .
+FALAK_DR_PASS='correct horse battery staple' dr_seal "$work/bad.tar.gz" "$work/falak-backup-20261005T000000Z.fdr" falak-backup-20261005T000000Z 20261005T000000Z
+mkdir -p "$work/x3"; (extract_backup "$work/falak-backup-20261005T000000Z.fdr" "$work/x3" >/dev/null 2>&1) && fail "a manifest without encrypted=1 was accepted"
+mk_backup falak-backup-20261004T060000Z
+rm -f "$BACKUP_DIR"/falak-backup-*; got="$(restore_source s3://latest 2>/dev/null)"
 (restore_source s3:// >/dev/null 2>&1) && fail "s3:// without a name was accepted"
 (cmd_restore s3://latest >/dev/null 2>&1 </dev/null) && fail "restore without --yes went ahead"
 grep -q 'S3CRET-KEY-123' "$curl_argv" && fail "the secret key reached curl's command line"
-pass "restore s3://… downloads into backups/ (0600), checks the SHA-256 and needs --yes"
+pass "restore s3://… downloads into backups/ (0600), binds the object name, checks the manifest and needs --yes"
+
+# Old local formats still restore, with a warning; never from the bucket.
+mkdir -p "$work/x4"; out="$(extract_backup "$work/falak-backup-20261004T060000Z.tar.gz" "$work/x4" 2>&1)" || fail "a local plain backup was refused: $out"
+grep -q 'not encrypted' <<<"$out" || fail "no warning for a plain local backup"
+(extract_backup "$work/falak-backup-20261004T060000Z.tar.gz" "$work/x5" falak-backup-20261004T060000Z >/dev/null 2>&1) && fail "a plain backup was accepted as a bucket restore"
+pass "unauthenticated formats restore only from local files, with a warning"
+
+# --- what a restored .env may not change ---------------------------------------------------------------------
+cp "$FALAK_DIR/.env" "$work/env.saved"
+printf 'APP_KEY=base64:restored\nFALAK_IMAGE_PREFIX=evil.example/x\nFALAK_VERSION=v9.9.9\nFALAK_REPO=evil/falak\nCOMPOSE_FILE=/tmp/evil.yml\nexport DOCKER_HOST=tcp://evil:2375\nCOMPOSE_PROFILES=evil\n' > "$work/restored.env"
+printf 'COMPOSE_PROFILES=observability\n' >> "$FALAK_DIR/.env"
+restore_env "$work/restored.env"
+grep -q '^APP_KEY=base64:restored$' "$FALAK_DIR/.env" || fail "the backup's APP_KEY was not restored"
+grep -q '^FALAK_IMAGE_PREFIX=ghcr.io/x$' "$FALAK_DIR/.env" || fail "the image prefix came from the backup: $(grep IMAGE "$FALAK_DIR/.env")"
+grep -q '^FALAK_VERSION=v0.10.0$' "$FALAK_DIR/.env" || fail "the version came from the backup"
+grep -q 'FALAK_REPO' "$FALAK_DIR/.env" && fail "a repo this host never set came from the backup"
+grep -qE 'COMPOSE_FILE|DOCKER_HOST' "$FALAK_DIR/.env" && fail "compose / docker settings came from the backup"
+grep -q '^COMPOSE_PROFILES=observability$' "$FALAK_DIR/.env" || fail "this host's profiles were lost"
+cp "$work/env.saved" "$FALAK_DIR/.env"
+pass "a restore keeps this host's version, image source and compose settings and drops COMPOSE_* / DOCKER_* from the backup"
+
+# --- KMS / Vault backups on a fresh (local) host, newer backups, the lock, the env fallback ---------------------
+kb="$work/kmsbackup"; mkdir -p "$kb"; printf 'kek_provider=aws-kms\nkek_ids=ffffffffffffffff\n' > "$kb/manifest"
+restore_kek_check "$kb" 0 || fail "a KMS backup was refused for lacking a local KEK"
+printf 'kek_provider=local\nkek_ids=ffffffffffffffff\n' > "$kb/manifest"
+(restore_kek_check "$kb" 0 >/dev/null 2>&1) && fail "a local-KEK backup without its KEK was accepted"
+pass "restore checks KEKs by the backup's provider, not the fresh host's"
+
+version_newer v0.11.0 v0.10.0 || fail "v0.11.0 > v0.10.0"
+version_newer v0.10.10 v0.10.9 || fail "v0.10.10 > v0.10.9"
+version_newer v0.10.0 v0.10.0 && fail "equal versions"
+version_newer v0.9.0 v0.10.0 && fail "older is newer"
+version_newer main v0.10.0 && fail "main compared"
+grep -q 'newer than this host' "$here/../falak-ctl" || fail "no refusal of newer backups"
+pass "backups made by a newer Falak are told apart (restore refuses them without --force)"
+
+flock() { return 1; }
+out="$( (ctl_lock) 2>&1)" && fail "ctl_lock went ahead while locked"
+grep -q 'is running; try again' <<<"$out" || fail "lock message: $out"
+out="$( (ctl_lock 5) 2>&1)" && fail "a waiting ctl_lock went ahead"
+grep -q 'still runs after 5s' <<<"$out" || fail "wait message: $out"
+# shellcheck disable=SC2034  # read by ctl_lock
+(CTL_LOCKED=1; ctl_lock) || fail "a nested command could not take the lock it holds"
+unset -f flock
+grep -q 'ctl_lock 3600; cmd_backup_scheduled' "$here/../falak-ctl" || fail "scheduled backups don't wait for the lock"
+grep -q 'restore) ctl_lock; cmd_restore' "$here/../falak-ctl" || fail "restore is not locked"
+grep -q 'ctl_lock; cmd_update' "$here/../falak-ctl" || fail "update is not locked"
+pass "backup, restore, update and drill take .ctl.lock: timers wait, commands by hand fail fast"
+
+(FALAK_BACKUP_S3_ENDPOINT=https://env.example; DR_DIR="$work/nodr"; DR_FILE="$work/nodr/dr.env"; export FALAK_BACKUP_S3_ENDPOINT
+  [ -z "$(dr_get FALAK_BACKUP_S3_ENDPOINT)" ] || fail "dr_get read the environment outside a restore"
+  # shellcheck disable=SC2034  # read by dr_get
+  DR_ENV_FALLBACK=1; [ "$(dr_get FALAK_BACKUP_S3_ENDPOINT)" = https://env.example ] || fail "restore could not read the environment")
+pass "only restore and dr setup read DR settings from the environment"
+
+(dr_set FALAK_BACKUP_S3_ENDPOINT 'https://user:pw@s3.example.com/path'; dr_write_json
+  grep -q '"endpoint":"https://s3.example.com"' "$DR_JSON" || fail "endpoint: $(cat "$DR_JSON")"
+  if grep -q 'user:pw' "$DR_JSON"; then fail "userinfo in dr.json"; fi)
+dr_set FALAK_BACKUP_S3_ENDPOINT https://s3.example.com; dr_write_json
+pass "dr.json strips credentials from the endpoint"
 
 # --- the drill runs in its own project and is torn down ------------------------------------------------------
 compose_log="$work/compose.log"; : > "$compose_log"
@@ -194,6 +296,7 @@ grep -q 'falak-drill_falak-ca' "$docker_log" || fail "the drill did not restore 
 [ ! -e "$FALAK_DIR/drill" ] || fail "the drill directory was left behind"
 [ "$(cat "$FALAK_DIR/.env")" = "$before" ] || fail "the drill changed the install's .env"
 grep -q '"last_drill":{"at":"[^"]*","ok":true' "$DR_JSON" || fail "dr.json drill: $(cat "$DR_JSON")"
+grep -q 'ps -aq --filter label=com.docker.compose.project=falak-drill' "$docker_log" || fail "leftovers of earlier drills are not looked for"
 pass "dr drill restores into falak-drill (own dir, volumes, no edge or workers), checks it, tears it down, reports ok"
 
 # The drill's settings: other ports and subnet, this host's version, no pulls.
@@ -206,11 +309,17 @@ pass "dr drill restores into falak-drill (own dir, volumes, no edge or workers),
   grep -q '^FALAK_PULL=0$' "$work/dd/.env" || fail "drill pulls"
   grep -q '^FALAK_VERSION=v0.10.0$' "$work/dd/.env" || fail "drill version"
   [ -f "$work/dd/secrets/kek" ] || fail "drill has no KEK"
+  grep -q 'restart: unless-stopped' "$work/dd/deploy/compose.yml" && fail "drill containers restart by themselves"
+  grep -q 'restart: "no"' "$work/dd/deploy/compose.yml" || fail "no restart policy in the drill"
   env_set FALAK_EDGE_SUBNET 10.213.78.0/24
   [ "$(drill_subnet)" = 10.213.79.0/24 ] || fail "drill subnet collides with the install's"
 )
 (FALAK_PROJECT=falak; drill_switch "$work/dd"; [ "$FALAK_PROJECT" = falak-drill ] || fail "drill project $FALAK_PROJECT")
-pass "the drill uses ports 18080/18443, another edge subnet, this host's version and no pulls"
+docker() { printf '%s\n' "$*" >> "$docker_log"; case "$*" in "ps -aq"*) printf 'c1\nc2\n' ;; esac; return 0; }
+drill_teardown
+grep -q '^rm -f c1 c2$' "$docker_log" || fail "leftover drill containers were not removed: $(tail -3 "$docker_log")"
+docker() { printf '%s\n' "$*" >> "$docker_log"; case "$*" in run*) cat > /dev/null ;; esac; return 0; }
+pass "the drill uses ports 18080/18443, another edge subnet, this host's version, no pulls, no restarts; leftovers are removed"
 
 compose() { case "$*" in *falak:keys:check*) printf '{"ok":false,"stale":0,"failed":2}\n'; return 1 ;; *"psql -U falak -d falak -tA"*) printf 'users:1\n' ;; *pg_restore*) cat >/dev/null ;; esac; return 0; }
 (dr_drill --backup "$got" >/dev/null 2>&1) && fail "a drill with failing checks passed"
@@ -221,6 +330,7 @@ grep -q 'row counts: differ: users 1/2' "$DR_STATE" || fail "row count mismatch 
 pass "a failed drill names the failing checks in dr.json and is torn down too"
 
 # --- install.sh --restore-from ----------------------------------------------------------------------------
+# shellcheck disable=SC2030,SC2031  # each run sources install.sh in its own subshell
 inst() { ( export FALAK_INSTALL_SOURCED=1 FALAK_DOMAIN=falak.example.com FALAK_EMAIL=ops@example.com FALAK_DIR="$work/inst"
   # shellcheck source=/dev/null
   . "$here/../install.sh" "$@"; printf '%s\n' "$RESTORE_FROM" ) }
@@ -236,4 +346,18 @@ grep -q 'restore_control_plane' "$here/../install.sh" || fail "install.sh does n
 fn="$(awk '/^restore_control_plane\(\)/,/^}/' "$here/../install.sh")"
 [ "$(grep -n 'kctl restore' <<<"$fn" | cut -d: -f1)" -lt "$(grep -n 'kctl dr setup' <<<"$fn" | cut -d: -f1)" ] || fail "dr setup runs before the restore"
 grep -q -- '--passphrase-file' <<<"$fn" || fail "install.sh hands the passphrase over on the command line"
-pass "install.sh parses --restore-from s3://latest | s3://NAME, refuses others, schedules backups only after the restore"
+# shellcheck disable=SC2016  # a literal $1
+grep -q 'export "\$1' "$here/../install.sh" && fail "install.sh exports the DR secrets"
+grep -q "trap 'rm -rf \"\$RESTORE_TMP\"' EXIT" <<<"$fn" || fail "the secret files are not removed on exit"
+grep -qE '(^|[^_])env FALAK_BACKUP' <<<"$fn" && fail "secrets on env's command line"
+# shellcheck disable=SC2030,SC2031
+( export FALAK_INSTALL_SOURCED=1 FALAK_DOMAIN=falak.example.com FALAK_EMAIL=ops@example.com FALAK_DIR="$work/inst2"
+  mkdir -p "$FALAK_DIR"; : > "$FALAK_DIR/.env"
+  # shellcheck source=/dev/null
+  . "$here/../install.sh"
+  dc() { :; }
+  record_operator_organization '{"user_id":"u","organization_id":"01jb2c3d4e5f6g7h8j9k0m1n2p","organization":"Acme"}'
+  grep -q '^FALAK_DR_ORGANIZATION=01jb2c3d4e5f6g7h8j9k0m1n2p$' "$FALAK_DIR/.env" || fail "operator organization not recorded"
+  record_operator_organization '{"organization_id":"01zzzzzzzzzzzzzzzzzzzzzzzz"}'
+  grep -q '^FALAK_DR_ORGANIZATION=01jb2c3d4e5f6g7h8j9k0m1n2p$' "$FALAK_DIR/.env" || fail "a re-run moved the operator organization" ) || exit 1
+pass "install.sh parses --restore-from, schedules backups only after the restore, never exports secrets, records the operator organization"

@@ -13,7 +13,8 @@
 #                                           (+ the KEK, only when the DR passphrase encrypts the backup);
 #                                           --upload: to the DR bucket (encrypted only), failing when it can't
 #   falak-ctl restore <file | s3://latest | s3://NAME> [--yes] [--force]
-#                                           restore a backup (stops the app while restoring); s3:// downloads it
+#                                           restore a backup (stops the app while restoring); s3:// downloads an
+#                                           authenticated backup (.fdr) and checks it with the DR passphrase first
 #   falak-ctl dr setup [options]            disaster recovery: DR bucket, passphrase, backup + drill timers
 #   falak-ctl dr status [--json]            last backup, its age and size, last drill, configured or not
 #   falak-ctl dr drill [--local]            restore the latest backup into a throwaway stack (falak-drill), check it
@@ -758,12 +759,14 @@ latest_backup() { # newest by name (UTC timestamps sort)
 
 # --- DR settings (dr/dr.env) ----------------------------------------------------------------------------
 # FALAK_BACKUP_PASSPHRASE, FALAK_BACKUP_S3_{ENDPOINT,BUCKET,REGION,ACCESS_KEY,SECRET_KEY,PREFIX}, FALAK_DR_EVERY_HOURS,
-# FALAK_DR_DRILL (monthly | off), FALAK_BACKUP_REGISTRY (1 = include registry-data). A setting missing from the file
-# is read from the environment (a fresh host: install.sh --restore-from, falak-ctl restore s3://… before dr setup).
+# FALAK_DR_DRILL (monthly | off), FALAK_BACKUP_REGISTRY (1 = include registry-data). Only restore and dr setup
+# (DR_ENV_FALLBACK=1) read a setting missing from the file from the environment (a fresh host: install.sh
+# --restore-from, falak-ctl restore s3://… before dr setup); scheduled backups and drills use the file alone.
+DR_ENV_FALLBACK=0
 dr_get() { # dr_get KEY [default]
   local v=""
   if [ -f "$DR_FILE" ]; then v="$(grep -E "^$1=" "$DR_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"; fi
-  if [ -z "$v" ]; then v="$(printenv "$1" 2>/dev/null || true)"; fi
+  if [ -z "$v" ] && [ "$DR_ENV_FALLBACK" = 1 ]; then v="$(printenv "$1" 2>/dev/null || true)"; fi
   printf '%s' "${v:-${2:-}}"
 }
 
@@ -776,6 +779,104 @@ dr_set() { # dr_set KEY VALUE  (atomic; dr/ 0700, dr.env 0600)
   if [ -f "$DR_FILE" ]; then grep -vE "^$1=" "$DR_FILE" > "$tmp" || true; fi
   printf '%s=%s\n' "$1" "$2" >> "$tmp"
   mv "$tmp" "$DR_FILE"
+}
+
+# --- authenticated backup encryption (format FALAK-DR-BACKUP 2, *.fdr) -----------------------------------------
+# encrypt-then-MAC with standard tools only: AES-256-CBC (openssl enc, PBKDF2-SHA256, 600 000 iterations, random salt)
+# and HMAC-SHA256 over the header and the whole ciphertext, keyed by a second PBKDF2 derivation with its own random
+# salt. The MAC is checked before anything is decrypted or extracted; a missing or wrong one is a hard error. The
+# header binds the backup's name and creation time (a restore from the bucket checks them against the object key).
+# The passphrase only ever reaches openssl through its environment; the derived MAC key never leaves this shell
+# (bash builtins build the HMAC pads), so neither shows up in a process list.
+#
+#   FALAK-DR-BACKUP 2
+#   name: falak-backup-20261010T060000Z-scheduled
+#   created_at: 20261010T060000Z
+#   kdf: pbkdf2-sha256-600000
+#   mac_salt: <16 hex>          (8 bytes: openssl enc -S; the ciphertext has its own)
+#   mac: <64 hex>          HMAC-SHA256(mac key, first 5 lines || ciphertext)
+#   <empty line>
+#   <ciphertext: openssl enc output, "Salted__" + salt + AES-256-CBC>
+DR_FORMAT="FALAK-DR-BACKUP 2"
+DR_KDF_ITER=600000
+DR_HEADER_LINES=7
+
+hex_of() { od -An -tx1 | tr -d ' \n'; }
+
+# dr_kdf SALT_HEX : 32-byte key (hex) from the passphrase in FALAK_DR_PASS (environment) and the salt.
+dr_kdf() {
+  openssl enc -aes-256-cbc -pbkdf2 -iter "$DR_KDF_ITER" -md sha256 -S "$1" -pass env:FALAK_DR_PASS -P 2>/dev/null \
+    | sed -n 's/^key=//p' | tr 'A-F' 'a-f'
+}
+
+# hmac_sha256 KEY_HEX < data -> hex digest (RFC 2104; the key's pads are built with printf, a builtin).
+hmac_sha256() {
+  local key="$1" ipad="" opad="" i b x inner
+  for ((i = 0; i < 64; i++)); do
+    b=0
+    if [ $((i * 2)) -lt ${#key} ]; then b=$((16#${key:i*2:2})); fi
+    printf -v x '\\x%02x' $((b ^ 0x36)); ipad+="$x"
+    printf -v x '\\x%02x' $((b ^ 0x5c)); opad+="$x"
+  done
+  # shellcheck disable=SC2059  # the pads are format strings of \x escapes on purpose
+  inner="$({ printf "$ipad"; cat; } | openssl dgst -sha256 -binary | hex_of)"
+  # shellcheck disable=SC2059
+  { printf "$opad"; printf "$(printf '%s' "$inner" | sed 's/../\\x&/g')"; } | openssl dgst -sha256 -binary | hex_of
+}
+
+# dr_seal PLAIN OUT NAME CREATED : encrypt and authenticate a backup archive (passphrase in FALAK_DR_PASS).
+dr_seal() {
+  local plain="$1" out="$2" name="$3" created="$4" salt key header mac ct
+  ct="$out.ct"
+  TMP_LIST="$TMP_LIST $ct"
+  salt="$(rand_hex 8)"
+  key="$(dr_kdf "$salt")"
+  [ "${#key}" = 64 ] || { rm -f "$ct"; return 1; }
+  openssl enc -aes-256-cbc -pbkdf2 -iter "$DR_KDF_ITER" -md sha256 -salt -pass env:FALAK_DR_PASS -in "$plain" -out "$ct" || { rm -f "$ct"; return 1; }
+  header="$(printf '%s\nname: %s\ncreated_at: %s\nkdf: pbkdf2-sha256-%s\nmac_salt: %s\n' "$DR_FORMAT" "$name" "$created" "$DR_KDF_ITER" "$salt")"$'\n'
+  mac="$({ printf '%s' "$header"; cat "$ct"; } | hmac_sha256 "$key")"
+  { printf '%s' "$header"; printf 'mac: %s\n\n' "$mac"; cat "$ct"; } > "$out" || { rm -f "$ct"; return 1; }
+  rm -f "$ct"
+}
+
+dr_header() { head -n "$DR_HEADER_LINES" "$1" 2>/dev/null | sed -n "s/^$2: //p" | head -1; }
+
+is_sealed() { [ "$(head -n 1 "$1" 2>/dev/null)" = "$DR_FORMAT" ]; }
+
+# dr_open FILE PLAIN_OUT [EXPECTED_NAME] : verify the MAC (and the bound name), then decrypt. Dies on any mismatch.
+dr_open() {
+  local file="$1" out="$2" expect="${3:-}" salt key want have hlen name
+  is_sealed "$file" || die "$(basename "$file") is not an authenticated Falak backup ($DR_FORMAT)"
+  [ "$(dr_header "$file" kdf)" = "pbkdf2-sha256-$DR_KDF_ITER" ] || die "$(basename "$file"): unknown key derivation"
+  salt="$(dr_header "$file" mac_salt)"; want="$(dr_header "$file" mac)"; name="$(dr_header "$file" name)"
+  case "$salt$want" in *[!0-9a-f]*) die "$(basename "$file"): damaged header" ;; esac
+  if [ "${#salt}" != 16 ] || [ "${#want}" != 64 ]; then die "$(basename "$file"): damaged header"; fi
+  key="$(dr_kdf "$salt")"
+  [ "${#key}" = 64 ] || die "could not derive the backup key (openssl with PBKDF2 needed)"
+  hlen="$(head -n "$DR_HEADER_LINES" "$file" | wc -c | tr -d ' ')"
+  have="$({ head -n 5 "$file"; tail -c +"$((hlen + 1))" "$file"; } | hmac_sha256 "$key")"
+  [ "$have" = "$want" ] || die "$(basename "$file") failed authentication: wrong DR passphrase, or the file was changed"
+  if [ -n "$expect" ] && [ "$name" != "$expect" ]; then
+    die "$(basename "$file") is backup '$name', not '$expect' (renamed or replayed object)"
+  fi
+  tail -c +"$((hlen + 1))" "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter "$DR_KDF_ITER" -md sha256 -pass env:FALAK_DR_PASS -out "$out" 2>/dev/null \
+    || die "$(basename "$file") could not be decrypted"
+}
+
+# --- one stateful command at a time ------------------------------------------------------------------------------
+# backup, restore, update and drill take $FALAK_DIR/.ctl.lock (flock). Timers wait for it (WAIT seconds); commands run
+# by hand fail at once with a clear message. Nested calls (update's backup and rollback) hold it already.
+CTL_LOCKED=0
+ctl_lock() { # ctl_lock [WAIT]
+  [ "$CTL_LOCKED" = 0 ] || return 0
+  command -v flock >/dev/null 2>&1 || return 0
+  exec 9>>"$FALAK_DIR/.ctl.lock"
+  if [ "${1:-0}" -gt 0 ]; then
+    flock -w "$1" 9 || die "another falak-ctl backup, restore, update or drill still runs after ${1}s; this run is skipped"
+  else
+    flock -n 9 || die "another falak-ctl backup, restore, update or drill is running; try again once it finished"
+  fi
+  CTL_LOCKED=1
 }
 
 s3_configured() { [ -n "$(dr_get FALAK_BACKUP_S3_ENDPOINT)" ] && [ -n "$(dr_get FALAK_BACKUP_S3_BUCKET)" ]; }
@@ -826,7 +927,7 @@ dr_write_json() {
   {
     printf '{"version":1,"updated_at":%s,"falak_version":%s,' "$(json_str "$(date -u +%Y-%m-%dT%H:%M:%SZ)")" "$(json_str "$(env_get FALAK_VERSION)")"
     printf '"configured":%s,"encrypted":%s,"target":%s,"endpoint":%s,' "$(json_bool "$configured")" "$(json_bool "$encrypted")" \
-      "$(json_str "$target")" "$(json_str "$(dr_get FALAK_BACKUP_S3_ENDPOINT | sed -E 's#^(https?://[^/]+).*#\1#')")"
+      "$(json_str "$target")" "$(json_str "$(dr_get FALAK_BACKUP_S3_ENDPOINT | sed -E 's#^(https?://)([^/@]*@)?([^/]+).*#\1\3#')")"
     printf '"schedule_hours":%s,"drill_schedule":%s,"include_registry":%s,' "$(json_int "$(dr_every_hours)")" \
       "$(json_str "$(dr_get FALAK_DR_DRILL off)")" "$(json_bool "$(dr_get FALAK_BACKUP_REGISTRY 0)")"
     printf '"last_backup":{"name":%s,"at":%s,"size_bytes":%s,"uploaded":%s,"encrypted":%s,"kek_id":%s},' \
@@ -884,71 +985,59 @@ s3_list() { # s3_list PREFIX -> object keys, one per line (ListObjectsV2, every 
   done
 }
 
-# s3_backup_key REF -> the object key of s3://REF: "latest" is the newest falak-backup-* (names sort by time),
-# otherwise REF is a backup name (with or without .tar.gz.enc) under the prefix.
+# s3_backup_key REF -> the object key of s3://REF: "latest" is the newest falak-backup-*.fdr (names sort by time),
+# otherwise REF is a backup name (with or without .fdr) under the prefix. Only authenticated backups (.fdr) are
+# considered: anything else in the bucket (a plaintext .tar.gz, the old unauthenticated .tar.gz.enc) is ignored.
 s3_backup_key() {
   local ref="$1" prefix keys
   prefix="$(s3_prefix)"
   keys="$(s3_list "${prefix}falak-backup-")" || die "listing s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$prefix failed (endpoint, bucket and keys right?)"
-  keys="$(printf '%s\n' "$keys" | grep -E '/?falak-backup-[^/]*\.tar\.gz(\.enc)?$' | sort || true)"
+  keys="$(printf '%s\n' "$keys" | grep -E '(^|/)falak-backup-[A-Za-z0-9._-]*\.fdr$' | sort || true)"
   if [ "$ref" = latest ]; then
     [ -n "$keys" ] || die "no backups in s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$prefix"
     printf '%s\n' "$keys" | tail -1
     return 0
   fi
   case "$ref" in */* | *..*) die "s3://$ref: give a backup name (falak-backup-…) or latest" ;; esac
+  case "$ref" in *.fdr | *[!A-Za-z0-9._-]*) ;; *.tar.gz | *.enc) die "s3://$ref: only authenticated backups (.fdr) are restored from the bucket" ;; esac
   local want
-  for want in "$prefix$ref" "$prefix$ref.tar.gz.enc" "$prefix$ref.tar.gz"; do
+  for want in "$prefix$ref" "$prefix$ref.fdr"; do
     if printf '%s\n' "$keys" | grep -qxF "$want"; then printf '%s\n' "$want"; return 0; fi
   done
   die "no backup named $ref in s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$prefix (falak-ctl dr status lists the latest)"
 }
 
-# s3_fetch REF DIR -> path of the downloaded backup, checked against its .sha256 object when there is one.
+# s3_fetch REF DIR -> path of the downloaded backup (authenticated later, before anything is extracted: dr_open).
 s3_fetch() {
-  local ref="$1" dir="$2" key out sums want have
+  local ref="$1" dir="$2" key out
   s3_configured || die "no DR bucket: run falak-ctl dr setup, or set FALAK_BACKUP_S3_ENDPOINT, _BUCKET, _ACCESS_KEY and _SECRET_KEY"
   key="$(s3_backup_key "$ref")"
   out="$dir/$(basename "$key")"
   info "downloading s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$key" >&2
   s3_get "$key" "$out.part" || { rm -f "$out.part"; die "downloading $key failed"; }
-  sums="$(mktemp "$dir/.sha.XXXXXX")"
-  if s3_get "$key.sha256" "$sums" 2>/dev/null; then
-    want="$(cut -d' ' -f1 < "$sums")"; have="$(sha256_hex < "$out.part")"
-    rm -f "$sums"
-    [ "$want" = "$have" ] || { rm -f "$out.part"; die "$key: SHA-256 mismatch (damaged download?)"; }
-    ok "SHA-256 verified" >&2
-  else
-    rm -f "$sums"
-    warn "$key has no .sha256 next to it: not verified before decrypting" >&2
-  fi
   mv "$out.part" "$out"
   chmod 600 "$out"
   printf '%s\n' "$out"
 }
 
-s3_upload() { # s3_upload FILE REQUIRED : to the DR bucket with its .sha256; only encrypted backups leave the host
-  local file="$1" required="$2" key sums
+s3_upload() { # s3_upload FILE REQUIRED : to the DR bucket; only authenticated, encrypted backups (.fdr) leave the host
+  local file="$1" required="$2" key
   if ! s3_configured; then
     [ "$required" = 1 ] && die "--upload: no DR bucket configured (falak-ctl dr setup)"
     return 0
   fi
   case "$file" in
-    *.enc) ;;
+    *.fdr) ;;
     *) if [ "$required" = 1 ]; then die "refusing to upload an unencrypted backup: set the DR passphrase (falak-ctl dr setup)"; fi
        warn "not uploaded: backups only leave this host encrypted (set the DR passphrase: falak-ctl dr setup)"
        return 0 ;;
   esac
   key="$(s3_prefix)$(basename "$file")"
-  sums="$(mktemp "$(dirname "$file")/.sha.XXXXXX")"
-  printf '%s  %s\n' "$(sha256_hex < "$file")" "$(basename "$file")" > "$sums"
-  if s3_put "$file" "$key" && s3_put "$sums" "$key.sha256"; then
-    rm -f "$sums"
+  if s3_put "$file" "$key"; then
     ok "uploaded to s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$key"
     UPLOADED=1
     return 0
   fi
-  rm -f "$sums"
   [ "$required" = 1 ] && die "upload to s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$key failed (the local backup is kept)"
   warn "S3 upload to s3://$(dr_get FALAK_BACKUP_S3_BUCKET)/$key failed (the local backup is kept)"
 }
@@ -1049,6 +1138,7 @@ cmd_backup() {
   fi
   {
     echo "falak_version=$(env_get FALAK_VERSION)"
+    echo "backup_name=$name"
     echo "created_at=$ts"
     echo "host=$(hostname)"
     echo "domain=$(env_get FALAK_DOMAIN)"
@@ -1065,17 +1155,16 @@ cmd_backup() {
 
   out="$BACKUP_DIR/$name.tar.gz"
   # The plaintext archive must not outlive a failed or interrupted encryption (cleanup on exit removes both).
-  TMP_LIST="$TMP_LIST $out.tmp $out.enc.tmp"
+  TMP_LIST="$TMP_LIST $out.tmp $BACKUP_DIR/$name.fdr.tmp"
   tar -C "$work" -czf "$out.tmp" . || die "could not write $out.tmp"
   if [ -n "$pass" ]; then
-    if ! FALAK_BACKUP_PASSPHRASE="$pass" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:FALAK_BACKUP_PASSPHRASE \
-      -in "$out.tmp" -out "$out.enc.tmp"; then
-      rm -f "$out.tmp" "$out.enc.tmp"
+    if ! FALAK_DR_PASS="$pass" dr_seal "$out.tmp" "$BACKUP_DIR/$name.fdr.tmp" "$name" "$ts"; then
+      rm -f "$out.tmp" "$BACKUP_DIR/$name.fdr.tmp"
       die "encrypting the backup failed; nothing was kept"
     fi
     rm -f "$out.tmp"
-    mv "$out.enc.tmp" "$out.enc"
-    out="$out.enc"
+    mv "$BACKUP_DIR/$name.fdr.tmp" "$BACKUP_DIR/$name.fdr"
+    out="$BACKUP_DIR/$name.fdr"
   else
     mv "$out.tmp" "$out"
   fi
@@ -1122,17 +1211,64 @@ copy_env_for_backup() {
   return 1
 }
 
-extract_backup() { # extract_backup FILE DIR
-  local file="$1" dir="$2"
+# extract_backup FILE DIR [EXPECTED_NAME] : an authenticated backup (.fdr) is verified with the DR passphrase before tar
+# sees a byte, and its manifest must name the same backup. From the bucket only .fdr is accepted (s3_backup_key);
+# the older unauthenticated formats (.tar.gz.enc, plain .tar.gz) are restored from local files only, with a warning.
+extract_backup() {
+  local file="$1" dir="$2" expect="${3:-}" pass plain name created
+  pass="$(dr_get FALAK_BACKUP_PASSPHRASE)"
   case "$file" in
+    *.fdr)
+      [ -n "$pass" ] || die "$(basename "$file") is encrypted: the DR passphrase is needed (FALAK_BACKUP_PASSPHRASE in the environment, or falak-ctl dr setup)"
+      plain="$(mktemp "$dir/.plain.XXXXXX")"
+      FALAK_DR_PASS="$pass" dr_open "$file" "$plain" "$expect"
+      tar -xzf "$plain" -C "$dir" || { rm -f "$plain"; die "$(basename "$file") could not be unpacked"; }
+      rm -f "$plain"
+      name="$(dr_header "$file" name)"; created="$(dr_header "$file" created_at)"
+      [ "$(sed -n 's/^encrypted=//p' "$dir/manifest" 2>/dev/null)" = 1 ] || die "$(basename "$file"): its manifest does not say encrypted"
+      [ "$(sed -n 's/^backup_name=//p' "$dir/manifest")" = "$name" ] || die "$(basename "$file"): the manifest names another backup"
+      [ "$(sed -n 's/^created_at=//p' "$dir/manifest")" = "$created" ] || die "$(basename "$file"): the manifest has another creation time"
+      ;;
     *.enc)
-      local pass; pass="$(dr_get FALAK_BACKUP_PASSPHRASE)"
+      [ -z "$expect" ] || die "$(basename "$file"): unauthenticated backups are not restored from the bucket"
+      warn "$(basename "$file") uses the old unauthenticated format (no MAC): only restore it if it never left this host"
       [ -n "$pass" ] || die "$file is encrypted: the DR passphrase is needed (FALAK_BACKUP_PASSPHRASE in the environment, or falak-ctl dr setup)"
       FALAK_BACKUP_PASSPHRASE="$pass" openssl enc -d -aes-256-cbc -pbkdf2 -pass env:FALAK_BACKUP_PASSPHRASE -in "$file" 2>/dev/null \
         | tar -xzf - -C "$dir" 2>/dev/null || die "$file could not be decrypted (wrong DR passphrase?) or is damaged" ;;
-    *) tar -xzf "$file" -C "$dir" ;;
+    *)
+      [ -z "$expect" ] || die "$(basename "$file"): unencrypted backups are not restored from the bucket"
+      warn "$(basename "$file") is not encrypted: only restore it if it never left this host"
+      tar -xzf "$file" -C "$dir" ;;
   esac
   if [ ! -s "$dir/db.dump" ] || [ ! -f "$dir/env" ]; then die "$file is not a Falak backup (db.dump/env missing)"; fi
+}
+
+# The settings a backup may never bring back: which images run, from where, and compose's own knobs. A backup's
+# .env otherwise wins (APP_KEY, passwords, domains); these stay this host's.
+RESTORE_PINNED="FALAK_VERSION FALAK_IMAGE_PREFIX FALAK_REPO FALAK_DEPLOY_SOURCE FALAK_PULL FALAK_EDGE_SUBNET COMPOSE_PROFILES"
+
+# restore_env FILE : install a backup's env file as .env, keeping this host's pinned settings; COMPOSE_* / DOCKER_*
+# lines from the backup are dropped (compose would read them).
+restore_env() {
+  local src="$1" k saved=() tmp kv
+  for k in $RESTORE_PINNED; do
+    if grep -qE "^$k=" "$ENV_FILE" 2>/dev/null; then saved+=("$k=$(env_get "$k")"); fi
+  done
+  tmp="$(mktemp "$FALAK_DIR/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -vE '^[[:space:]]*(export[[:space:]]+)?(COMPOSE_|DOCKER_)' "$src" > "$tmp" || true
+  for k in $RESTORE_PINNED; do
+    grep -vE "^[[:space:]]*(export[[:space:]]+)?$k=" "$tmp" > "$tmp.f" || true
+    mv "$tmp.f" "$tmp"
+  done
+  mv "$tmp" "$ENV_FILE"
+  for kv in "${saved[@]}"; do env_set "${kv%%=*}" "${kv#*=}"; done
+}
+
+# version_newer A B -> 0 when release A (vX.Y.Z) is newer than B; anything else (main, a sha) is not compared.
+version_newer() {
+  case "$1:$2" in v[0-9]*.[0-9]*.[0-9]*:v[0-9]*.[0-9]*.[0-9]*) ;; *) return 1 ;; esac
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "${1#v}" "${2#v}" | sort -V | tail -1)" = "${1#v}" ]
 }
 
 # restore_source ARG -> a local backup file: a path, a name in backups/, or s3://latest | s3://NAME (downloaded
@@ -1153,6 +1289,7 @@ restore_source() {
 
 cmd_restore() {
   require_install
+  DR_ENV_FALLBACK=1
   local file="" yes=0 keep_env=0 force=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1170,15 +1307,21 @@ cmd_restore() {
     printf 'Restore %s? This REPLACES the database, app storage, Fleet CA, edge PKI and .env. [y/N] ' "$file"
     read -r answer; [ "$answer" = y ] || [ "$answer" = Y ] || die "aborted"
   fi
+  local expect=""
+  case "$file" in s3://*) expect=1 ;; esac
   file="$(restore_source "$file")"
-  do_restore "$file" "$keep_env" "$force"
+  # From the bucket, the object's name is bound into the authenticated header (a renamed or replayed object fails).
+  if [ -n "$expect" ]; then expect="$(basename "$file" .fdr)"; fi
+  RESTORE_EXPECT="$expect" do_restore "$file" "$keep_env" "$force"
 }
 
 # restore_kek_check WORK_DIR FORCE : before anything is replaced, a backup without its KEK may only be restored
 # when this host has every KEK its data keys are wrapped by (secrets/kek or kek.previous), unless --force.
 restore_kek_check() {
-  local work="$1" force="$2" ids have="" id missing=""
-  [ "$(kek_provider)" = local ] || return 0
+  local work="$1" force="$2" ids have="" id missing="" provider
+  # The backup's provider (a fresh host's .env says local until the restored one replaces it).
+  provider="$(sed -n 's/^kek_provider=//p' "$work/manifest" 2>/dev/null | tail -1)"
+  [ "${provider:-$(kek_provider)}" = local ] || return 0
   [ ! -f "$work/secrets/kek" ] || return 0
   ids="$(sed -n 's/^kek_ids=//p' "$work/manifest" 2>/dev/null || true)"
   [ -n "$ids" ] || ids="$(sed -n 's/^kek_id=//p' "$work/manifest" 2>/dev/null || true)"
@@ -1244,22 +1387,23 @@ do_restore() { # do_restore FILE KEEP_ENV [FORCE]
   local file="$1" keep_env="$2" force="${3:-0}" work
   work="$(tmpdir)"
   info "restoring $(basename "$file")"
-  extract_backup "$file" "$work"
-  sed 's/^/  /' "$work/manifest" 2>/dev/null || true
+  extract_backup "$file" "$work" "${RESTORE_EXPECT:-}"
+  sed 's/^/  /' "$work/manifest" 2>/dev/null | grep -v '^  image\.' || true
+  local made_by
+  made_by="$(sed -n 's/^falak_version=//p' "$work/manifest" 2>/dev/null | tail -1)"
+  if version_newer "$made_by" "$(env_get FALAK_VERSION)"; then
+    if [ "$force" = 1 ]; then warn "the backup was made by Falak $made_by, newer than this host's $(env_get FALAK_VERSION) (--force)"
+    else die "the backup was made by Falak $made_by, newer than this host's $(env_get FALAK_VERSION): install $made_by (or newer) first (install.sh --version $made_by), or restore anyway with --force"; fi
+  fi
   restore_kek_check "$work" "$force"
 
   # shellcheck disable=SC2086
   compose stop $APP_SERVICES edge >/dev/null 2>&1 || true
   if [ "$keep_env" != 1 ]; then
-    local keep_version keep_source keep_pull
-    keep_version="$(env_get FALAK_VERSION)"; keep_source="$(env_get FALAK_DEPLOY_SOURCE)"; keep_pull="$(env_get FALAK_PULL)"
-    install -m 600 "$work/env" "$ENV_FILE"
-    [ -f "$work/custom.env" ] && install -m 600 "$work/custom.env" "$FALAK_DIR/custom.env"
-    # Local-only knobs of this host win over the backup's.
-    [ -n "$keep_source" ] && env_set FALAK_DEPLOY_SOURCE "$keep_source"
-    [ -n "$keep_pull" ] && env_set FALAK_PULL "$keep_pull"
-    [ "${RESTORE_KEEP_VERSION:-1}" = 1 ] && [ -n "$keep_version" ] && env_set FALAK_VERSION "$keep_version"
-    ok ".env restored"
+    # Which images run and how compose runs them stay this host's (RESTORE_PINNED).
+    restore_env "$work/env"
+    if [ -f "$work/custom.env" ]; then install -m 600 "$work/custom.env" "$FALAK_DIR/custom.env"; fi
+    ok ".env restored (this host's version, image source and compose settings kept)"
   fi
 
   restore_kek "$work"
@@ -1428,6 +1572,7 @@ EOF
 }
 
 dr_setup() {
+  DR_ENV_FALLBACK=1
   local endpoint bucket region prefix access secret="" pass="" every drill registry check=1 prompt=1 file
   endpoint="$(dr_get FALAK_BACKUP_S3_ENDPOINT)"; bucket="$(dr_get FALAK_BACKUP_S3_BUCKET)"
   region="$(dr_get FALAK_BACKUP_S3_REGION us-east-1)"; prefix="$(dr_get FALAK_BACKUP_S3_PREFIX falak)"
@@ -1573,6 +1718,9 @@ dr_doctor() { # warnings only: not configured, the last backup too old or failed
   if [ -n "$at" ] && [ "$(iso_epoch "$at")" -gt "$(iso_epoch "$(state_get backup_at)")" ]; then
     warn "the last scheduled backup failed ($at): $(state_get failure_error)"; n=1
   fi
+  if [ -n "$(drill_leftovers)" ] && { ! command -v flock >/dev/null 2>&1 || flock -n "$FALAK_DIR/.ctl.lock" true; }; then
+    warn "containers of an interrupted restore drill are left ($(drill_project)): the next falak-ctl dr drill removes them"; n=1
+  fi
   if [ "$(state_get drill_ok)" = 0 ]; then warn "the last restore drill failed: $(state_get drill_message)"; n=1
   elif [ -z "$(state_get drill_at)" ]; then warn "no restore drill yet: falak-ctl dr drill"; n=1; fi
   [ "$n" = 0 ]
@@ -1610,16 +1758,19 @@ drill_switch() {
 
 # drill_prepare WORK DIR : the drill's install directory from the extracted backup and this host's bundle.
 drill_prepare() {
-  local work="$1" dir="$2" version prefix subnet
-  version="$(env_get FALAK_VERSION)"; prefix="$(env_get FALAK_IMAGE_PREFIX)"; subnet="$(drill_subnet)"
+  local work="$1" dir="$2" version prefix repo subnet
+  version="$(env_get FALAK_VERSION)"; prefix="$(env_get FALAK_IMAGE_PREFIX)"; repo="$(env_get FALAK_REPO)"; subnet="$(drill_subnet)"
   rm -rf "$dir"
   install -d -m 0700 "$dir"
   cp -R "$FALAK_DIR/deploy" "$dir/deploy"
   if [ -d "$FALAK_DIR/observability" ]; then cp -R "$FALAK_DIR/observability" "$dir/observability"; fi
   install -d -m 0711 "$dir/secrets"
   install -d -m 0755 "$dir/state"
-  install -m 600 "$work/env" "$dir/.env"
+  grep -vE '^[[:space:]]*(export[[:space:]]+)?(COMPOSE_|DOCKER_)' "$work/env" > "$dir/.env" || true
+  chmod 600 "$dir/.env"
   if [ -f "$work/custom.env" ]; then install -m 600 "$work/custom.env" "$dir/custom.env"; fi
+  # Nothing in the drill comes back by itself after a reboot or a crash of falak-ctl.
+  sed -i.orig 's/^\([[:space:]]*\)restart: unless-stopped/\1restart: "no"/' "$dir/deploy/compose.yml" && rm -f "$dir/deploy/compose.yml.orig"
   if [ -f "$work/secrets/kek" ]; then
     install -m 0400 "$work/secrets/kek" "$dir/secrets/kek"
     if [ -f "$work/secrets/kek.previous" ]; then install -m 0400 "$work/secrets/kek.previous" "$dir/secrets/kek.previous"; fi
@@ -1633,6 +1784,8 @@ drill_prepare() {
     # This host's images (nothing pulled), another subnet, no public ports, no observability profile.
     env_set FALAK_VERSION "$version"
     env_set FALAK_IMAGE_PREFIX "$prefix"
+    env_set FALAK_REPO "$repo"
+    env_set FALAK_DEPLOY_SOURCE ""
     env_set FALAK_PULL 0
     env_set FALAK_EDGE_SUBNET "$subnet"
     env_set FALAK_HTTP_PORT 18080
@@ -1655,7 +1808,7 @@ drill_run() {
   local backup="$1" work dir
   work="$(tmpdir)"
   dir="$(drill_dir)"
-  extract_backup "$backup" "$work"
+  extract_backup "$backup" "$work" "${DRILL_EXPECT:-}"
   restore_kek_check "$work" 0
   drill_prepare "$work" "$dir"
   drill_switch "$dir"
@@ -1716,14 +1869,29 @@ drill_run() {
   exit "$DRILL_FAILED"
 }
 
-drill_teardown() { # drill_teardown : the drill's containers, volumes, networks and directory go
-  local dir
+drill_leftovers() { # drill_leftovers -> ids of containers of the drill project (none outside a drill)
+  docker ps -aq --filter "label=com.docker.compose.project=$(drill_project)" 2>/dev/null || true
+}
+
+drill_teardown() { # drill_teardown : the drill's containers, volumes, networks and directory go (also an earlier run's)
+  local dir ids
   dir="$(drill_dir)"
-  [ -d "$dir" ] || return 0
-  (
-    drill_switch "$dir"
-    if [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ]; then compose down -v --remove-orphans >/dev/null 2>&1 || true; fi
-  )
+  if [ -d "$dir" ]; then
+    (
+      drill_switch "$dir"
+      if [ -f "$COMPOSE_FILE" ] && [ -f "$ENV_FILE" ]; then compose down -v --remove-orphans >/dev/null 2>&1 || true; fi
+    )
+  fi
+  # Whatever an interrupted run left behind, found by the project label.
+  ids="$(drill_leftovers)"
+  # shellcheck disable=SC2086  # container ids, one per line
+  if [ -n "$ids" ]; then docker rm -f $ids >/dev/null 2>&1 || true; fi
+  ids="$(docker volume ls -q --filter "label=com.docker.compose.project=$(drill_project)" 2>/dev/null || true)"
+  # shellcheck disable=SC2086
+  if [ -n "$ids" ]; then docker volume rm -f $ids >/dev/null 2>&1 || true; fi
+  ids="$(docker network ls -q --filter "label=com.docker.compose.project=$(drill_project)" 2>/dev/null || true)"
+  # shellcheck disable=SC2086
+  if [ -n "$ids" ]; then docker network rm $ids >/dev/null 2>&1 || true; fi
   rm -rf "$dir"
 }
 
@@ -1747,8 +1915,9 @@ dr_drill() {
   if [ -n "$backup" ]; then
     src="$(restore_source "$backup")"
   elif [ "$local_only" = 0 ] && s3_configured; then
-    # The drill proves what a lost host would get: the latest upload, downloaded and decrypted.
+    # The drill proves what a lost host would get: the latest upload, downloaded, authenticated and decrypted.
     src="$( (s3_fetch latest "$fetched") )" || src=""
+    if [ -n "$src" ]; then DRILL_EXPECT="$(basename "$src" .fdr)"; fi
   else
     src="$(latest_backup)"
   fi
@@ -1833,7 +2002,7 @@ cmd_update() {
   env_set FALAK_VERSION "$prev"
   restore_prev_bundle
   if [ -n "$backup" ]; then
-    RESTORE_KEEP_VERSION=1 do_restore "$backup" 0 1 || die "ROLLBACK FAILED: restore $backup manually (falak-ctl restore $backup --yes)"
+    do_restore "$backup" 0 1 || die "ROLLBACK FAILED: restore $backup manually (falak-ctl restore $backup --yes)"
   else
     if ! wait_healthy 420 || ! health_check; then die "ROLLBACK FAILED: previous version $prev is not healthy"; fi
   fi
@@ -2070,13 +2239,13 @@ main() {
         wait_healthy "${1:-420}" && health_check ;;
     down) require_install; compose down ;;
     restart) require_install; compose restart "$@" ;;
-    update|upgrade) cmd_update "$@" ;;
+    update|upgrade) ctl_lock; cmd_update "$@" ;;
     backup)
       case " $* " in
-        *" --scheduled "*) cmd_backup_scheduled "$@" ;;
-        *) cmd_backup "$@" ;;
+        *" --scheduled "*) ctl_lock 3600; cmd_backup_scheduled "$@" ;;
+        *) ctl_lock; cmd_backup "$@" ;;
       esac ;;
-    restore) cmd_restore "$@" ;;
+    restore) ctl_lock; cmd_restore "$@" ;;
     doctor) cmd_doctor "$@" ;;
     domain) cmd_domain "$@" ;;
     admin) cmd_admin "$@" ;;
@@ -2087,7 +2256,12 @@ main() {
     registry) cmd_registry "$@" ;;
     prune-images) cmd_prune_images "$@" ;;
     kek) cmd_kek "$@" ;;
-    dr) cmd_dr "$@" ;;
+    dr)
+      case "${1:-} $* " in
+        "drill "*" --scheduled "*) ctl_lock 7200 ;;
+        "drill "*) ctl_lock ;;
+      esac
+      cmd_dr "$@" ;;
     version) require_install; env_get FALAK_VERSION; echo ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;

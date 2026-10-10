@@ -527,11 +527,24 @@ create_admin() {
     ADMIN_PASSWORD=""
     ok "$ADMIN_EMAIL already exists (password unchanged; reset: falak-ctl admin reset-password $ADMIN_EMAIL)"
   fi
+  record_operator_organization "$out"
+}
+
+# The first admin's organization operates the install: it alone sees the control plane's disaster recovery (the
+# banner, Settings → Disaster recovery, dr.* alerts). Recorded once; a re-run never moves it.
+record_operator_organization() { # record_operator_organization FALAK_ADMIN_JSON
+  local id
+  [ -z "$(env_get FALAK_DR_ORGANIZATION)" ] || return 0
+  id="$(printf '%s' "$1" | sed -n 's/.*"organization_id":"\([0-9a-zA-Z]\{26\}\)".*/\1/p')"
+  [ -n "$id" ] || { warn "could not read the first admin's organization: set FALAK_DR_ORGANIZATION in $ENV_FILE"; return 0; }
+  env_set FALAK_DR_ORGANIZATION "$id"
+  dc up -d --wait --wait-timeout 300 >/dev/null 2>&1 || warn "restarting with FALAK_DR_ORGANIZATION failed: falak-ctl up"
 }
 
 # --- restore a lost control plane (--restore-from) --------------------------------------------------------
 # The DR settings falak-ctl needs, from the environment or asked on the terminal (stdin is the script under curl |
-# bash, so /dev/tty). Secrets are read without echo and only ever handed over in the environment or 0600 files.
+# bash, so /dev/tty). Secrets are read without echo, kept in unexported shell variables and handed to falak-ctl
+# only in its environment (prefix assignments, never a command line) or 0600 files removed on exit.
 restore_prompt() { # restore_prompt KEY LABEL SECRET DEFAULT
   local value="${!1:-}"
   if [ -z "$value" ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
@@ -541,7 +554,7 @@ restore_prompt() { # restore_prompt KEY LABEL SECRET DEFAULT
   fi
   value="${value:-$4}"
   [ -n "$value" ] || die "--restore-from needs $1 (set it in the environment)"
-  export "$1=$value"
+  printf -v "R_$1" '%s' "$value"
 }
 
 collect_restore_settings() {
@@ -561,20 +574,25 @@ restore_control_plane() {
     pull_retry dc pull --quiet || die "pulling images from $IMAGE_PREFIX failed"
     ok "images pulled"
   fi
-  # The backup's .env, KEK, Fleet CA and edge PKI replace this fresh install's; this host's version is kept.
-  kctl restore "$RESTORE_FROM" --yes || die "the restore failed (see above). Fix it and re-run with the same --restore-from"
+  # The backup's .env, KEK, Fleet CA and edge PKI replace this fresh install's; this host's version and image source
+  # are kept (falak-ctl restore pins them).
+  FALAK_BACKUP_S3_ENDPOINT="$R_FALAK_BACKUP_S3_ENDPOINT" FALAK_BACKUP_S3_BUCKET="$R_FALAK_BACKUP_S3_BUCKET" \
+    FALAK_BACKUP_S3_REGION="$R_FALAK_BACKUP_S3_REGION" FALAK_BACKUP_S3_PREFIX="$R_FALAK_BACKUP_S3_PREFIX" \
+    FALAK_BACKUP_S3_ACCESS_KEY="$R_FALAK_BACKUP_S3_ACCESS_KEY" FALAK_BACKUP_S3_SECRET_KEY="$R_FALAK_BACKUP_S3_SECRET_KEY" \
+    FALAK_BACKUP_PASSPHRASE="$R_FALAK_BACKUP_PASSPHRASE" \
+    kctl restore "$RESTORE_FROM" --yes || die "the restore failed (see above). Fix it and re-run with the same --restore-from"
   # Only now the schedule: a timer that ran before a failed restore would upload an empty install as the latest.
-  local dir secret pass
-  dir="$(mktemp -d)"; chmod 700 "$dir"
-  secret="$dir/secret"; pass="$dir/pass"
-  printf '%s\n' "$FALAK_BACKUP_S3_SECRET_KEY" > "$secret"; printf '%s\n' "$FALAK_BACKUP_PASSPHRASE" > "$pass"
-  chmod 600 "$secret" "$pass"
-  if ! kctl dr setup --yes --endpoint "$FALAK_BACKUP_S3_ENDPOINT" --bucket "$FALAK_BACKUP_S3_BUCKET" \
-      --region "$FALAK_BACKUP_S3_REGION" --prefix "$FALAK_BACKUP_S3_PREFIX" --access-key "$FALAK_BACKUP_S3_ACCESS_KEY" \
+  local secret pass
+  RESTORE_TMP="$(mktemp -d)"; chmod 700 "$RESTORE_TMP"
+  trap 'rm -rf "$RESTORE_TMP"' EXIT
+  secret="$RESTORE_TMP/secret"; pass="$RESTORE_TMP/pass"
+  ( umask 077; printf '%s\n' "$R_FALAK_BACKUP_S3_SECRET_KEY" > "$secret"; printf '%s\n' "$R_FALAK_BACKUP_PASSPHRASE" > "$pass" )
+  if ! kctl dr setup --yes --endpoint "$R_FALAK_BACKUP_S3_ENDPOINT" --bucket "$R_FALAK_BACKUP_S3_BUCKET" \
+      --region "$R_FALAK_BACKUP_S3_REGION" --prefix "$R_FALAK_BACKUP_S3_PREFIX" --access-key "$R_FALAK_BACKUP_S3_ACCESS_KEY" \
       --secret-key-file "$secret" --passphrase-file "$pass"; then
     warn "restored, but scheduling backups failed: run falak-ctl dr setup"
   fi
-  rm -rf "$dir"
+  rm -rf "$RESTORE_TMP"
   local restored
   restored="$(env_get FALAK_DOMAIN)"
   if [ "$restored" != "$DOMAIN" ]; then
