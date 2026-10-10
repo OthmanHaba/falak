@@ -13,6 +13,7 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteCreated;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\Volumes\Contracts\VolumeMounts;
 use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -46,7 +47,7 @@ it('creates a Laravel site on several servers with a leader, preset defaults and
         ->and($site->web_directory)->toBe('public')
         ->and($site->unix_user)->toBe('falak')
         ->and($site->laravel->scheduler)->toBeTrue()
-        ->and(array_map(fn ($p) => $p->path, $site->shared_paths))->toBe(['storage', '.env'])
+        ->and(array_map(fn ($p) => $p->path, app(VolumeMounts::class)->sharedPaths($site->id)))->toBe(['storage', '.env'])
         ->and($site->deploy_script)->toContain('$FALAK_FETCH')->toContain('$FALAK_ACTIVATE')->toContain('artisan migrate --force')
         ->and($site->testDomain())->toBe('shop.falak.test')
         ->and($site->deploy_key_id)->not->toBeNull()
@@ -102,6 +103,8 @@ it('prepares isolated php-fpm sites: unix user, then the FPM pool', function () 
         'listen' => '/run/php/falak-1-blog-8.3.sock',
         'state' => 'present',
     ])->and($pool['payload']['php_admin_values']['open_basedir'])->toStartWith('/srv/falak/sites/1-blog/')
+        // The release .env links to the agent's tmpfs (PHP checks the resolved path).
+        ->and($pool['payload']['php_admin_values']['open_basedir'])->toEndWith(':/run/falak/env/1-blog.env:/run/falak/env/1-blog.d/')
         ->and($target->refresh()->step)->toBe('pool');
 
     sites_finish($pool);
@@ -169,8 +172,6 @@ it('validates runtime compatibility with the servers', function () {
     $this->post('/sites', sites_input([$fpm->id], ['runtime' => 'php-fpm', 'php_version' => '8.2']))->assertSessionHasErrors('server_ids');
     expect(session('errors')->first('server_ids'))->toContain('PHP 8.2 is not installed');
     $this->post('/sites', sites_input([$lb->id]))->assertSessionHasErrors('server_ids');
-    $this->post('/sites', sites_input([$plain->id], ['framework' => 'docker', 'runtime' => 'docker', 'php_version' => null]))->assertSessionHasErrors('server_ids');
-    expect(session('errors')->first('server_ids'))->toContain('Docker is not installed');
     $this->post('/sites', sites_input([$plain->id], ['runtime' => 'node']))->assertSessionHasErrors('runtime');
     $this->post('/sites', sites_input([$plain->id], ['build_mode' => 'docker']))->assertSessionHasErrors('build_mode');
     $this->post('/sites', sites_input([$plain->id], ['leader_server_id' => $fpm->id]))->assertSessionHasErrors('leader_server_id');

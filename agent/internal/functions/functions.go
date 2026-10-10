@@ -26,6 +26,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -169,7 +170,12 @@ type ApplyPayload struct {
 	InstallTimeoutS int                `json:"install_timeout_s,omitempty"`
 	KeepReleases    int                `json:"keep_releases,omitempty"`
 	Labels          map[string]string  `json:"labels,omitempty"`
+	// Mask names the secret variables of env.
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values.
+func (p ApplyPayload) Secrets() []string { return redact.FromEnv(p.Env, p.Mask) }
 
 // ApplyResult is the fn.release.apply result.
 type ApplyResult struct {

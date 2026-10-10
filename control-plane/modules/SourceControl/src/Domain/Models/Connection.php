@@ -2,6 +2,7 @@
 
 namespace Falak\SourceControl\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\SourceControl\Contracts\Data\ConnectionData;
 use Falak\SourceControl\Contracts\ProviderType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -17,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string $auth_type oauth | app | token | basic | none
  * @property ?string $base_url
  * @property ?string $account
+ * @property ?string $account_id the provider's immutable id of that account (user connections)
  * @property array<string, mixed> $credentials access_token, refresh_token, expires_at | installation_id | token | username, password
  * @property ?string $created_by
  * @property string $status active | suspended | disconnected (GitHub App installations suspended / removed on GitHub)
@@ -50,7 +52,7 @@ class Connection extends Model
     {
         return [
             'provider' => ProviderType::class,
-            'credentials' => 'encrypted:array',
+            'credentials' => SealedArray::class,
         ];
     }
 

@@ -2,13 +2,15 @@
 
 namespace Database\Seeders;
 
-use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Application\Passwords;
 use Falak\Databases\Domain\Enums\Engine;
+use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\Grant;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Deployments\Domain\Models\Deployment;
@@ -114,7 +116,6 @@ class UiDemoSeeder extends Seeder
                 'branch' => $repository ? 'main' : null,
                 'deploy_script' => '$FALAK_FETCH',
                 'laravel' => new LaravelSettings,
-                'shared_paths' => [],
             ]);
 
             foreach ($index === 0 ? [$servers[0], $servers[1]] : [$servers[$index % 2]] as $position => $server) {
@@ -246,7 +247,6 @@ YAML;
             'unix_user' => 'falak',
             'deploy_script' => '',
             'laravel' => new LaravelSettings,
-            'shared_paths' => [],
             'compose_source' => ComposeSource::Inline,
             'public_services' => [
                 ['service' => 'n8n', 'port' => 5678, 'domain' => 'automations.acme.dev', 'host_port' => 3200],
@@ -349,7 +349,7 @@ YAML;
      */
     private function database(string $organizationId, Server $server): Database
     {
-        $engine = app(EngineInventory::class)->sync($server->id) ?? throw new \RuntimeException('db-1 has no engine');
+        $engine = $this->instance($organizationId, $server, Engine::PostgreSql, 'storefront-db', 1024);
         $database = $engine->databases()->create(['organization_id' => $organizationId, 'server_id' => $server->id, 'name' => 'storefront_db', 'status' => ResourceStatus::Active]);
         $user = $engine->users()->create([
             'organization_id' => $organizationId, 'server_id' => $server->id, 'username' => 'storefront', 'password' => 'demo-password-not-real', 'host' => '%', 'status' => ResourceStatus::Active,
@@ -361,14 +361,14 @@ YAML;
             'region' => 'auto', 'bucket' => 'acme-backups', 'path_style' => false, 'access_key_id' => 'demo-access-key-id', 'secret_access_key' => 'demo-secret', 'verified_at' => now(),
         ]);
         $schedule = BackupSchedule::query()->create([
-            'organization_id' => $organizationId, 'database_server_id' => $engine->id, 'storage_provider_id' => $storage->id, 'name' => 'Nightly',
+            'organization_id' => $organizationId, 'database_instance_id' => $engine->id, 'storage_provider_id' => $storage->id, 'name' => 'Nightly',
             'cron' => '0 3 * * *', 'retention_count' => 14, 'compression' => 'gzip', 'enabled' => true, 'last_run_at' => now()->subDay()->setTime(3, 0), 'next_run_at' => now()->addDay()->setTime(3, 0),
         ]);
         $schedule->databases()->attach($database->id);
 
         foreach ([[1, 'succeeded', 48_211_004], [2, 'succeeded', 47_902_311], [3, 'failed', null]] as [$daysAgo, $status, $size]) {
             Backup::query()->create([
-                'organization_id' => $organizationId, 'schedule_id' => $schedule->id, 'database_id' => $database->id, 'database_server_id' => $engine->id,
+                'organization_id' => $organizationId, 'schedule_id' => $schedule->id, 'database_id' => $database->id, 'database_instance_id' => $engine->id, 'instance_name' => $engine->name, 'engine_version' => $engine->version,
                 'server_id' => $server->id, 'server_name' => $server->name, 'database_name' => $database->name, 'engine' => 'postgresql', 'storage_provider_id' => $storage->id,
                 'object_key' => "storefront_db/{$daysAgo}.sql.gz", 'compression' => 'gzip', 'trigger' => 'scheduled', 'status' => $status, 'size_bytes' => $size,
                 'duration_ms' => $size ? 8200 + $daysAgo * 100 : null, 'error' => $size ? null : 'pg_dump: connection timed out', 'started_at' => now()->subDays($daysAgo),
@@ -380,22 +380,40 @@ YAML;
     }
 
     /**
-     * A Redis instance on app-1 (its own process, port and `default` password; docs/plans/REDIS.md), next to Marketing
-     * on the canvas. app-1's agent advertises db.redis (InfrastructureDemoSeeder), so the canvas picker can create more.
+     * A Redis container on app-1 (its keyspace and `default` user), next to Marketing on the canvas.
      */
     private function cacheInstance(string $organizationId, Server $server): Database
     {
-        $engine = app(EngineInventory::class)->sync($server->id, Engine::Redis) ?? throw new \RuntimeException('app-1 has no Redis');
+        $engine = $this->instance($organizationId, $server, Engine::Redis, 'sessions', 320, ['eviction' => 'noeviction', 'persistence' => 'rdb']);
         $database = $engine->databases()->create([
-            'organization_id' => $organizationId, 'server_id' => $server->id, 'name' => 'sessions', 'port' => 6380,
-            'settings' => ['maxmemory_mb' => 256, 'eviction' => 'noeviction', 'persistence' => 'rdb'], 'status' => ResourceStatus::Active,
+            'organization_id' => $organizationId, 'server_id' => $server->id, 'name' => 'sessions', 'status' => ResourceStatus::Active,
         ]);
         $user = $engine->users()->create([
-            'organization_id' => $organizationId, 'server_id' => $server->id, 'username' => 'sessions', 'password' => 'demoPasswordNotReal', 'host' => '%', 'status' => ResourceStatus::Active,
+            'organization_id' => $organizationId, 'server_id' => $server->id, 'username' => 'default', 'password' => $engine->root_password, 'host' => '%', 'status' => ResourceStatus::Active,
         ]);
         Grant::query()->create(['user_id' => $user->id, 'database_id' => $database->id, 'privileges' => ['ALL PRIVILEGES']]);
 
         return $database;
+    }
+
+    /**
+     * A running database container (demo rows only: no agent creates it).
+     *
+     * @param  array<string, string|int>  $settings
+     */
+    private function instance(string $organizationId, Server $server, Engine $engine, string $name, int $memoryMb, array $settings = []): DatabaseInstance
+    {
+        $instance = new DatabaseInstance;
+        $instance->id = strtolower((string) Str::ulid());
+        $instance->forceFill([
+            'organization_id' => $organizationId, 'server_id' => $server->id, 'server_name' => $server->name, 'name' => $name,
+            'engine' => $engine, 'version' => $engine->defaultVersion(), 'image' => $engine->image($engine->defaultVersion()),
+            'image_digest' => 'sha256:'.hash('sha256', $name), 'hostname' => "falak-db-{$instance->id}", 'port' => $engine->defaultPort(),
+            'host_port' => 20000 + DatabaseInstance::query()->where('server_id', $server->id)->count(), 'memory_bytes' => $memoryMb * 1024 ** 2,
+            'settings' => $settings ?: null, 'root_password' => Passwords::generate(), 'status' => InstanceStatus::Active, 'health' => 'healthy', 'health_at' => now(),
+        ])->save();
+
+        return $instance;
     }
 
     /**

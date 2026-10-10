@@ -12,15 +12,16 @@ use Illuminate\Support\Str;
  * to github.com/settings/apps/new (or an organization's), the user confirms, GitHub redirects back with a
  * one-hour code that {@see convert()} exchanges for the app's id, private key and webhook secret.
  *
- * Least privilege: contents + metadata read (clone, list repositories and branches, read commits). Falak does
- * not report commit statuses or build pull-request previews, so it asks for nothing else. The `installation`
- * and `installation_repositories` events are delivered to every app without subscribing.
+ * Least privilege: contents + metadata read (clone, list repositories and branches, read commits); for preview
+ * environments, pull requests and issues write (the one comment per pull request, `/falak preview` approvals arrive as
+ * issue comments) and commit statuses write. The `installation` and `installation_repositories` events are delivered
+ * to every app without subscribing.
  */
 class AppManifest
 {
-    public const PERMISSIONS = ['contents' => 'read', 'metadata' => 'read'];
+    public const PERMISSIONS = ['contents' => 'read', 'metadata' => 'read', 'pull_requests' => 'write', 'issues' => 'write', 'statuses' => 'write'];
 
-    public const EVENTS = ['push'];
+    public const EVENTS = ['push', 'pull_request', 'issue_comment'];
 
     /** GitHub login rules for users and organizations. */
     public const OWNER_PATTERN = '/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/';

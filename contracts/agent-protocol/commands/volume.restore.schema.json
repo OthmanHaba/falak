@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/volume.restore.schema.json",
+  "title": "volume.restore — download a volume.archive snapshot (sha256 checked) into a new or empty volume, created when missing",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "volume",
+    "source",
+    "sha256",
+    "encryption"
+  ],
+  "properties": {
+    "volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$",
+          "description": "The volume's id (lower-case ULID)"
+        },
+        "kind": {
+          "enum": [
+            "docker",
+            "sized",
+            "bind",
+            "shared_path"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+          "description": "docker: the Docker volume's name"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[^\\x00]*$",
+          "maxLength": 4096,
+          "description": "bind: the host path (within the agent's FALAK_VOLUME_BIND_ALLOW); shared_path: the site's shared path (under the sites root). sized volumes live at /var/lib/falak/volumes/<id>"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "docker"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "bind",
+                  "shared_path"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 16777216,
+      "maximum": 17592186044416,
+      "description": "sized: the image file's size in bytes (16 MiB – 16 TiB)"
+    },
+    "labels": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_.-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "const": "url"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "uncompressed_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The snapshot's unpacked size, checked against the free space"
+    },
+    "archive_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The snapshot's recorded (compressed) size: a download larger than it (+1 MiB) is aborted"
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "plaintext_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "the tar stream's SHA-256, checked against the file's authenticated trailer"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes"
+      ],
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        }
+      }
+    },
+    "encryption": {
+      "description": "opens an FKB1 backup: cp with the data key the control plane unwrapped; age with the customer's identity, given for this command only (never stored by the control plane)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "identity"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "identity": {
+              "type": "string",
+              "pattern": "^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$",
+              "description": "secret: the customer's age X25519 identity (private key)"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

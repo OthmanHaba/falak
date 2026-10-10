@@ -1,28 +1,27 @@
-import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { format } from 'date-fns';
-import { Settings2 } from 'lucide-react';
-import { FormEventHandler, useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { BackupsTable } from '../components/backups-table';
 import { ConnectionCard } from '../components/connection-card';
 import { StatusBadge, formatBytes, formatDuration } from '../components/database-ui';
 import { DatabasesCard } from '../components/databases-card';
+import { InstanceCard } from '../components/instance-card';
+import { PitrCard } from '../components/pitr-card';
 import { SchedulesCard } from '../components/schedules-card';
 import { UsersCard } from '../components/users-card';
 import {
+    instanceSummary,
     type BackupRow,
     type Connection,
+    type DatabaseInstance,
     type DatabaseRow,
-    type DatabaseServer,
     type DatabaseUserRow,
+    type InstanceOptions,
+    type PitrState,
     type RestoreRow,
     type RestoreTarget,
     type ScheduleRow,
@@ -30,134 +29,128 @@ import {
 } from '../types';
 
 interface Props {
-    server: DatabaseServer;
+    instance: DatabaseInstance;
     connection: Connection;
     databases: DatabaseRow[];
     users: DatabaseUserRow[];
     schedules: ScheduleRow[];
     backups: BackupRow[];
     restores: RestoreRow[];
+    pitr: PitrState;
     storageProviders: StorageOption[];
     restoreTargets: RestoreTarget[];
-    options: { privileges: string[]; versions: string[]; compressions: string[]; default_charset: string | null; default_collation: string | null };
+    options: InstanceOptions;
     can: { manage: boolean; reveal: boolean; restore: boolean; manageStorage: boolean };
 }
 
-const CONVERGING = ['pending', 'running', 'deleting'];
+const CONVERGING = ['pending', 'running', 'deleting', 'upgrading'];
 
 export default function Show({
-    server,
+    instance,
     connection,
     databases,
     users,
     schedules,
     backups,
     restores,
+    pitr,
     storageProviders,
     restoreTargets,
     options,
     can,
 }: Props) {
-    const [editingEngine, setEditingEngine] = useState(false);
-    const engine = useForm({ version: server.version_source === 'manual' ? (server.version ?? '') : '', port: String(server.port) });
-    // Redis / Valkey: instances with their own port and `default` user; no extra users (backups: RDB snapshots).
-    const keyValue = server.kind === 'key_value';
+    // Redis / Valkey: one keyspace and its `default` user; no extra databases or users (backups: RDB snapshots).
+    const keyValue = instance.kind === 'key_value';
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Databases', href: '/databases' },
-        { title: server.server_name, href: `/databases/servers/${server.id}` },
+        { title: instance.name, href: `/databases/instances/${instance.id}` },
     ];
 
     const converging =
+        CONVERGING.includes(instance.status) ||
+        instance.rotating_password ||
         databases.some((d) => CONVERGING.includes(d.status)) ||
         users.some((u) => CONVERGING.includes(u.status)) ||
         backups.some((b) => CONVERGING.includes(b.status)) ||
-        restores.some((r) => CONVERGING.includes(r.status));
+        restores.some((r) => CONVERGING.includes(r.status)) ||
+        pitr.restores.some((r) => CONVERGING.includes(r.status)) ||
+        pitr.bases.some((b) => CONVERGING.includes(b.status));
 
     // Agent results arrive asynchronously: refresh while anything is converging.
     useEffect(() => {
         if (!converging) return;
-        const timer = window.setInterval(() => router.reload({ only: ['databases', 'users', 'backups', 'restores'] }), 3000);
+        const timer = window.setInterval(
+            () => router.reload({ only: ['instance', 'connection', 'databases', 'users', 'backups', 'restores', 'pitr'] }),
+            3000,
+        );
 
         return () => window.clearInterval(timer);
     }, [converging]);
 
-    const submitEngine: FormEventHandler = (event) => {
-        event.preventDefault();
-        engine.transform((data) => ({
-            version: data.version === '' || data.version === 'auto' ? null : data.version,
-            port: keyValue ? null : Number(data.port),
-        }));
-        engine.put(`/databases/servers/${server.id}`, { preserveScroll: true, onSuccess: () => setEditingEngine(false) });
-    };
-
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={`${server.server_name} databases`} />
+            <Head title={`${instance.name} · databases`} />
             <div className="space-y-6 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                        <h2 className="text-xl font-semibold tracking-tight">{server.server_name}</h2>
+                        <h2 className="flex items-center gap-2 font-mono text-xl font-semibold tracking-tight">
+                            {instance.name}
+                            <StatusBadge status={instance.status} title={instance.status_message} />
+                        </h2>
                         <p className="text-muted-foreground text-sm">
-                            {server.engine_label} {server.version ?? ''}
-                            {keyValue ? ' · one process per instance (ports 6380–6479)' : ` · port ${server.port}`}
-                            {server.dedicated ? (keyValue ? ' · dedicated cache server' : ' · dedicated database server') : ''}
-                            {server.version_source === 'default' && ' · version assumed from the distro'}
+                            {instanceSummary(instance)} · on {instance.server_name}
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline" asChild>
-                            <Link href={`/servers/${server.server_id}`}>Server</Link>
-                        </Button>
-                        {can.manage && (
-                            <Button variant="outline" onClick={() => setEditingEngine(true)}>
-                                <Settings2 /> Engine
+                        {instance.volume_id && (
+                            <Button variant="outline" asChild>
+                                <Link href={`/volumes/${instance.volume_id}`}>Data volume</Link>
                             </Button>
                         )}
+                        <Button variant="outline" asChild>
+                            <Link href={`/servers/${instance.server_id}`}>Server</Link>
+                        </Button>
                     </div>
                 </div>
 
                 <div className="grid gap-6 xl:grid-cols-3">
                     <div className="space-y-6 xl:col-span-2">
                         <DatabasesCard
-                            server={server}
+                            instance={instance}
                             databases={databases}
                             storageProviders={storageProviders}
                             canManage={can.manage}
-                            defaults={{ charset: options.default_charset, collation: options.default_collation }}
+                            defaults={{ charset: options.default_charset ?? null, collation: options.default_collation ?? null }}
                         />
                         {!keyValue && (
-                            <UsersCard server={server} users={users} databases={databases} privileges={options.privileges} canManage={can.manage} />
+                            <UsersCard
+                                instance={instance}
+                                users={users}
+                                databases={databases}
+                                privileges={options.privileges}
+                                canManage={can.manage}
+                            />
                         )}
                     </div>
                     <div className="space-y-6">
-                        {keyValue ? (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">Connect</CardTitle>
-                                </CardHeader>
-                                <CardContent className="text-muted-foreground space-y-2 text-sm">
-                                    <p>
-                                        Each instance listens on 127.0.0.1 and its own port, with the password of its <code>default</code> user. Sites
-                                        on {server.server_name} reference it as <code>{'${{ <service>.REDIS_URL }}'}</code>; the instance&apos;s panel
-                                        on the canvas shows the connection details.
-                                    </p>
-                                    <p>Backups are RDB snapshots of the running instance; a restore replaces an instance&apos;s data.</p>
-                                </CardContent>
-                            </Card>
-                        ) : (
-                            <ConnectionCard connection={connection} databases={databases} users={users} canReveal={can.reveal} />
-                        )}
+                        <InstanceCard instance={instance} options={options} canManage={can.manage} />
+                        <ConnectionCard connection={connection} databases={databases} users={users} canReveal={can.reveal} />
                     </div>
                 </div>
 
                 <SchedulesCard
-                    server={server}
+                    instance={instance}
                     schedules={schedules}
                     databases={databases}
                     storageProviders={storageProviders}
                     canManage={can.manage}
+                    drillServers={options.drill_servers}
                 />
+
+                {!keyValue && (
+                    <PitrCard instance={instance} pitr={pitr} storageProviders={storageProviders} canManage={can.manage} canRestore={can.restore} />
+                )}
 
                 <Card className="gap-0 py-0">
                     <CardHeader className="border-b py-4">
@@ -204,55 +197,6 @@ export default function Show({
                     </Card>
                 )}
             </div>
-
-            <Dialog open={editingEngine} onOpenChange={setEditingEngine}>
-                <DialogContent>
-                    <form onSubmit={submitEngine} className="space-y-4">
-                        <DialogHeader>
-                            <DialogTitle>Engine settings</DialogTitle>
-                            <DialogDescription>
-                                The version is detected from the agent; pin it here only when detection is wrong. The port is used in connection
-                                details.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-2">
-                            <Label>Version</Label>
-                            <Select value={engine.data.version || 'auto'} onValueChange={(value) => engine.setData('version', value)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="auto">Detect automatically</SelectItem>
-                                    {options.versions.map((version) => (
-                                        <SelectItem key={version} value={version}>
-                                            {server.engine_label} {version}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <InputError message={engine.errors.version} />
-                        </div>
-                        {!keyValue && (
-                            <div className="grid gap-2">
-                                <Label htmlFor="engine-port">Port</Label>
-                                <Input
-                                    id="engine-port"
-                                    type="number"
-                                    value={engine.data.port}
-                                    onChange={(e) => engine.setData('port', e.target.value)}
-                                />
-                                <InputError message={engine.errors.port} />
-                            </div>
-                        )}
-                        <DialogFooter>
-                            <Button type="button" variant="ghost" onClick={() => setEditingEngine(false)}>
-                                Cancel
-                            </Button>
-                            <Button disabled={engine.processing}>Save</Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
         </AppLayout>
     );
 }

@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	goruntime "runtime"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,6 +41,10 @@ type Facts struct {
 	AgentVersion string              `json:"agent_version"`
 	Features     []string            `json:"features"`
 	AgentSHA256  string              `json:"agent_sha256,omitempty"`
+	// RebootRequired: the distribution asked for a reboot (kernel or libc updates).
+	RebootRequired bool `json:"reboot_required"`
+	// TLSCertificates are the edge's ACME certificates and their expiry.
+	TLSCertificates []TLSCertificate `json:"tls_certificates,omitempty"`
 }
 
 // Interface is one network interface that is up, with its addresses.
@@ -124,29 +127,9 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 				}
 			}
 		}
-		// Key-value engines (db.redis.*): "Redis server v=7.0.15 sha=…", "Valkey server v=8.1.1 …" — Valkey 7.2 says
-		// just "Server v=7.2.13 …". Debian's valkey-redis-compat links redis-server to Valkey; the banner tells them
-		// apart, so such a link is not reported as Redis.
-		for _, kv := range []struct {
-			key, bin string
-			banners  []string
-		}{
-			{"redis", "/usr/bin/redis-server", []string{"redis"}},
-			{"valkey", "/usr/bin/valkey-server", []string{"valkey", "server"}},
-		} {
-			if !fs.Exists(kv.bin) {
-				continue
-			}
-			cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			res, err := r.Run(cctx, runner.Cmd{Name: fs.P(kv.bin), Args: []string{"--version"}})
-			cancel()
-			if err == nil && res.ExitCode == 0 {
-				if banner, v := KeyValueVersion(string(res.Stdout)); slices.Contains(kv.banners, banner) && v != "" {
-					f.Runtimes[kv.key] = []string{v}
-				}
-			}
-		}
 	}
+	f.RebootRequired = RebootRequired(fs)
+	f.TLSCertificates = TLSCertificates(fs)
 	if v := dirVersions(fs, "/etc/php", func(n string) bool { _, err := strconv.ParseFloat(n, 64); return err == nil }); len(v) > 0 {
 		f.Runtimes["php"] = v
 	}
@@ -154,21 +137,6 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 		f.Runtimes["node"] = v
 	}
 	return f, nil
-}
-
-// KeyValueVersion parses `redis-server --version` / `valkey-server --version`: the lower-cased first word ("redis",
-// "valkey") and the v= version.
-func KeyValueVersion(out string) (string, string) {
-	words := strings.Fields(out)
-	if len(words) == 0 {
-		return "", ""
-	}
-	for _, w := range words {
-		if v, ok := strings.CutPrefix(w, "v="); ok {
-			return strings.ToLower(words[0]), v
-		}
-	}
-	return strings.ToLower(words[0]), ""
 }
 
 func frankenVersion(out string) string {

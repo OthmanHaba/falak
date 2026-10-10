@@ -5,12 +5,14 @@ namespace Falak\Deployments\Domain\Models;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -34,7 +36,10 @@ use Illuminate\Support\Carbon;
  * @property ?string $target_release_id
  * @property ?string $previous_release_id
  * @property bool $rolling_back
- * @property bool $rolled_back
+ * @property bool $rolled_back a failed deployment's servers were reverted, or a live release was rolled back by its watch
+ * @property ?string $rolled_back_reason why the watch after it went live rolled it back (or only alerted)
+ * @property ?Carbon $rolled_back_at
+ * @property ?string $auto_rollback_of a rollback deployment started by the watch of this deployment
  * @property bool $cancel_requested
  * @property ?array<string, string> $variables
  * @property ?array<string, mixed> $settings
@@ -47,6 +52,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon $created_at
  * @property Collection<int, DeploymentTarget> $targets
  * @property Collection<int, DeploymentStep> $steps
+ * @property ?ReleaseWatch $watch
+ * @property ?ReleaseWatch $watch
  */
 class Deployment extends Model
 {
@@ -74,11 +81,12 @@ class Deployment extends Model
             'rolled_back' => 'boolean',
             'cancel_requested' => 'boolean',
             // Deploy hook FALAK_VAR_* values may carry secrets.
-            'variables' => 'encrypted:array',
+            'variables' => SealedArray::class,
             'settings' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'waiting_since' => 'datetime',
+            'rolled_back_at' => 'datetime',
         ];
     }
 
@@ -96,6 +104,16 @@ class Deployment extends Model
     public function steps(): HasMany
     {
         return $this->hasMany(DeploymentStep::class)->orderBy('position');
+    }
+
+    /**
+     * The watch window after its release went live (sites that watch releases).
+     *
+     * @return HasOne<ReleaseWatch, $this>
+     */
+    public function watch(): HasOne
+    {
+        return $this->hasOne(ReleaseWatch::class, 'deployment_id');
     }
 
     /**

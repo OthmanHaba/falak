@@ -5,27 +5,33 @@ namespace Falak\Processes;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Edge\Events\EdgeApplied;
+use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Limits\Contracts\CapacitySources;
 use Falak\Processes\Application\Jobs\PollProcessStatus;
 use Falak\Processes\Application\Listeners\ConvergeOnSiteChanges;
 use Falak\Processes\Application\Listeners\DeleteOrganizationProcesses;
 use Falak\Processes\Application\Listeners\ForgetDeletedServer;
 use Falak\Processes\Application\Listeners\HandleCommandOutcome;
+use Falak\Processes\Application\Listeners\ResendLostProcessSecrets;
 use Falak\Processes\Application\Listeners\StopDrainedOctane;
 use Falak\Processes\Contracts\OctaneRouting;
 use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Contracts\ProcessOwners;
 use Falak\Processes\Contracts\ScheduleDirectory;
 use Falak\Processes\Contracts\ScheduleSources;
 use Falak\Processes\Events\ProgramCrashLooping;
 use Falak\Processes\Events\ProgramRecovered;
 use Falak\Processes\Infrastructure\AgentProcessControl;
 use Falak\Processes\Infrastructure\EloquentOctaneRouting;
+use Falak\Processes\Infrastructure\EloquentProcessOwners;
 use Falak\Processes\Infrastructure\NoScheduleSources;
+use Falak\Processes\Infrastructure\ProcessesCapacity;
 use Falak\Processes\Infrastructure\StateScheduleDirectory;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Sites\Events\SiteCreated;
@@ -47,6 +53,7 @@ class ProcessesServiceProvider extends ModuleServiceProvider
         ScheduleDirectory::class => StateScheduleDirectory::class,
         ScheduleSources::class => NoScheduleSources::class,
         OctaneRouting::class => EloquentOctaneRouting::class,
+        ProcessOwners::class => EloquentProcessOwners::class,
     ];
 
     public function register(): void
@@ -67,6 +74,9 @@ class ProcessesServiceProvider extends ModuleServiceProvider
         $types->register(ProgramCrashLooping::ALERT_TYPE, 'Process keeps crashing', 'Processes', Severity::Critical);
         $types->register(ProgramRecovered::ALERT_TYPE, 'Process running again', 'Processes', Severity::Info);
 
+        // Workers' and daemons' limits in servers' capacity views.
+        $this->app->make(CapacitySources::class)->register(ProcessesCapacity::class);
+
         Event::listen(SiteCreated::class, [ConvergeOnSiteChanges::class, 'created']);
         Event::listen(SiteUpdated::class, [ConvergeOnSiteChanges::class, 'updated']);
         Event::listen(SiteTargetsChanged::class, [ConvergeOnSiteChanges::class, 'targetsChanged']);
@@ -75,6 +85,7 @@ class ProcessesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
+        Event::listen(AgentSecretsMissing::class, ResendLostProcessSecrets::class);
         Event::listen(EdgeApplied::class, StopDrainedOctane::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationProcesses::class);
 

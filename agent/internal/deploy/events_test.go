@@ -33,6 +33,10 @@ func (failingProcs) Restart(context.Context, []string) error {
 	return errors.New("worker restart failed")
 }
 
+func (failingProcs) RestartSite(context.Context, string) ([]string, error) {
+	return nil, errors.New("worker restart failed")
+}
+
 // Mirrors the Grafana alert / dashboard LogQL:
 //
 //	{service_name="falak-agent"} | falak_event_type="deployment" | falak_deployment_status="failed"

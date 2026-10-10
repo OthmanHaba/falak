@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
@@ -40,6 +41,10 @@ type fakeEngine struct {
 	networks map[string][]string
 	// network name → labels
 	networkLabels map[string]map[string]string
+	// container name → docker.update bodies
+	updates map[string][]UpdateBody
+	// served by GET /events (then the stream ends)
+	events []EngineEvent
 }
 
 type fcont struct {
@@ -203,6 +208,14 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			c.running = true
 			w.WriteHeader(204)
+		case r.Method == "POST" && action == "update":
+			var b UpdateBody
+			json.NewDecoder(r.Body).Decode(&b)
+			if e.updates == nil {
+				e.updates = map[string][]UpdateBody{}
+			}
+			e.updates[c.name] = append(e.updates[c.name], b)
+			jsonOut(w, 200, map[string]any{"Warnings": []string{}})
 		case r.Method == "POST" && action == "restart":
 			e.restarts = append(e.restarts, c.name)
 			c.running = true
@@ -225,6 +238,17 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(204)
 		default:
 			jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
+		}
+	case r.Method == "GET" && p == "/events":
+		var f map[string][]string
+		json.Unmarshal([]byte(q.Get("filters")), &f)
+		if strings.Join(f["event"], ",") != "oom" || strings.Join(f["type"], ",") != "container" {
+			jsonOut(w, 400, map[string]string{"message": "unexpected filters " + q.Get("filters")})
+			return
+		}
+		w.WriteHeader(200)
+		for _, ev := range e.events {
+			json.NewEncoder(w).Encode(ev)
 		}
 	case r.Method == "GET" && p == "/networks":
 		var f map[string][]string
@@ -418,7 +442,7 @@ func TestPull(t *testing.T) {
 func TestRunIdempotent(t *testing.T) {
 	s, e, _, _, _ := newSvc(t)
 	p := RunPayload{Name: "redis", Image: "redis:7", Env: map[string]string{"B": "2", "A": "1"},
-		Ports: []PortSpec{{HostPort: 6379, ContainerPort: 6379}}, Volumes: []VolumeSpec{{Source: "/data/redis", Target: "/data", ReadOnly: true}}, CPUs: 0.5}
+		Ports: []PortSpec{{HostPort: 6379, ContainerPort: 6379}}, Volumes: []VolumeSpec{{Source: "/data/redis", Target: "/data", ReadOnly: true}}, Limits: Limits{CPUs: 0.5}}
 	fin, _ := exec1(t, s, "docker.run", p)
 	r := fin.Result.(RunResult)
 	if fin.Error != "" || !r.Changed {
@@ -760,5 +784,34 @@ func TestContainerSwapWithoutEdgeRoute(t *testing.T) {
 	}
 	if len(up.calls) != 0 {
 		t.Fatalf("edge switched: %v", up.calls)
+	}
+}
+
+func TestComposeDownForgetsTheProjectsEnvFiles(t *testing.T) {
+	s, _, _, _, root := newSvc(t)
+	dir := filepath.Join(root, envlinks.DefaultEnvDir)
+	if err := os.MkdirAll(dir, 0o711); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"compose-shop.env", "compose-shop.prod.env", "compose-shop2.env", "compose-shop-api.env", "shop.env"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("SECRET=x\n"), 0o400); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fin, col := exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "shop", Directory: "/srv/falak/compose/shop"})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	var left []string
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	// Only shop's own files go: other projects' (shop2, shop-api) and site env files stay.
+	if strings.Join(left, ",") != "compose-shop-api.env,compose-shop2.env,shop.env" {
+		t.Fatalf("left %v", left)
+	}
+	if !strings.Contains(col.Output(""), "removed compose-shop.env") {
+		t.Fatalf("output %q", col.Output(""))
 	}
 }

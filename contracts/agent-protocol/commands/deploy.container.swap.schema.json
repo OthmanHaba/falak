@@ -156,17 +156,74 @@
                 "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"
               }
             }
+          },
+          "environment": {
+            "type": "boolean",
+            "default": false,
+            "description": "feature db.instances: a Falak environment network (name falak-env-<id>): created when missing instead of waited for"
           }
         }
       }
     },
+    "restart_policy": {
+      "enum": [
+        "no",
+        "always",
+        "unless-stopped",
+        "on-failure"
+      ],
+      "default": "unless-stopped"
+    },
     "memory_bytes": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Hard memory limit; swap is capped at the same value (no swap on top), so a service over its limit is OOM-killed"
     },
     "cpus": {
       "type": "number",
       "minimum": 0
+    },
+    "memory_reservation_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Soft limit: under memory pressure the kernel reclaims the container down to it (Docker MemoryReservation); at most memory_bytes"
+    },
+    "pids_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Most processes/threads in the container (0 = unlimited)"
+    },
+    "max_restarts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Restart attempts with restart_policy on-failure (0 = unlimited)"
+    },
+    "log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_size_mb"
+      ],
+      "description": "Caps the container's log: json-file driver with max-size / max-file (otherwise the daemon's default driver)",
+      "properties": {
+        "max_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10240
+        },
+        "max_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1
+        }
+      }
+    },
+    "oom_score_adj": {
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000,
+      "description": "OOM preference: negative values are killed last by the host's OOM killer (Falak sends -500 for `protect`)"
     },
     "health": {
       "type": "object",
@@ -208,6 +265,38 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "secret_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "content"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "File name under /run/secrets (the variable's name)"
+          },
+          "content": {
+            "type": "string",
+            "description": "secret"
+          }
+        }
+      },
+      "description": "Secrets passed as files instead of env (the site's secrets mode `files`): written to /run/falak/secrets/<container>/<name> (tmpfs; parent 0700 root; files 0444 in a 0555 directory, or 0400/0500 owned by a numeric `user`) and bind-mounted read-only at /run/secrets, so `docker inspect` never shows them. A variable of the same name in env is dropped. After a reboot the container cannot start until site.env.write restores the files (heartbeat `missing_secrets`)."
+    },
+    "mask": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "uniqueItems": true,
+      "description": "Names of the secret variables in this payload. The agent looks their values up in the payload (env maps, dotenv content) and masks them, plus their base64 and URL-encoded forms, as \u2022\u2022\u2022\u2022 in the command's output, error and result. Values shorter than 6 bytes are not masked."
     }
   },
   "$defs": {

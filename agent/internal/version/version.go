@@ -28,9 +28,6 @@ var Features = []string{
 	"fn.v2",
 	// fn.release.apply with file trees (several files, folders): validated as a tree before anything is written.
 	"fn.v3",
-	// db.user.apply containers (Docker address ranges) and net.firewall.apply container_ports (Docker bridges):
-	// containers on a server reach its localhost database engines.
-	"db.containers",
 	// docker.compose.pull / docker.compose.up assets (repository files a compose project mounts, under repo/).
 	"compose.v2",
 	// docker.run / deploy.container.swap networks: containers join existing networks (a compose service run as its
@@ -44,20 +41,9 @@ var Features = []string{
 	// provision.inspect (read-only machine check) and provision.apply components (adopted components are verified,
 	// never installed).
 	"provision.v2",
-	// db.redis.apply / db.redis.remove: Redis and Valkey instances (redis-server@falak-<name>), facts.runtimes redis /
-	// valkey versions.
-	"db.redis",
-	// db.redis.apply containers (listen on docker0's address too; bind addresses limited to loopback, private and
-	// WireGuard ones, missing ones skipped and reported) and net.firewall.apply container_ports[].peers: Redis / Valkey
-	// instances reached from the server's containers and over private networks.
-	"db.redis.network",
-	// net.firewall.apply container_ports[].peer_interfaces: the control plane names a WireGuard peer's interface.
-	"net.firewall.peer_interfaces",
-	// db.backup / db.restore with engine redis | valkey: RDB snapshots of instances (redis-cli --rdb) and restores into
-	// them (RDB header and version checked, earlier files moved aside and put back when the start fails).
-	"db.redis.backup",
-	// db.restore uncompressed_bytes (Redis / Valkey: free-space check and cap of the gunzipped snapshot).
-	"db.redis.restore_checks",
+	// db.instance.* and db.* on database containers (falak-db images), heartbeat `databases`, provision.apply
+	// docker.live_restore, docker.compose.up join_networks, networks[].environment.
+	"db.instances",
 }
 
 var (

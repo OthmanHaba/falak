@@ -10,28 +10,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useForm } from '@inertiajs/react';
 import { Archive, Plus, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { type DatabaseRow, type DatabaseServer, type StorageOption } from '../types';
+import { type DatabaseInstance, type DatabaseRow, type StorageOption } from '../types';
 import { StatusBadge } from './database-ui';
 
 interface Props {
-    server: DatabaseServer;
+    instance: DatabaseInstance;
     databases: DatabaseRow[];
     storageProviders: StorageOption[];
     canManage: boolean;
     defaults: { charset: string | null; collation: string | null };
 }
 
-export function DatabasesCard({ server, databases, storageProviders, canManage, defaults }: Props) {
+export function DatabasesCard({ instance, databases, storageProviders, canManage, defaults }: Props) {
     const [creating, setCreating] = useState(false);
     const [deleting, setDeleting] = useState<DatabaseRow | null>(null);
     const [backingUp, setBackingUp] = useState<DatabaseRow | null>(null);
-    const keyValue = server.kind === 'key_value';
-    const mysql = server.engine === 'mysql' || server.engine === 'mariadb';
-    const noun = keyValue ? 'instance' : 'database';
+    const keyValue = instance.kind === 'key_value';
+    const mysql = instance.engine === 'mysql' || instance.engine === 'mariadb';
+    const noun = keyValue ? 'keyspace' : 'database';
 
     const create = useForm({ name: '', charset: '', collation: '', with_user: true, user: { username: '', password: '' } });
     const destroy = useForm({ confirm: '' });
-    const backup = useForm({ storage_provider_id: storageProviders[0]?.id ?? '', compression: 'gzip' });
+    const backup = useForm({ storage_provider_id: storageProviders[0]?.id ?? '' });
 
     const submitCreate: FormEventHandler = (event) => {
         event.preventDefault();
@@ -41,7 +41,7 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
             collation: mysql ? data.collation || null : null,
             user: !keyValue && data.with_user && data.user.username ? { username: data.user.username, password: data.user.password || null } : null,
         }));
-        create.post(`/databases/servers/${server.id}/databases`, {
+        create.post(`/databases/instances/${instance.id}/databases`, {
             preserveScroll: true,
             onSuccess: () => {
                 create.reset();
@@ -71,9 +71,9 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
     return (
         <Card className="gap-0 py-0">
             <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-4">
-                <CardTitle className="text-base">{keyValue ? 'Instances' : 'Databases'}</CardTitle>
-                {canManage && (
-                    <Button size="sm" onClick={() => setCreating(true)}>
+                <CardTitle className="text-base">{keyValue ? 'Keyspace' : 'Databases'}</CardTitle>
+                {canManage && !keyValue && (
+                    <Button size="sm" disabled={instance.status !== 'active'} onClick={() => setCreating(true)}>
                         <Plus /> New {noun}
                     </Button>
                 )}
@@ -87,8 +87,6 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                             <TableRow>
                                 <TableHead className="pl-6">Name</TableHead>
                                 {mysql && <TableHead>Collation</TableHead>}
-                                {keyValue && <TableHead>Port</TableHead>}
-                                {keyValue && <TableHead>Memory</TableHead>}
                                 <TableHead>Status</TableHead>
                                 {canManage && <TableHead className="w-24" />}
                             </TableRow>
@@ -98,39 +96,34 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                                 <TableRow key={database.id}>
                                     <TableCell className="pl-6 font-mono">{database.name}</TableCell>
                                     {mysql && <TableCell className="text-muted-foreground text-xs">{database.collation ?? '—'}</TableCell>}
-                                    {keyValue && <TableCell className="font-mono text-xs">{database.port ?? '—'}</TableCell>}
-                                    {keyValue && (
-                                        <TableCell className="text-muted-foreground text-xs">
-                                            {database.settings ? `${database.settings.maxmemory_mb} MB · ${database.settings.eviction}` : '—'}
-                                        </TableCell>
-                                    )}
                                     <TableCell>
                                         <StatusBadge status={database.status} title={database.status_message} />
                                         {database.status_message && <p className="mt-1 max-w-xs text-xs text-red-600">{database.status_message}</p>}
                                     </TableCell>
                                     {canManage && (
                                         <TableCell className="text-right">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                disabled={database.status !== 'active' || storageProviders.length === 0}
+                                                title={storageProviders.length === 0 ? 'Add a storage provider first' : 'Back up now'}
+                                                aria-label={`Back up ${database.name}`}
+                                                onClick={() => setBackingUp(database)}
+                                            >
+                                                <Archive />
+                                            </Button>
+                                            {/* A keyspace goes with its container (Container → Delete). */}
                                             {!keyValue && (
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
-                                                    disabled={database.status !== 'active' || storageProviders.length === 0}
-                                                    title={storageProviders.length === 0 ? 'Add a storage provider first' : 'Back up now'}
-                                                    aria-label={`Back up ${database.name}`}
-                                                    onClick={() => setBackingUp(database)}
+                                                    disabled={database.status === 'deleting'}
+                                                    aria-label={`Delete ${database.name}`}
+                                                    onClick={() => setDeleting(database)}
                                                 >
-                                                    <Archive />
+                                                    <Trash2 />
                                                 </Button>
                                             )}
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                disabled={database.status === 'deleting'}
-                                                aria-label={`Delete ${database.name}`}
-                                                onClick={() => setDeleting(database)}
-                                            >
-                                                <Trash2 />
-                                            </Button>
                                         </TableCell>
                                     )}
                                 </TableRow>
@@ -146,9 +139,7 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                         <DialogHeader>
                             <DialogTitle>New {noun}</DialogTitle>
                             <DialogDescription>
-                                {keyValue
-                                    ? `Its own ${server.engine_label} process on ${server.server_name}, with its own port and password (user default). Lower-case letters, digits, - and _.`
-                                    : `Created on ${server.server_name} (${server.engine_label}).`}
+                                Created in {instance.name} ({instance.engine_label} {instance.version}).
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-2">
@@ -228,7 +219,7 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                         <DialogHeader>
                             <DialogTitle>Drop {deleting?.name}?</DialogTitle>
                             <DialogDescription>
-                                The database and all its data are permanently dropped from {server.server_name}. Existing backups are kept.
+                                The database and all its data are permanently dropped from {instance.name}. Existing backups are kept.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-2">
@@ -275,18 +266,7 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                             </Select>
                             <InputError message={backup.errors.storage_provider_id} />
                         </div>
-                        <div className="grid gap-2">
-                            <Label>Compression</Label>
-                            <Select value={backup.data.compression} onValueChange={(value) => backup.setData('compression', value)}>
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="gzip">gzip</SelectItem>
-                                    <SelectItem value="none">none</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        <p className="text-muted-foreground text-xs">Compressed (zstd) and encrypted with a key of its own, held by Falak.</p>
                         <InputError message={(backup.errors as Record<string, string | undefined>).database} />
                         <DialogFooter>
                             <Button type="button" variant="ghost" onClick={() => setBackingUp(null)}>

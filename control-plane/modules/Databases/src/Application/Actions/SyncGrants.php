@@ -15,15 +15,15 @@ final class SyncGrants
      */
     public function __invoke(DatabaseUser $user, array $grants): void
     {
-        $server = $user->databaseServer;
-        $allowed = $server->engine->privileges();
+        $instance = $user->instance;
+        $allowed = $instance->engine->privileges();
         $byDatabase = [];
 
         foreach ($grants as $i => $grant) {
             $privileges = array_values(array_unique(array_map('strtoupper', $grant['privileges'] ?? []))) ?: ['ALL PRIVILEGES'];
 
             if (array_diff($privileges, $allowed) !== []) {
-                throw ValidationException::withMessages(["grants.{$i}.privileges" => 'Unsupported privilege for '.$server->engine->label().'.']);
+                throw ValidationException::withMessages(["grants.{$i}.privileges" => 'Unsupported privilege for '.$instance->engine->label().'.']);
             }
 
             if (in_array('ALL PRIVILEGES', $privileges, true)) {
@@ -33,10 +33,10 @@ final class SyncGrants
             $byDatabase[$grant['database_id']] = $privileges;
         }
 
-        $valid = $server->databases()->whereIn('id', array_keys($byDatabase))->pluck('id')->all();
+        $valid = $instance->databases()->whereIn('id', array_keys($byDatabase))->pluck('id')->all();
 
         if (count($valid) !== count($byDatabase)) {
-            throw ValidationException::withMessages(['grants' => 'Grants may only reference databases on this server.']);
+            throw ValidationException::withMessages(['grants' => 'Grants may only reference databases in this instance.']);
         }
 
         $user->grants()->whereNotIn('database_id', $valid)->delete();

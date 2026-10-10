@@ -11,6 +11,7 @@ use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\OrganizationDirectory;
 use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Reauthentication;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
@@ -18,10 +19,13 @@ use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Domain\Policies\OrganizationPolicy;
 use Falak\Identity\Http\Middleware\EnsureCurrentOrganization;
 use Falak\Identity\Http\Middleware\EnsureOrganizationPermission;
+use Falak\Identity\Http\Middleware\EnsureReauthenticated;
+use Falak\Identity\Infrastructure\CastSealedTwoFactorEncrypter;
 use Falak\Identity\Infrastructure\DatabaseAuditLog;
 use Falak\Identity\Infrastructure\EloquentOrganizationDirectory;
 use Falak\Identity\Infrastructure\InMemoryPermissionRegistry;
 use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
+use Falak\Identity\Infrastructure\SessionReauthentication;
 use Falak\Identity\Infrastructure\SpatieOrganizationAccess;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Kernel\Support\SharedProps;
@@ -50,6 +54,8 @@ class IdentityServiceProvider extends ModuleServiceProvider
     {
         // Identity owns the auth routes; Fortify is used for its 2FA actions only.
         Fortify::ignoreRoutes();
+        // Two-factor secrets and recovery codes are sealed by User's casts (bound to the row), not APP_KEY.
+        Fortify::encryptUsing(new CastSealedTwoFactorEncrypter);
 
         $this->mergeConfigFrom($this->modulePath().'/config/identity.php', 'identity');
 
@@ -59,6 +65,7 @@ class IdentityServiceProvider extends ModuleServiceProvider
         $this->app->scoped(SpatieOrganizationAccess::class);
         $this->app->scoped(OrganizationAccess::class, SpatieOrganizationAccess::class);
         $this->app->scoped(AuditLog::class, DatabaseAuditLog::class);
+        $this->app->scoped(Reauthentication::class, SessionReauthentication::class);
     }
 
     protected function bootModule(): void
@@ -72,6 +79,7 @@ class IdentityServiceProvider extends ModuleServiceProvider
         $router = $this->app->make('router');
         $router->aliasMiddleware('org', EnsureCurrentOrganization::class);
         $router->aliasMiddleware('org.can', EnsureOrganizationPermission::class);
+        $router->aliasMiddleware('reauthenticated', EnsureReauthenticated::class);
 
         $this->registerPermissions($this->app->make(PermissionRegistry::class));
 

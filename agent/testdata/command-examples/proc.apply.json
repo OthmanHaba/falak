@@ -32,7 +32,10 @@
         "max_bytes": 52428800,
         "otlp": true
       },
-      "site": "shop"
+      "site": "shop",
+      "slice": "worker_01j9z8y7x6w5v4t3s2r1q0p9na",
+      "oom_score_adj": -500,
+      "max_restarts": 10
     },
     {
       "name": "shop-horizon",
@@ -46,6 +49,16 @@
       "stop_signal": "TERM",
       "stop_timeout_s": 60,
       "site": "shop"
+    }
+  ],
+  "slices": [
+    {
+      "name": "worker_01j9z8y7x6w5v4t3s2r1q0p9na",
+      "memory_max_bytes": 536870912,
+      "memory_high_bytes": 483183820,
+      "memory_low_bytes": 134217728,
+      "cpu_quota_percent": 150,
+      "tasks_max": 512
     }
   ]
 }

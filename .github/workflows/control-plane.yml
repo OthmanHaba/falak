@@ -2,10 +2,10 @@ name: control-plane
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**"]
     paths: ['control-plane/**', 'contracts/**', 'tools/**', '.github/workflows/control-plane.yml']
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
     paths: ['control-plane/**', 'contracts/**', 'tools/**', '.github/workflows/control-plane.yml']
 
 defaults:

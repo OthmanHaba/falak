@@ -6,7 +6,8 @@
   "shell": "/bin/bash",
   "user": "shop",
   "cwd": "release",
-  "env": { "APP_ENV": "production" },
+  "env": { "APP_ENV": "production", "STRIPE_SECRET": "sk_live_example" },
+  "mask": ["STRIPE_SECRET", "APP_KEY", "DB_PASSWORD"],
   "context": {
     "site_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9S1",
     "deployment_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9D1",

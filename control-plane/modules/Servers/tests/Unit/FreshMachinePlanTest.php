@@ -33,8 +33,8 @@ it('plans a fresh machine exactly as before the machine check', function (string
         expect($after['hostname'])->toBe($before['hostname']);
     }
 })->with([
-    'custom app server with Docker' => ['custom', ServerType::App, new Stack('frankenphp', ['8.4'], '8.4', '22', 'postgresql', 'redis', true)],
+    'custom app server' => ['custom', ServerType::App, new Stack('frankenphp', ['8.4'], '8.4', '22')],
     'provider web server' => ['hetzner', ServerType::Web, null],
     'custom database server' => ['custom', ServerType::Database, null],
-    'custom cache server (Valkey)' => ['custom', ServerType::Cache, new Stack(cache: 'valkey')],
+    'custom cache server' => ['custom', ServerType::Cache, null],
 ]);

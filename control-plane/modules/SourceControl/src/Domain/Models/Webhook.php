@@ -2,6 +2,7 @@
 
 namespace Falak\SourceControl\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\SourceControl\Contracts\Data\WebhookData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $provider_hook_id
  * @property string $secret
  * @property bool $installed
+ * @property bool $pinned kept for previews (pull request events) whatever push-to-deploy does
  * @property ?string $install_error
  * @property ?Carbon $last_delivery_at
  * @property-read Connection $connection
@@ -38,8 +40,9 @@ class Webhook extends Model
     protected function casts(): array
     {
         return [
-            'secret' => 'encrypted',
+            'secret' => Sealed::class,
             'installed' => 'boolean',
+            'pinned' => 'boolean',
             'last_delivery_at' => 'datetime',
         ];
     }

@@ -2,7 +2,7 @@
 //
 //	/srv/falak/sites/<site>/
 //	├── releases/<release-ulid>/
-//	├── shared/          (.env, storage/, custom shared paths)
+//	├── shared/          (.env → /run/falak/env/<site>.env, storage/, custom shared paths)
 //	└── current -> releases/<release-ulid>
 //
 // All symlinks are relative so a site directory can be moved (and tested under a temp root).
@@ -34,6 +34,8 @@ import (
 // ProcRestarter restarts supervised programs (implemented by the supervisor).
 type ProcRestarter interface {
 	Restart(ctx context.Context, names []string) error
+	// RestartSite restarts a site's programs (workers, daemons) and returns their names.
+	RestartSite(ctx context.Context, site string) ([]string, error)
 }
 
 // WorkerRestarter restarts FrankenPHP worker scripts (implemented by edge.Client).
@@ -47,10 +49,15 @@ type Options struct {
 	Runner    runner.Runner
 	HTTP      *http.Client
 	SitesRoot string // default /srv/falak/sites
-	Procs     ProcRestarter
-	Workers   WorkerRestarter
-	Events    obs.Sink // deployment lifecycle log records (falak.event.type=deployment); nil disables
-	Logger    *slog.Logger
+	EnvDir    string // sites' env files, on a tmpfs; default DefaultEnvDir
+	// Containers restores container secret files (site.env.write); nil without Docker.
+	Containers ContainerSecrets
+	// Links remembers links to tmpfs env files for MissingEnv; nil scans the default sites root only.
+	Links   EnvLinks
+	Procs   ProcRestarter
+	Workers WorkerRestarter
+	Events  obs.Sink // deployment lifecycle log records (falak.event.type=deployment); nil disables
+	Logger  *slog.Logger
 }
 
 // Deployer implements deploy.* executors (except container.swap, which lives in the docker package).
@@ -63,6 +70,9 @@ type Deployer struct {
 func New(o Options) *Deployer {
 	if o.SitesRoot == "" {
 		o.SitesRoot = "/srv/falak/sites"
+	}
+	if o.EnvDir == "" {
+		o.EnvDir = DefaultEnvDir
 	}
 	if o.HTTP == nil {
 		o.HTTP = &http.Client{Timeout: 30 * time.Minute}
@@ -81,6 +91,7 @@ func (d *Deployer) Register(reg *commands.Registry) {
 	reg.Register("deploy.activate", commands.Typed(d.Activate))
 	reg.Register("deploy.rollback", commands.Typed(d.Rollback))
 	reg.Register("deploy.prune", commands.Typed(d.Prune))
+	reg.Register("site.env.write", commands.Typed(d.WriteEnv))
 }
 
 var (

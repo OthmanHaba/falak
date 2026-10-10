@@ -30,6 +30,7 @@ type Deps struct {
 	OndrejPPAURL   string // passed to runtime
 	CaddyKeyURL    string // default https://dl.cloudsmith.io/public/caddy/stable/gpg.key
 	CaddyRepoURL   string // default https://dl.cloudsmith.io/public/caddy/stable/deb/debian
+	DockerRepoURL  string // default https://download.docker.com/linux (+ /<os id>)
 }
 
 // Provisioner runs provision.apply.
@@ -52,6 +53,9 @@ func New(d Deps) *Provisioner {
 	if d.CaddyRepoURL == "" {
 		d.CaddyRepoURL = "https://dl.cloudsmith.io/public/caddy/stable/deb/debian"
 	}
+	if d.DockerRepoURL == "" {
+		d.DockerRepoURL = "https://download.docker.com/linux"
+	}
 	rt := runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: d.Logger, HTTP: d.HTTP, Arch: d.Arch, FrankenPHPBase: d.FrankenPHPBase, OndrejPPAURL: d.OndrejPPAURL})
 	return &Provisioner{d: d, rt: rt}
 }
@@ -73,6 +77,8 @@ type Plan struct {
 	Services           []Service          `json:"services"`
 	UnattendedUpgrades *UnattendedUpgrade `json:"unattended_upgrades"`
 	SSH                *SSH               `json:"ssh"`
+	// Docker: daemon settings (every server runs Docker: database containers).
+	Docker *DockerPlan `json:"docker"`
 	// Components carries the control plane's machine-check decision per component (feature provision.v2).
 	Components []Component `json:"components"`
 }
@@ -234,6 +240,10 @@ func (p *Provisioner) steps(plan Plan) []step {
 			return len(inst)+len(rm) > 0, err
 		})
 	}
+	if _, keep := adopted["docker"]; plan.Docker != nil && plan.Docker.MinVersion != "" && !keep {
+		min := plan.Docker.MinVersion
+		add("docker:engine", func(ctx context.Context, st commands.Stream) (bool, error) { return p.dockerEngine(ctx, st, min) })
+	}
 	for _, c := range plan.Components {
 		if c.Decision != DecisionAdopt || len(c.Packages) == 0 {
 			continue
@@ -284,6 +294,9 @@ func (p *Provisioner) steps(plan Plan) []step {
 	for _, svc := range plan.Services {
 		svc := svc
 		add("service:"+svc.Name, func(ctx context.Context, st commands.Stream) (bool, error) { return p.service(ctx, st, svc) })
+	}
+	if plan.Docker != nil && plan.Docker.LiveRestore {
+		add("docker:live-restore", func(ctx context.Context, st commands.Stream) (bool, error) { return p.dockerLiveRestore(ctx, st) })
 	}
 	if u := plan.UnattendedUpgrades; u != nil {
 		if _, keep := adopted["unattended_upgrades"]; keep {

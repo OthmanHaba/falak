@@ -9,7 +9,7 @@ import ObservabilityLayout from '@/layouts/observability-layout';
 import { type Paginated } from '@/types';
 import { Link, router } from '@inertiajs/react';
 import { format } from 'date-fns';
-import { BellRing, ChevronDown, ChevronRight, Settings2, SquareArrowOutUpRight } from 'lucide-react';
+import { BellRing, ChevronDown, ChevronRight, Settings2, SquareArrowOutUpRight, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { openUrl, SeverityIndicator } from '../components/severity';
 import { type AlertRow, type DeliveryRow } from '../types';
@@ -77,6 +77,7 @@ function AlertItem({ alert }: { alert: AlertRow }) {
             {open && (
                 <div className="bg-canvas border-border grid gap-3 border-t px-4 py-3 pl-14">
                     {alert.body && <p className="text-fg-muted text-sm whitespace-pre-wrap">{alert.body}</p>}
+                    {alert.detail && <p className="text-fg-muted font-mono text-xs whitespace-pre-wrap">{alert.detail}</p>}
                     <p className="text-fg-faint text-xs">Raised {format(new Date(alert.created_at), 'PP HH:mm:ss')}</p>
                     {alert.deliveries.length > 0 && (
                         <ul className="border-border divide-border divide-y rounded-md border">
@@ -96,9 +97,15 @@ function AlertItem({ alert }: { alert: AlertRow }) {
                         </ul>
                     )}
                     {alert.url && (
-                        <div>
-                            <Button size="sm" icon={<SquareArrowOutUpRight />} onClick={() => openUrl(alert.url!, (path) => router.visit(path))}>
-                                Open
+                        <div className="flex flex-wrap items-center gap-2">
+                            {alert.action && <span className="text-fg-muted text-xs">Suggested fix:</span>}
+                            <Button
+                                size="sm"
+                                variant={alert.action ? 'primary' : undefined}
+                                icon={alert.action ? <Wrench /> : <SquareArrowOutUpRight />}
+                                onClick={() => openUrl(alert.url!, (path) => router.visit(path))}
+                            >
+                                {alert.action ?? 'Open'}
                             </Button>
                         </div>
                     )}

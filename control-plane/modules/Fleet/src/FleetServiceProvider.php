@@ -12,8 +12,10 @@ use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Application\Listeners\TrackAgentUpgrades;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\AgentRequests;
 use Falak\Fleet\Contracts\AgentUpgrades;
 use Falak\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Contracts\ServerCertificates;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentRevoked;
 use Falak\Fleet\Events\AgentUpgradeFailed;
@@ -21,7 +23,10 @@ use Falak\Fleet\Events\AgentUpgradeSucceeded;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Http\Channels\CommandChannel;
+use Falak\Fleet\Http\Middleware\AuthenticateAgent;
 use Falak\Fleet\Infrastructure\AgentBinaries;
+use Falak\Fleet\Infrastructure\AgentRequestRegistry;
+use Falak\Fleet\Infrastructure\CaServerCertificates;
 use Falak\Fleet\Infrastructure\EloquentAgentDirectory;
 use Falak\Fleet\Infrastructure\EloquentAgentUpgrades;
 use Falak\Fleet\Infrastructure\FleetAgentGateway;
@@ -55,6 +60,8 @@ class FleetServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         AgentGateway::class => FleetAgentGateway::class,
         AgentDirectory::class => EloquentAgentDirectory::class,
+        ServerCertificates::class => CaServerCertificates::class,
+        AgentRequests::class => AgentRequestRegistry::class,
     ];
 
     public function register(): void
@@ -117,6 +124,9 @@ class FleetServiceProvider extends ModuleServiceProvider
         Route::group([], $this->modulePath().'/routes/install.php');
 
         RateLimiter::for('fleet-enroll', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
+        // Agent requests (POST /agent/v1/requests/{type}): per authenticated agent and type.
+        RateLimiter::for('fleet-agent-requests', fn (Request $request) => Limit::perMinute((int) config('fleet.agent_requests_per_minute', 120))
+            ->by($request->attributes->get(AuthenticateAgent::AGENT)?->id.':'.$request->route('type')));
 
         $registry = $this->app->make(PermissionRegistry::class);
         $registry->register('fleet.commands.view', [Role::Admin, Role::Developer, Role::Viewer], 'View agent command output', 'fleet');
@@ -124,7 +134,7 @@ class FleetServiceProvider extends ModuleServiceProvider
 
         $types = $this->app->make(AlertTypes::class);
         $types->register(AgentRevoked::ALERT_TYPE, 'Server agent revoked', 'Fleet', Severity::Warning);
-        $types->register(AgentUpgradeFailed::ALERT_TYPE, 'Agent upgrade failed', 'Fleet', Severity::Warning);
+        $types->register(AgentUpgradeFailed::ALERT_TYPE, 'Agent upgrade failed', 'Fleet', Severity::Warning, 'Update agent');
         $types->register(AgentUpgradeSucceeded::ALERT_TYPE, 'Agent upgraded after a failure', 'Fleet', Severity::Info);
 
         Event::listen(CommandFinished::class, [TrackAgentUpgrades::class, 'finished']);

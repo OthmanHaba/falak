@@ -93,6 +93,18 @@
         "absent"
       ],
       "default": "present"
+    },
+    "slice": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,80}$",
+      "description": "Run the pool in its own PHP-FPM master (falak-fpm-<pool>.service, Slice=falak-<slice>.slice) — one shared master's pools share its cgroup, so per-site limits need their own master. Omitted: the shared phpX.Y-fpm master. The socket path is the same either way."
+    },
+    "oom_score_adj": {
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000,
+      "default": 0,
+      "description": "OOMScoreAdjust= of the own master (with slice)"
     }
   },
   "$defs": {

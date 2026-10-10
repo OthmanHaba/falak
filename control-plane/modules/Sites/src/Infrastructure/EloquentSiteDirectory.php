@@ -55,11 +55,6 @@ final class EloquentSiteDirectory implements SiteDirectory
             ?->toData();
     }
 
-    public function sharedPaths(string $siteId): array
-    {
-        return Site::query()->find($siteId)?->shared_paths ?? [];
-    }
-
     public function deployVariables(string $siteId, string $serverId, array $context = []): array
     {
         $site = $this->query()->find($siteId);

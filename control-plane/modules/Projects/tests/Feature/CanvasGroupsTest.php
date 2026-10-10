@@ -146,8 +146,8 @@ it('draws compose sites as a group of their compose services with volumes, statu
             'template' => null,
             'collapsed' => false,
             'services' => [
-                ['name' => 'app', 'icon' => 'n8n', 'image' => 'n8nio/n8n:1.64.0', 'status' => 'active', 'status_label' => 'Online', 'url' => 'https://flows.example.com', 'volumes' => ['app-data'], 'position' => ['x' => 0, 'y' => 0]],
-                ['name' => 'db', 'icon' => 'postgresql', 'image' => 'postgres:17-alpine', 'status' => 'active', 'status_label' => 'Online', 'url' => null, 'volumes' => ['pg-data'], 'position' => ['x' => 300, 'y' => 0]],
+                ['name' => 'app', 'icon' => 'n8n', 'image' => 'n8nio/n8n:1.64.0', 'status' => 'active', 'status_label' => 'Online', 'url' => 'https://flows.example.com', 'volumes' => [['id' => null, 'name' => 'app-data', 'detail' => null, 'used_bytes' => null, 'limit_bytes' => null, 'url' => null]], 'position' => ['x' => 0, 'y' => 0]],
+                ['name' => 'db', 'icon' => 'postgresql', 'image' => 'postgres:17-alpine', 'status' => 'active', 'status_label' => 'Online', 'url' => null, 'volumes' => [['id' => null, 'name' => 'pg-data', 'detail' => null, 'used_bytes' => null, 'limit_bytes' => null, 'url' => null]], 'position' => ['x' => 300, 'y' => 0]],
                 ['name' => 'cache', 'icon' => 'redis', 'image' => 'redis:7', 'status' => 'crashed', 'status_label' => 'Restarting · 4 restarts', 'url' => null, 'volumes' => [], 'position' => ['x' => 0, 'y' => 180]],
             ],
         ])

@@ -2,6 +2,7 @@
 
 namespace Falak\Providers\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\Providers\Contracts\Data\CredentialSummary;
 use Falak\Providers\Contracts\ProviderType;
 use Falak\Providers\Database\Factories\ProviderCredentialFactory;
@@ -52,7 +53,7 @@ class ProviderCredential extends Model
     {
         return [
             'provider' => ProviderType::class,
-            'credentials' => 'encrypted:array',
+            'credentials' => SealedArray::class,
             'status' => CredentialStatus::class,
             'last_verified_at' => 'datetime',
         ];

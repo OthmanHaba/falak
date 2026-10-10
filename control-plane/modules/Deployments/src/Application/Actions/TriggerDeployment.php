@@ -2,6 +2,7 @@
 
 namespace Falak\Deployments\Application\Actions;
 
+use Closure;
 use Falak\Deployments\Application\Orchestration\DeploymentLog;
 use Falak\Deployments\Application\Orchestration\DeploymentQueue;
 use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
@@ -41,6 +42,8 @@ final class TriggerDeployment
      *                                 numbered higher (created since), return the newest one untouched instead of queueing
      *                                 or coalescing. Checked under the site's trigger lock, so a push queued or started
      *                                 meanwhile is never followed by an older commit.
+     * @param  ?string  $rollbackOf  a rollback started automatically by the watch window of that deployment
+     * @param  ?Closure(): ?string  $guard  checked under the site's trigger lock before queueing: a reason refuses it
      *
      * @throws DeploymentTriggerBusy when another trigger of the site holds the lock for too long
      */
@@ -55,6 +58,8 @@ final class TriggerDeployment
         ?string $requestedBy = null,
         ?string $releaseId = null,
         ?int $unlessNewerThan = null,
+        ?string $rollbackOf = null,
+        ?Closure $guard = null,
     ): Deployment {
         $branch = $branch !== null && $branch !== '' ? $branch : $site->branch;
 
@@ -99,7 +104,11 @@ final class TriggerDeployment
         // Triggers of one site are serialized: a follow-up's "nothing newer" check and the coalescing into a waiting
         // deployment must not interleave with another trigger queueing a newer commit. Only database work runs locked.
         try {
-            [$deployment, $outcome] = Cache::lock("deployments:trigger:{$site->id}", 30)->block((int) config('deployments.trigger_lock_wait', 15), function () use ($site, $trigger, $attributes, $releaseId, $unlessNewerThan) {
+            [$deployment, $outcome] = Cache::lock("deployments:trigger:{$site->id}", 30)->block((int) config('deployments.trigger_lock_wait', 15), function () use ($site, $trigger, $attributes, $releaseId, $unlessNewerThan, $rollbackOf, $guard) {
+                if ($guard !== null && ($refused = $guard()) !== null) {
+                    throw ValidationException::withMessages(['site' => $refused]);
+                }
+
                 if ($unlessNewerThan !== null) {
                     $newest = Deployment::query()->where('site_id', $site->id)->orderByDesc('number')->first();
 
@@ -117,6 +126,7 @@ final class TriggerDeployment
                     'trigger' => $trigger,
                     'status' => DeploymentStatus::Queued,
                     'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
+                    'auto_rollback_of' => $trigger === Trigger::Rollback ? $rollbackOf : null,
                 ]), 'created'];
             });
         } catch (LockTimeoutException) {
@@ -136,10 +146,10 @@ final class TriggerDeployment
         }
 
         $this->audit->record('deployments.triggered', 'deployment', $deployment->id, array_filter([
-            'site_id' => $site->id, 'trigger' => $trigger->value, 'commit' => $deployment->commit, 'release_id' => $releaseId,
+            'site_id' => $site->id, 'trigger' => $trigger->value, 'commit' => $deployment->commit, 'release_id' => $releaseId, 'automatic_rollback_of' => $rollbackOf,
         ]), $site->organizationId, $requestedBy);
 
-        $this->log->note($deployment->id, sprintf('Queued by %s%s.', $trigger->label(), $deployment->commit ? ' at '.substr($deployment->commit, 0, 7) : ''));
+        $this->log->note($deployment->id, sprintf('Queued by %s%s.', $rollbackOf !== null ? 'the watch after a release went live (automatic rollback)' : $trigger->label(), $deployment->commit ? ' at '.substr($deployment->commit, 0, 7) : ''));
 
         $this->queue->startNext($site->id);
 

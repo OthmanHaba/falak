@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,7 +126,7 @@ func TestApplyIdempotentAndPersisted(t *testing.T) {
 		t.Fatal("hash unstable")
 	}
 	b, err := fs.ReadFile("/etc/falak/caddy/bootstrap.json")
-	if err != nil || !strings.Contains(string(b), `"listen": "localhost:2019"`) {
+	if err != nil || !strings.Contains(string(b), `"listen": "unix//run/falak-edge/admin.sock|0600"`) {
 		t.Fatalf("bootstrap config not persisted: %v", err)
 	}
 	s := string(b)
@@ -275,13 +276,120 @@ func TestRenderDNSChallenge(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := mustJSON(cfg)
-	for _, want := range []string{`"challenges":{"dns":{"provider":{"api_token":"tok","name":"cloudflare"}}}`, `"subjects":["*.example.com"]`, `"subjects":["x.test"]`, `"email":"ops@example.com"`} {
+	for _, want := range []string{`"challenges":{"dns":{"provider":{"api_token":"{env.` + TokenEnv("tok") + `}","name":"cloudflare"}}}`, `"subjects":["*.example.com"]`, `"subjects":["x.test"]`, `"email":"ops@example.com"`} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %s in %s", want, s)
 		}
 	}
 	if _, err := Render(Payload{Sites: []Site{{ID: "w", Domains: []string{"*.e.com"}, Kind: "static", Root: "/r", TLS: &TLS{DNS: &DNS{Provider: "cloudflare"}}}}}, ""); err == nil {
 		t.Fatal("want error for missing api token")
+	}
+}
+
+func TestRenderWildcardCertificateServesPreviewHosts(t *testing.T) {
+	wild := []WildcardCertificate{{Subject: "*.prv.example.com", DNS: DNS{Provider: "cloudflare", APIToken: "tok"}}}
+	cfg, err := Render(Payload{ACMEEmail: "ops@example.com", WildcardCertificates: wild, Sites: []Site{
+		{ID: "p", Domains: []string{"pr-7-web.prv.example.com"}, Kind: "static", Root: "/srv/p", TLS: &TLS{Mode: "wildcard"}},
+	}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := mustJSON(cfg)
+	for _, want := range []string{
+		`"automate":["*.prv.example.com"]`,
+		`"subjects":["*.prv.example.com"]`,
+		`"challenges":{"dns":{"provider":{"api_token":"{env.` + TokenEnv("tok") + `}","name":"cloudflare"}}}`,
+		`"skip_certificates":["pr-7-web.prv.example.com"]`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %s in %s", want, s)
+		}
+	}
+	if strings.Contains(s, `"subjects":["pr-7-web.prv.example.com"]`) {
+		t.Fatalf("a preview host got its own certificate: %s", s)
+	}
+	for name, p := range map[string]Payload{
+		"not covered": {WildcardCertificates: wild, Sites: []Site{{ID: "p", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/r", TLS: &TLS{Mode: "wildcard"}}}},
+		"two labels":  {WildcardCertificates: wild, Sites: []Site{{ID: "p", Domains: []string{"a.b.prv.example.com"}, Kind: "static", Root: "/r", TLS: &TLS{Mode: "wildcard"}}}},
+		"no token":    {WildcardCertificates: []WildcardCertificate{{Subject: "*.prv.example.com", DNS: DNS{Provider: "cloudflare"}}}},
+		"bad subject": {WildcardCertificates: []WildcardCertificate{{Subject: "prv.example.com", DNS: DNS{Provider: "cloudflare", APIToken: "t"}}}},
+	} {
+		if _, err := Render(p, ""); err == nil {
+			t.Fatalf("%s: want an error", name)
+		}
+	}
+}
+
+func TestDNSTokensNeverReachTheConfigAndRestartTheEdgeWhenTheyChange(t *testing.T) {
+	m, _, fs := setup(t)
+	restarts := 0
+	m.o.RestartEdge = func(context.Context) error { restarts++; return nil }
+	const token = "cf-secret-token-0123456789"
+	p := Payload{ACMEEmail: "ops@example.com",
+		WildcardCertificates: []WildcardCertificate{{Subject: "*.prv.example.com", DNS: DNS{Provider: "cloudflare", APIToken: token}}},
+		Sites:                []Site{{ID: "p", Domains: []string{"pr-1-web.prv.example.com"}, Kind: "static", Root: "/srv/p", TLS: &TLS{Mode: "wildcard"}}}}
+
+	if _, err := m.Apply(context.Background(), p, stream()); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := m.o.Client.Config(context.Background())
+	persisted, _ := fs.ReadFile("/etc/falak/caddy/bootstrap.json")
+	for name, b := range map[string][]byte{"running config": cfg, "persisted config": persisted} {
+		if strings.Contains(string(b), token) {
+			t.Fatalf("%s holds the token", name)
+		}
+	}
+	env, err := fs.ReadFile(m.EnvPath())
+	if err != nil || !strings.Contains(string(env), TokenEnv(token)+"="+token) {
+		t.Fatalf("env file: %v %q", err, env)
+	}
+	if info, _ := os.Stat(fs.P(m.EnvPath())); info.Mode().Perm() != 0o600 {
+		t.Fatalf("env file mode %v", info.Mode().Perm())
+	}
+	if restarts != 1 {
+		t.Fatalf("restarts = %d, want 1", restarts)
+	}
+	// Same tokens: no restart.
+	if _, err := m.Apply(context.Background(), p, stream()); err != nil || restarts != 1 {
+		t.Fatalf("second apply: %v restarts=%d", err, restarts)
+	}
+	if got := p.Secrets(); len(got) != 1 || got[0] != token {
+		t.Fatalf("payload secrets %v", got)
+	}
+}
+
+func TestAdminListensOnAUnixSocketAndTheClientDialsIt(t *testing.T) {
+	cfg, err := Render(Payload{Sites: []Site{}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg["admin"].(obj)["listen"] != "unix//run/falak-edge/admin.sock|0600" {
+		t.Fatalf("admin listen %v", cfg["admin"])
+	}
+	// Short path: unix socket paths are limited to ~100 bytes.
+	dir, err := os.MkdirTemp("/tmp", "edge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "a.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var host string
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { host = r.Host; _, _ = w.Write([]byte("null")) })}
+	go func() { _ = srv.Serve(l) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	c := &Client{Base: "unix://" + sock, Fallback: "http://127.0.0.1:1"}
+	if _, err := c.Config(context.Background()); err != nil || host != "localhost" {
+		t.Fatalf("config over the socket: %v host=%q", err, host)
+	}
+	// No socket yet (a Caddy still on its old config): the fallback is used.
+	missing := &Client{Base: "unix://" + filepath.Join(dir, "missing.sock"), Fallback: "http://127.0.0.1:1"}
+	if missing.base() != "http://127.0.0.1:1" {
+		t.Fatalf("fallback base %q", missing.base())
 	}
 }
 

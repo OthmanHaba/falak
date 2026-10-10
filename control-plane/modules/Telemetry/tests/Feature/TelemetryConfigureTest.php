@@ -68,6 +68,18 @@ it('dispatches a schema-valid telemetry.configure after an agent enrolls', funct
         ]);
 });
 
+it('leaves the endpoint out when none is configured (an install without the observability stack)', function () {
+    config(['telemetry.otlp.endpoint' => '']);
+    $server = telemetry_server($this->organization->id);
+    fleet_enroll($this->organization->id, $server->id);
+
+    ServerProvisioned::dispatch($server->id, $this->organization->id, 'web', $server->name);
+
+    $payload = telemetry_payload(telemetry_commands($server->id)[0]);
+    expect($payload)->not->toHaveKey('endpoint')
+        ->and(fleet_schema_errors('commands/telemetry.configure.schema.json', $payload))->toBe([]);
+});
+
 it('configures immediately once a server is provisioned', function () {
     $server = telemetry_server($this->organization->id);
     fleet_enroll($this->organization->id, $server->id);

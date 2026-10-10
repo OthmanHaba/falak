@@ -36,27 +36,11 @@ return [
         'node' => env('FALAK_NODE_MIRROR'),
     ],
 
-    // Engine => Ubuntu packages + systemd service.
-    'databases' => [
-        'postgresql' => ['label' => 'PostgreSQL', 'packages' => ['postgresql', 'postgresql-contrib'], 'service' => 'postgresql'],
-        'mysql' => ['label' => 'MySQL', 'packages' => ['mysql-server'], 'service' => 'mysql'],
-        'mariadb' => ['label' => 'MariaDB', 'packages' => ['mariadb-server'], 'service' => 'mariadb'],
-    ],
-    'caches' => [
-        'redis' => ['label' => 'Redis', 'packages' => ['redis-server'], 'service' => 'redis-server'],
-        'valkey' => ['label' => 'Valkey', 'packages' => ['valkey-server'], 'service' => 'valkey-server'],
-    ],
-    // Cache engines each release's archive has, keyed by the server's reported OS ("<id> <version>"); releases not
-    // listed get Redis only. valkey-server: Ubuntu 24.04 (noble-updates, 7.2), 26.04 (9.0), Debian 13 (8.1); not in
-    // jammy or bookworm (only bookworm-backports, which is not enabled by default).
-    'caches_by_os' => [
-        'ubuntu 22.04' => ['redis'],
-        'ubuntu 24.04' => ['redis', 'valkey'],
-        'ubuntu 26.04' => ['redis', 'valkey'],
-        'debian 12' => ['redis'],
-        'debian 13' => ['redis', 'valkey'],
-    ],
-    'docker' => ['packages' => ['docker.io', 'docker-compose-v2', 'docker-buildx'], 'service' => 'docker'],
+    // Every server runs Docker (sites, compose stacks, functions and database containers).
+    // Docker Engine from Docker's apt repository, at least min_version: the agent adds the repository (its key's fingerprint
+    // checked), replaces an older Docker, and falls back to the distribution's docker.io only where Docker's repository
+    // has no suite yet and that one is recent enough (provision.apply docker.min_version).
+    'docker' => ['packages' => ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin', 'docker-compose-plugin'], 'service' => 'docker', 'min_version' => '28'],
 
     'base_packages' => ['acl', 'ca-certificates', 'curl', 'fail2ban', 'git', 'htop', 'jq', 'rsync', 'sqlite3', 'unattended-upgrades', 'unzip', 'zip'],
 
@@ -77,18 +61,10 @@ return [
     'machine_check' => [
         'timeout' => 180,
 
-        // Lowest versions Falak adopts or completes; anything older blocks. Compared with version_compare on the
-        // upstream version (Debian epoch and revision stripped; PostgreSQL by major from postgresql-NN). Each is what
-        // Falak itself installs on the oldest supported release, so a server Falak provisioned never blocks: Ubuntu 22.04
-        // ships PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0 and docker.io 20.10 (24.0 / 26.1 in jammy-updates);
-        // Valkey first ships with 24.04 (noble-updates, 7.2), its first release.
+        // Lowest versions Falak adopts or completes; an older Docker is replaced with Docker's (docker-ce). Compared with
+        // version_compare on the upstream version (Debian epoch and revision stripped).
         'minimum_versions' => [
-            'docker' => '20.10',
-            'postgresql' => '14',
-            'mysql' => '8.0',
-            'mariadb' => '10.6',
-            'redis' => '6.0',
-            'valkey' => '7.2',
+            'docker' => '28',
         ],
 
         // Docker package families: a missing piece is completed from the engine's own family (never mixed: Ubuntu's
@@ -99,21 +75,31 @@ return [
             'docker.io' => ['label' => "Ubuntu's archive", 'compose' => 'docker-compose-v2', 'buildx' => 'docker-buildx', 'repo' => null],
         ],
 
-        // Engines Falak can install or adopt, and the ones that conflict with them (same kind, same port). `packages`
-        // are regular expressions over installed package names; `processes` may hold the engine's port.
-        'engines' => [
-            'postgresql' => ['label' => 'PostgreSQL', 'kind' => 'database', 'packages' => ['/^postgresql-\d+$/'], 'processes' => ['postgres'], 'ports' => [5432]],
-            'mysql' => ['label' => 'MySQL', 'kind' => 'database', 'packages' => ['/^mysql-server-core-\d/', '/^mysql-server-\d/', '/^mysql-community-server$/', '/^mysql-server$/'], 'processes' => ['mysqld'], 'ports' => [3306]],
-            'mariadb' => ['label' => 'MariaDB', 'kind' => 'database', 'packages' => ['/^mariadb-server-core/', '/^mariadb-server-\d/', '/^mariadb-server$/'], 'processes' => ['mariadbd', 'mysqld'], 'ports' => [3306]],
-            'percona' => ['label' => 'Percona Server', 'kind' => 'database', 'packages' => ['/^percona-server-server/'], 'processes' => ['mysqld'], 'ports' => [3306]],
-            'redis' => ['label' => 'Redis', 'kind' => 'cache', 'packages' => ['/^redis-server$/'], 'processes' => ['redis-server'], 'ports' => [6379]],
-            'valkey' => ['label' => 'Valkey', 'kind' => 'cache', 'packages' => ['/^valkey-server$/'], 'processes' => ['valkey-server'], 'ports' => [6379]],
-        ],
-
-        // Ports the edge needs on servers that serve HTTP (Caddy's admin API on 2019 is bound to localhost).
-        'edge_ports' => [80, 443, 2019],
+        // Ports the edge needs on servers that serve HTTP (its admin API is a unix socket, no port).
+        'edge_ports' => [80, 443],
 
         // Web servers that would take the edge's ports.
         'web_servers' => ['nginx' => 'nginx', 'apache2' => 'Apache'],
+    ],
+
+    // Health alerts (CheckServerHealth, from the agents' heartbeats): disk per mount, a disk filling within
+    // forecast_hours (a line fitted to the last six hours), memory, CPU and load held for their window, a pending
+    // reboot, and an agent older than the one shipped for agent_outdated_minutes.
+    'health' => [
+        'disk_warning_percent' => 80,
+        'disk_critical_percent' => 90,
+        // A disk alert needs the level to hold this long; every alert here resolves only this many points below its
+        // threshold (load: 10% below), for clear_minutes for the sampled ones: no alert/recovery flapping.
+        'disk_hold_minutes' => 5,
+        'hysteresis_points' => 5,
+        'clear_minutes' => 5,
+        'forecast_hours' => 48,
+        'memory_percent' => 90,
+        'memory_minutes' => 10,
+        'cpu_percent' => 90,
+        'cpu_minutes' => 15,
+        'load_per_cpu' => 2.0,
+        'load_minutes' => 15,
+        'agent_outdated_minutes' => 60,
     ],
 ];

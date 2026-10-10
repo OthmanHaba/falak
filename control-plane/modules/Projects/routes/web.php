@@ -8,8 +8,9 @@ use Falak\Projects\Http\Controllers\ServiceController;
 use Illuminate\Support\Facades\Route;
 
 $ulid = '[0-9A-Za-z]{26}';
-// Environment slug (or id) in URLs.
-$patterns = ['project' => $ulid, 'environment' => '[A-Za-z0-9][A-Za-z0-9-]{0,63}', 'service' => $ulid];
+// Environment slug (or id) in URLs. Other modules' project pages (/projects/{project}/previews, …/volumes) are reserved
+// slugs, never environments.
+$patterns = ['project' => $ulid, 'environment' => '(?!(?:previews|volumes)(?:/|$))[A-Za-z0-9][A-Za-z0-9-]{0,63}', 'service' => $ulid];
 
 Route::middleware(['auth', 'org'])->prefix('projects')->name('projects.')->group(function () use ($ulid, $patterns) {
     Route::get('/', [ProjectController::class, 'index'])->name('index');

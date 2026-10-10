@@ -18,6 +18,11 @@ class CustomGitClient implements ProviderClient
         return (string) ($connection->account ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        return null;
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         return [];
@@ -77,6 +82,16 @@ class CustomGitClient implements ProviderClient
     }
 
     public function deleteWebhook(Connection $connection, string $repository, string $hookId): void {}
+
+    public function commentOnPullRequest(Connection $connection, string $repository, int $number, string $body, ?string $commentId = null): ?string
+    {
+        throw new NoApi('Custom git servers have no API: Falak can\'t comment on their pull requests.');
+    }
+
+    public function setCommitStatus(Connection $connection, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        throw new NoApi('Custom git servers have no API: Falak can\'t report commit statuses to them.');
+    }
 
     public function sshUrl(Connection $connection, string $repository): string
     {

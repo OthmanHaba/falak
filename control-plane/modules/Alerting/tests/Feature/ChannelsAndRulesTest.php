@@ -122,6 +122,7 @@ it('lets viewers see but not change alerting', function () {
 });
 
 it('creates, updates and deletes rules', function () {
+    alerting_without_default_pack($this->organization->id);
     $slack = alerting_channel($this->organization->id);
     [, $other] = memberOf();
     $foreign = alerting_channel($other->id);
@@ -137,7 +138,7 @@ it('creates, updates and deletes rules', function () {
         'quiet_hours' => ['enabled' => true, 'start' => '22:00', 'end' => '07:00', 'timezone' => 'Europe/Berlin', 'days' => [1, 2], 'allow_critical' => true],
     ])->assertSessionHasNoErrors()->assertRedirect('/settings/alert-rules');
 
-    $rule = Rule::query()->sole();
+    $rule = Rule::query()->whereNull('pack_key')->sole();
     expect($rule->event_types)->toBe(['fleet.*', 'insights.heartbeat_missed'])
         ->and($rule->quiet_hours)->toBe(['start' => '22:00', 'end' => '07:00', 'timezone' => 'Europe/Berlin', 'days' => [1, 2], 'allow_critical' => true])
         ->and($rule->channels()->pluck('alerting_channels.id')->all())->toBe([$slack->id]);
@@ -156,7 +157,7 @@ it('creates, updates and deletes rules', function () {
         ->assertSessionHasErrors(['event_types.0', 'min_severity']);
 
     $this->delete("/alerting/rules/{$rule->id}")->assertRedirect();
-    expect(Rule::query()->count())->toBe(0)
+    expect(Rule::query()->whereNull('pack_key')->count())->toBe(0)
         ->and(AuditEntry::query()->where('action', 'like', 'alerting.rule.%')->pluck('action')->sort()->values()->all())->toBe(['alerting.rule.created', 'alerting.rule.deleted', 'alerting.rule.updated']);
 });
 

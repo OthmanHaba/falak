@@ -2,6 +2,7 @@
 
 namespace Falak\Edge\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -37,6 +38,6 @@ class DnsCredential extends Model
      */
     protected function casts(): array
     {
-        return ['api_token' => 'encrypted', 'verified_at' => 'datetime'];
+        return ['api_token' => Sealed::class, 'verified_at' => 'datetime'];
     }
 }

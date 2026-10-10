@@ -31,6 +31,7 @@ import { CommitTag, triggerLabel } from './deployment-row';
 import { NetworkLogs } from './network-logs';
 import { PHASES, timelineRows, useDeployment } from './use-deployment';
 import { WaitingNotice } from './waiting-notice';
+import { WatchNotice } from './watch-notice';
 
 export type DeploymentTab = 'details' | 'build' | 'deploy' | 'network';
 
@@ -64,12 +65,31 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Details tab: what was deployed, by whom, how long it took, errors and the per-server phase timeline. */
-function Details({ deployment, rows, usedPhases }: { deployment: Deployment; rows: ReturnType<typeof timelineRows>; usedPhases: typeof PHASES }) {
+function Details({
+    deployment,
+    rows,
+    usedPhases,
+    onOpen,
+}: {
+    deployment: Deployment;
+    rows: ReturnType<typeof timelineRows>;
+    usedPhases: typeof PHASES;
+    onOpen: (deploymentId: string) => void;
+}) {
     const duration = durationMs(deployment.started_at, deployment.finished_at);
 
     return (
         <div className="grid gap-6 px-5 pb-8 sm:px-7">
             {deployment.status === 'waiting' && <WaitingNotice deployment={deployment} />}
+            <WatchNotice deployment={deployment} onOpen={onOpen} />
+            {deployment.auto_rollback_of && (
+                <p className="text-fg-muted text-xs">
+                    Started automatically: the release that went live before it tripped its watch.{' '}
+                    <button type="button" className="text-fg font-medium underline" onClick={() => onOpen(deployment.auto_rollback_of!)}>
+                        View that deployment
+                    </button>
+                </p>
+            )}
             {deployment.error && (
                 <div role="alert" className="border-danger/35 bg-danger-soft flex gap-2.5 rounded-lg border px-3.5 py-3 text-sm">
                     <AlertTriangle className="text-danger mt-0.5 size-4 shrink-0" aria-hidden />
@@ -278,7 +298,7 @@ export function DeploymentPanel({ ctx, record, tab, onTabChange, close }: Servic
                 ) : (
                     <>
                         <TabsContent value="details" className="min-h-0 flex-1 overflow-y-auto pt-5">
-                            <Details deployment={deployment} rows={rows} usedPhases={usedPhases} />
+                            <Details deployment={deployment} rows={rows} usedPhases={usedPhases} onOpen={(id) => ctx.openLayer('deployment', id)} />
                         </TabsContent>
                         <TabsContent value="build" className="flex min-h-0 flex-1 flex-col pt-4">
                             <LogViewer

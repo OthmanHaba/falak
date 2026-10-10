@@ -8,6 +8,7 @@ use Falak\Builds\Events\BuildCancelled;
 use Falak\Builds\Events\BuildFailed;
 use Falak\Builds\Events\BuildOutputReceived;
 use Falak\Builds\Events\BuildSucceeded;
+use Falak\Deployments\Application\Jobs\EvaluateReleaseWatches;
 use Falak\Deployments\Application\Jobs\ReconcileDeployments;
 use Falak\Deployments\Application\Listeners\DeployOnPush;
 use Falak\Deployments\Application\Listeners\DeploySplitSitesFirst;
@@ -17,7 +18,10 @@ use Falak\Deployments\Application\Listeners\HandleCommandOutcome;
 use Falak\Deployments\Application\Listeners\RecordBuildOutput;
 use Falak\Deployments\Application\Listeners\RecordCommandOutput;
 use Falak\Deployments\Application\Listeners\RedeployOnPortChange;
+use Falak\Deployments\Application\Listeners\RestoreLostSecrets;
 use Falak\Deployments\Application\Listeners\ResumeWaitingDeployments;
+use Falak\Deployments\Application\Listeners\WatchLiveReleases;
+use Falak\Deployments\Contracts\DeploymentBadges;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Deployments\Contracts\FunctionSources;
@@ -25,22 +29,29 @@ use Falak\Deployments\Contracts\LiveReleases;
 use Falak\Deployments\Contracts\RetainedImages;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
 use Falak\Deployments\Events\DeploymentFailed;
+use Falak\Deployments\Events\DeploymentStarted;
 use Falak\Deployments\Events\DeploymentSucceeded;
+use Falak\Deployments\Events\ReleaseWatchTriggered;
 use Falak\Deployments\Http\Channels\DeploymentChannel;
 use Falak\Deployments\Http\Channels\SiteDeploymentsChannel;
 use Falak\Deployments\Infrastructure\ActionDeploymentTrigger;
 use Falak\Deployments\Infrastructure\DeploymentSiteFields;
+use Falak\Deployments\Infrastructure\EloquentDeploymentBadges;
 use Falak\Deployments\Infrastructure\EloquentDeploymentDirectory;
 use Falak\Deployments\Infrastructure\EloquentLiveReleases;
 use Falak\Deployments\Infrastructure\EloquentRetainedImages;
 use Falak\Deployments\Infrastructure\NoFunctionSources;
+use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Insights\Events\IssueOpened;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Limits\Events\ServiceOomKilled;
+use Falak\Limits\Events\ServiceRestartLoop;
 use Falak\Sites\Contracts\SiteResourceExtension;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetFailed;
@@ -61,6 +72,7 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         DeploymentDirectory::class => EloquentDeploymentDirectory::class,
+        DeploymentBadges::class => EloquentDeploymentBadges::class,
         LiveReleases::class => EloquentLiveReleases::class,
         RetainedImages::class => EloquentRetainedImages::class,
         FunctionSources::class => NoFunctionSources::class,
@@ -91,10 +103,12 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
         $types = $this->app->make(AlertTypes::class);
         $types->register('deployments.failed', 'Deployment failed', 'Deployments', Severity::Critical);
         $types->register('deployments.rolled_back', 'Site rolled back', 'Deployments', Severity::Warning);
+        $types->register(ReleaseWatchTriggered::ALERT_TYPE, 'Release unhealthy after going live (not rolled back)', 'Deployments', Severity::Critical);
 
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(CommandOutputReceived::class, RecordCommandOutput::class);
+        Event::listen(AgentSecretsMissing::class, RestoreLostSecrets::class);
         Event::listen(BuildSucceeded::class, [HandleBuildEvents::class, 'succeeded']);
         Event::listen(BuildFailed::class, [HandleBuildEvents::class, 'failed']);
         Event::listen(BuildCancelled::class, [HandleBuildEvents::class, 'cancelled']);
@@ -106,12 +120,18 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
         Event::listen(SiteDeleted::class, [ForgetDeletedResources::class, 'siteDeleted']);
         Event::listen([SiteTargetReady::class, SiteTargetFailed::class, SiteTargetsChanged::class], ResumeWaitingDeployments::class);
         Event::listen(OrganizationDeleted::class, [ForgetDeletedResources::class, 'organizationDeleted']);
+        Event::listen(DeploymentSucceeded::class, [WatchLiveReleases::class, 'succeeded']);
+        Event::listen(DeploymentStarted::class, [WatchLiveReleases::class, 'started']);
+        Event::listen(ServiceOomKilled::class, [WatchLiveReleases::class, 'oomKilled']);
+        Event::listen(ServiceRestartLoop::class, [WatchLiveReleases::class, 'restartLoop']);
+        Event::listen(IssueOpened::class, [WatchLiveReleases::class, 'issueOpened']);
 
         Broadcast::channel(DeploymentChannel::NAME, DeploymentChannel::class);
         Broadcast::channel(SiteDeploymentsChannel::NAME, SiteDeploymentsChannel::class);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new ReconcileDeployments)->everyMinute()->name('deployments:reconcile')->withoutOverlapping();
+            $schedule->job(new EvaluateReleaseWatches)->everyThirtySeconds()->name('deployments:watch')->withoutOverlapping();
         });
     }
 }

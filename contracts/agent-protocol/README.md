@@ -25,6 +25,7 @@ Both sides validate against these schemas in their test suites.
 | GET  | `/agent/v1/commands?wait=30` | — | `{ "commands": [envelope...] }` (long-poll, returns early when a command is queued) |
 | POST | `/agent/v1/commands/{id}/events` | NDJSON of `event` | `204` (idempotent on `(command_id, seq)`) |
 | POST | `/agent/v1/insights` | NDJSON of insight events | `204` |
+| POST | `/agent/v1/requests/{type}` | `requests/<type>.schema.json` | the type's `$defs/reply` (`404 unknown_request`, `409 {error: <reason>}` when refused, `422` when invalid) |
 
 ## Command payloads
 `commands/<type>.schema.json` — one schema per command type in the catalogue in `ARCHITECTURE.md` §3.
@@ -36,8 +37,7 @@ feature name: the agent lists it in `facts.features` (`agent/internal/version.Fe
 removes the field for agents that do not (`Fleet\Application\PayloadCompatibility::FIELDS`). When an agent reports
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
-`db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
-`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`, `db.redis.backup`, `db.redis.restore_checks`.
+`compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`, `db.instances`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -66,88 +66,181 @@ agent which components were adopted: their `packages` are never installed (remov
 `unattended_upgrades` gets no Falak config. `components` is stripped for agents without `provision.v2`, which also
 never get `provision.inspect` and keep today's plan.
 
-## Redis and Valkey instances (`db.redis`)
-`db.redis.apply` / `db.redis.remove` (`engine`: `redis` | `valkey`) manage one instance per Falak service, run by the
-distribution's template unit `redis-server@falak-<name>` / `valkey-server@falak-<name>` (Debian/Ubuntu ship both
-templates: `Type=notify`, `RuntimeDirectory`, `ProtectSystem=strict`). Each instance runs as its own system user
-`falak-<engine>-<name>` (past 32 characters `falak-rh-` / `falak-vh-` + a hash, which no plain name produces; the agent
-only adopts or deletes a user carrying its GECOS `Falak <Engine> instance <name>`, home `/nonexistent` and a nologin
-shell, and refuses to use any other user of that name): a drop-in `/etc/systemd/system/<unit>.d/50-falak.conf` sets `User=`/`Group=`, resets
-`ReadWritePaths=` to the instance's data directory `/var/lib/falak-<engine>/<name>` (0700) and its runtime directory,
-sets `TimeoutStartSec=20min` (`Type=notify` waits for the dataset to load) and points `ExecStart` at `/etc/falak-<engine>/<name>.conf` (the template's `/etc/redis` is 0770 `redis:redis`, which
-the instance user must not join), so the stock instance on 6379 and other instances can neither read nor write its data. The
-config holds `requirepass`, is 0640 `root:<instance group>`, renames `CONFIG` to a random name only the agent knows
-(root-only state in `/var/lib/falak/db/redis/`), and disables `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`,
-`MIGRATE`, `ACL`, `MONITOR`, `SLOWLOG` and, on Valkey 8.1+, `COMMANDLOG` (the last three would show the agent's commands;
-the version comes from `<engine>-server --version`) (`SYNC`/`PSYNC`/`REPLCONF` stay for `redis-cli --rdb`, `EVAL`/`FUNCTION` for Laravel).
-redis-cli gets every command on stdin and the password in `REDISCLI_AUTH`: neither reaches a command line.
+## Database containers (`db.instances`)
+Every managed database (PostgreSQL, MySQL, MariaDB, Redis, Valkey) is a container `falak-db-<instance>` of a Falak
+database image (`docs/DB_IMAGES.md`); nothing runs on the host. The agent drives it through the Docker Engine API and
+`docker exec <ctr> falak-db <op>`; SQL and passwords never appear in an argument.
 
-Memory limit, eviction, password and persistence change on the running instance (renamed `CONFIG SET`; AOF on: the
-rewrite is awaited through `INFO persistence`; AOF off or rdb from none: `SAVE` first). The current mode always comes
-from the running process (`INFO persistence`, `CONFIG GET save`; the config file when it is down), never from the
-agent's state, so an AOF the process uses is never moved. A new port, bind address, drop-in or set of disabled
-commands restarts the instance: save points are set live and `SAVE`d (with `none`: snapshots and AOF off) so the stop
-keeps (or drops) the data as wanted, then stop, move aside what the next start must not load
-(`appendonlydir.falak-<UTC time>`), start; a restart that turns AOF on starts from `dump.rdb` with snapshots and switches
-AOF on live. An AOF whose first rewrite is running, scheduled or failed (stopped: no manifest) is never loaded: AOF is
-switched off before the restart and the start runs from the snapshot. A wait that runs out, or a command with under 2
-minutes left, never restarts the instance (the apply fails; the redelivery waits again). Applies and removes of one
-instance are serialized (waiting ends with the command's context), every local account change globally (site users
-included). Errors never
-carry the secret `CONFIG` name, passwords or command arguments. With
-`none` the data is in memory only: files from earlier modes are moved aside and every restart starts empty. The agent
-records what the running process uses only after a successful (re)start and `PING`, so a redelivered apply after a
-failure converges. Apply refuses a new port another process listens on (`port 6381 is in use by <process>`) and
-waits for `PING` (`LOADING` extends the wait to 15 minutes). The stock instance is never touched. The control plane
-only queues these commands for agents that list `db.redis`; such agents also report `facts.runtimes.redis` /
-`.valkey` (`<engine>-server --version`).
+- `db.instance.create` / `db.instance.update` (redeliverable) converge the container to `instance`: the image (a
+  `digest` pin is pulled as `<repository>@<digest>` and checked against RepoDigests; without one the tag is pulled again
+  and a newer image recreates the container — minor upgrades), data on the sized volume `volume_id`
+  (`<volume>/data` at the engine's data directory, `<volume>/spool` at `FALAK_DB_SPOOL`; the agent waits up to 120 s
+  for the volume to be mounted), `memory_bytes` / `cpus`, PostgreSQL's `/dev/shm` (a quarter of the memory, 64 MiB–1
+  GiB), restart `unless-stopped`, a 60 s stop timeout, the `falak-db health` healthcheck, `settings` as
+  `FALAK_DB_SETTINGS` (TLS off when no certificate is installed). It joins `network` (an environment's
+  `falak-env-<id>`, created when missing) under `aliases` (default `falak-db-<id>`) and publishes the engine on
+  `127.0.0.1:<host_port>` plus `publish.addresses` (private and CGNAT IPv4 only; `publish.public` binds every
+  address). The password goes to `/run/falak/secrets/falak-db-<id>/password` (tmpfs, 0444 in a 0555 directory under
+  a 0700 parent; a `Mounts` bind at `/run/secrets`, read-only) and reaches the engine as its `*_FILE` variable. `tls`
+  (create only) is written to `/etc/falak/db/<id>/tls` (root, 0600) and mounted read-only; updates keep it. The
+  container is recreated (on the same volume) when its spec hash or image changes, and the command waits until it is
+  healthy (300 s; the failure carries the log tail). The image's cosign signature is not verified yet.
+- `db.instance.restart`, `db.instance.stop`, `db.instance.delete` (container, secret files and certificate; the volume
+  is `volume.delete`'s).
+- `db.instance.password` rotates the superuser / root / default password: `.password.new` in the secrets directory,
+  `falak-db password set --file`, then it replaces `password`. `db.instance.secrets` puts the file back after a reboot
+  (heartbeat `databases[].secrets_missing`) and starts the container; a present directory is never touched (it may be
+  mounted).
+- `db.instance.upgrade` (`mode: major`, SQL engines): for each database, `falak-db database create` on the target, then
+  `falak-db backup logical` on the source piped into `restore logical` on the target; the users are applied there,
+  the target takes the source's DNS alias on the network, and the source stops.
+- `db.create` / `db.drop` / `db.user.apply` (SQL engines) run `falak-db database create|drop` and `falak-db user apply
+  --spec <file>`; the spec, with the password, is a dot-file in the instance's secrets directory, removed afterwards.
+- `db.backup` streams `falak-db backup logical` (pg_dump `-Fc`, mysqldump / mariadb-dump, an RDB snapshot) through
+  zstd and AES-256-GCM (FKB1, `encryption`; docs/BACKUPS.md) to the presigned URL; falak-db's `falak-db-result:` line
+  must be there. The result has the stored file's size and sha256, the dump's `uncompressed_bytes` and
+  `plaintext_sha256`, and with `table_counts` the row counts taken before the dump. `db.restore` checks the file's
+  sha256, opens it with `encryption` (the key, or the customer's age identity) and pipes it into `falak-db restore
+  logical` (postgres `--swap`; MySQL / MariaDB after `database create`); a segment that fails authentication fails the
+  restore. Redis / Valkey stop, a one-off `docker run --rm -i --network none --entrypoint falak-db` of the instance's
+  image on its data directory replaces the snapshot, and the instance starts again (also when the restore failed).
+- `db.drill` restores a backup into a throwaway container (`falak-db-drill-<id>`, label `falak.db.drill`): the
+  instance's image digest, its memory limit from the payload, `--network none`, no port, a scratch directory under
+  `/var/lib/falak/drills/<id>`. It checks tables (keys), the 10 largest tables' row counts against `table_counts`
+  (± `tolerance_percent`) and the optional `query` (`falak-db query`, read-only), then removes the container, its data
+  and its password file whatever happened. A server without the memory or disk for it answers `status: skipped` with
+  the reason; failed checks are `status: failed` (the command itself succeeds).
 
-**Network access (`db.redis.network`).** `bind` only accepts loopback, private (RFC 1918, CGNAT `100.64.0.0/10`, IPv6
-ULA `fc00::/7`) and WireGuard interface addresses (a private network whose range is public: the interface's sysfs
-`DEVTYPE=wireguard`, without sysfs the `wg` name prefix); anything else, `0.0.0.0` / `::` and link-local included,
-fails the command before anything changes. An accepted address the host does not have (yet) is left out and reported
-in the result's `skipped` (Redis would refuse to start); the control plane applies again when it appears.
-`containers: true` adds the Docker default bridge's IPv4 (`docker0`, when it exists and is private): containers on
-any bridge network of the server reach it through their gateway. The result reports `bind` (what the instance
-listens on) and `container_host`. A changed bind list restarts the instance the usual way (data kept).
-`net.firewall.apply` `container_ports[].peers` (same feature) are other servers' addresses accepted for the ports on
-the interface they arrive on — `container_ports[].peer_interfaces` (address → interface) when the control plane names
-it (a Falak WireGuard network's, also before its config reaches the server), else the agent's: a Falak WireGuard network
-whose `Address` range holds the peer, a local subnet; none: any interface — after the Docker-bridge accepts and before
-the port's drop: `sources` may then be empty. `peer_interfaces` needs feature `net.firewall.peer_interfaces`
-(stripped otherwise). Both fields
-are stripped for agents without the feature (the control plane never sends them non-loopback binds either).
+The heartbeat's `databases` lists every container labelled `falak.db.instance` with its state, health and
+`secrets_missing`. `provision.apply` `docker.live_restore` merges `"live-restore": true` into
+`/etc/docker/daemon.json` and reloads dockerd, so databases keep running while Docker restarts or is upgraded.
+`docker.compose.up` `join_networks` and `networks[].environment` (`docker.run`, `deploy.container.swap`) put apps on
+their environment's network, where the databases answer by name.
 
-**Backups and restores (`db.redis.backup`).** `db.backup` / `db.restore` take `engine: redis | valkey` with the
-instance's name as `database` (`^[a-z][a-z0-9_-]{0,40}$`; SQL engines keep their identifier pattern). The agent
-reaches the instance with the port and password it knows (state, else config file): no secret in the payload.
-Backup: `redis-cli --rdb <tmp>` (`valkey-cli`) against the running instance, password in `REDISCLI_AUTH` — a
-consistent snapshot through the replication handshake (`SYNC`, hence not disabled), no restart, nothing written in
-the data directory; the file must start with an RDB header (`REDIS` + 4 digits, or Valkey 9's `VALKEY` + 3 digits),
-then it is gzipped and shipped like a SQL dump. The result adds `rdb` (e.g. `REDIS0011`). A stopped instance fails
-("is not running"). Restore: the source is downloaded (sha256 checked) and gunzipped into the instance's data
-directory, the header checked and its version against the installed server (`<engine>-server --version`): Valkey
-refuses Redis 7.4+ snapshots (RDB 12+), Redis refuses `VALKEY…` ones, Valkey < 9 refuses `VALKEY…`, Redis 6.x / 7.0
-/ 7.2 refuse versions above 9 / 10 / 11; this fails before anything changes. Then the unit stops (always, also
-when it is not active: that cancels an automatic restart pending; a failed stop starts it again and changes nothing), `dump.rdb`,
-`appendonlydir`, `appendonly.aof` are renamed `<file>.falak-<UTC time>`, the snapshot becomes `dump.rdb` (0600, the
-instance user) and the unit starts; with AOF it starts from the same config with `appendonly no`, then `CONFIG SET
-appendonly yes` (renamed command) rewrites the AOF from memory and the config file is put back. Without persistence
-the loaded `dump.rdb` is removed. A failed start, `PING` or AOF switch removes the restored files, puts the earlier
-ones and config back, starts the instance again and fails with the unit's log tail. The instance must exist (the
-agent never creates one in a restore). The result adds `rdb` and `moved_aside` (the earlier files' new names, kept; older `.falak-*` copies of these files
-are removed after a successful restore, so only the latest set stays) and `warnings`: with AOF, once `CONFIG SET
-appendonly yes` succeeded the data is restored, so a config file / state that can't be put back (3 tries) leaves
-the first start's (`appendonly no`, state `rdb`) and the restore succeeds with a warning; the next `db.redis.apply`
-converges (it reads the live mode, aof, and rewrites both without a restart), and the control plane queues one. A
-loaded dataset whose `used_memory` exceeds `maxmemory` is a warning too (evictions or refused writes follow).
-The control plane only sends these engines to agents that list the feature.
-Backup results add `uncompressed_bytes` (every engine: the dump's size before gzip). Restores check the instance's disk
-first, before anything changes: free space (statfs) must cover the gunzipped snapshot (twice with AOF, for the
-rewrite) plus 256 MiB, and the copy is capped at that size (+1 % + 1 MiB) and stops when less than 256 MiB is left.
-The size comes from the payload's `uncompressed_bytes` (feature `db.redis.restore_checks`, stripped for older agents;
-the control plane sends what the backup recorded), else from the gzip trailer (`ISIZE`, exact below ~4 MB of gzip,
-otherwise a lower bound and no cap).
+## Point-in-time recovery (v0.10.0)
+Instances whose spec has `pitr.enabled` (written to `/etc/falak/db/<id>/pitr.json`; without it the spool is emptied)
+have their spool shipped by the agent (`agent/internal/db/pitr.go`, docs/BACKUPS.md "Point-in-time recovery"):
+
+- MySQL / MariaDB: `falak-db binlog-rotate` every 60 s (skipped while the binlog being written did not grow); exit 4 is
+  reported once with `pitr.gap`, and after a `reset` the next `db.pitr.base` runs `binlog-rotate --restart`.
+- Completed spool files (never `.` files) go in batches: `pitr.upload_urls` (`{instance, kind: wal|binlog,
+  segments: [{name, bytes, sha256}]}` → `{segments: [{name, id, url, encryption} | {name, id, shipped: true}]}`: a URL
+  and a key or recipient per segment, `encryption.key_id` = the segment id), FKB1 + PUT, then `pitr.shipped`
+  (`{instance, kind, segments: [{id, name, size_bytes, sha256, plaintext_bytes, plaintext_sha256, end_time}]}` →
+  `{acknowledged: [id]}`: only once a HEAD finds the object with the reported size and, up to 64 MiB, SHA-256). A spool
+  file is deleted only once acknowledged; the spool is read beneath the volume without following symlinks. Refusals:
+  `too_many_pending`, `too_many_gaps`, `unknown_instance` (not this
+  server's, or the wrong kind), `pitr_disabled`, `bad_recipient`. Failures back off with jitter; the heartbeat reports
+  `databases[].pitr`.
+- `db.pitr.base`: `falak-db backup physical` like `db.backup` (result: `started_at`, `finished_at`, `start_wal`,
+  `stop_wal` / `start_binlog`). `db.pitr.restore`: a new instance from a base and segments (each checked, decrypted
+  and fully verified before use; `segments.*.encryption.key` and `identity` forgotten when it settled), recovered to
+  `target_time`, read-only, with row counts. `db.pitr.promote`: `readonly off`, and with `stop` the replaced instance
+  stops.
+
+## Secrets on servers (v0.10.0)
+**Env files on tmpfs.** `deploy.prepare` writes `env_file` to `/run/falak/env/<site>.env` (directory 0711 root, file
+0440 owned by the site user and its group, which the edge user joins for FrankenPHP) and makes `shared/.env` a symlink
+to it, replacing the regular file earlier agents kept; every release's `.env` links to `shared/.env`. The link is
+made through an `os.Root` on the site directory and refused when `shared/` or a directory on the path is a symlink
+(the site user owns the site directory). Laravel's config cache holds the resolved secrets too: with `config_cache`
+the agent gives each release a tmpfs directory `/run/falak/env/<site>.d/<release>` (0750, site user and group) linked
+as `<release>/.falak-cache`, and the control plane sets `APP_CONFIG_CACHE=.falak-cache/config.php` in the `.env`
+(Laravel resolves it against the release, so each release keeps its own cache). PHP-FPM pools of isolated sites get
+both tmpfs paths in `open_basedir` (PHP checks the resolved path);
+the control plane re-applies the pools when an agent reports a new version. Nothing with a secret is written under
+`/srv/falak/sites`.
+
+**Compose projects.** `docker.compose.up` / `.pull` write their `.env*` files to `/run/falak/env/compose-<project>.env`
+(0400 root); the release directory links to it and `--env-file` points at it.
+
+**Secret files for containers.** `docker.run` and `deploy.container.swap` take `secret_files`: written to
+`/run/falak/secrets/<container>/<NAME>` and bind-mounted read-only at `/run/secrets` (a `Mounts` bind, which never
+creates a missing source). The parent directory is 0700 root, so no other host user reaches them; inside the container
+they are 0444 in a 0555 directory (the image's user is unknown), or 0400/0500 owned by a numeric `user`. The
+variables passed as files are not in the container's env, so `docker inspect` doesn't show them. Each color of a swap
+has its own directory, removed with the container.
+
+**Supervised programs and cron jobs.** `proc.apply` programs and `cron.apply` jobs name their secret variables in
+`mask`. The agent's state files (`/var/lib/falak/proc.json`, `cron.json`) keep only the other variables and the names
+of the secret ones; the values are in `/run/falak/state/{proc,cron}-secrets.json` (0600). After a reboot a program or
+job whose secrets are gone does not start: it waits, its site is reported in `missing_secrets`, and the control plane
+answers with a forced `proc.apply` / `cron.apply` for the server.
+
+**After a reboot** `/run` is empty: Docker can't start a container whose secret directory is missing, and env links
+dangle. The agent remembers every env link it made (`/var/lib/falak/env-links.json`, paths only: any sites root,
+compose releases) and every heartbeat carries `missing_secrets` (at most 500 site slugs) until they are restored. The
+control plane answers with `site.env.write` for the live release (`release_id`), unless a deployment of the site is
+running, at most once per server and site every two minutes: the `.env` (classic sites; then `after` runs
+`artisan config:cache` for Laravel and `reload` reloads PHP and restarts the site's programs, `site_procs`), the compose
+env file (`compose`), or the secret files of a container site in the files mode. The agent only restores what is
+missing (an existing file or directory was written by a deployment since, and may be mounted), refuses a release that
+is no longer current, and starts the containers that could not start without their files.
+
+**Output masking.** Payloads that carry secrets list the names of their secret variables in `mask`
+(`deploy.prepare`, `deploy.hook`, `deploy.container.swap`, `docker.run`, `docker.compose.up`, `docker.compose.pull`,
+`site.env.write`, `fn.release.apply`, `system.exec`, and each `proc.apply` program); the values are never sent twice.
+The agent takes the values from the same payload (env maps, dotenv content, every `secret_files` content) and, for
+`deploy.hook` and `system.exec` with `site`, from the site's env file, which scripts read. Each value (6 bytes or
+more; 4 in build logs) becomes `••••` as is and in the forms it commonly leaks in: base64 (standard and URL alphabets,
+at all three byte alignments inside a longer encoding), URL-encoded, lower-case hex, JSON-escaped (Go and PHP styles)
+and quoted for a single-quoted shell word; matches split across writes are masked too (at most 8 KiB is held back).
+This covers command output, errors, results, deployment lifecycle events and supervised programs' log files and OTLP
+records. Build jobs take the same `mask` for `env` and `build_args`.
+
+## Volumes (v0.10.0)
+`volume.*` commands name a volume by `{id, kind, name?, path?}`: `docker` (a named volume, `name`), `sized` (an ext4
+image `/var/lib/falak/volumes/images/<id>.img` loop-mounted at `/var/lib/falak/volumes/<id>` by the systemd unit
+`var-lib-falak-volumes-<id>.mount` — systemd names a mount unit after its path — so the mount survives reboots),
+`bind` (a host path within the agent's `FALAK_VOLUME_BIND_ALLOW`, colon-separated; empty refuses bind volumes) and
+`shared_path` (a classic site's `<sites root>/<site>/shared/<path>`). `volume.create` and `volume.resize` (grow only:
+`fallocate`, `losetup -c`, `resize2fs` online) are idempotent; `volume.delete` waits up to `wait_s` for running
+containers that mount the volume (by name, or by host path) to go away and refuses otherwise unless `force`; bind
+paths are never deleted. `volume.inventory` reports usage (statfs for mounted sized volumes, a du-style walk that
+never follows symlinks otherwise) and the server's Docker volumes.
+
+Snapshots (`volume.archive`) are tar streams compressed and encrypted like database backups (FKB1, `encryption`), PUT
+to a presigned URL (sha256 and size of the stored file, the tar stream's `plaintext_sha256`, the signature never
+echoed); `volume.drill` restores one into a scratch directory next to the volumes, checks its file count, and removes
+it; `consistency` pauses or stops the running containers that mount the
+volume while it is read. `volume.restore` and `volume.clone` write into a new or empty volume only (created when
+missing), check the sha256 before anything is written, and extract through an `os.Root`: absolute names, `..`
+segments, writes through symlinks and hard links out of the volume are refused. `volume.browse` (list, or a name
+search) and `volume.download` (a file as is, a folder as `.tar.zst`, capped by `max_bytes`) refuse any path with a
+symlink in it.
+
+Bind and shared-path directories may be writable by others (a site's user owns its site directory), so the agent
+never re-walks their path as a string: it opens them once from a trusted anchor (the allowlist entry — the entry
+itself is refused, only paths strictly below it — or the sites root) one component at a time, refusing symlinks and
+directories swapped while being opened, and every later access (browse, archive, download, du, delete) goes through
+that handle. `volume.create` refuses an existing Docker volume that does not carry the volume's `falak.volume.id`
+label unless `adopt: true` (restores and clones never adopt). `volume.archive` with `consistency: stop` and
+`keep_stopped: true` leaves the stopped containers stopped after a successful upload (moves). Snapshots and
+downloads are staged in `<volumes root>/.staging` (0700, the volume store's filesystem, never /tmp) after a free-space
+check (estimate + 10%); `volume.restore` aborts a download larger than `archive_bytes` + 1 MiB and never unpacks more
+than `uncompressed_bytes` + 1%. A sized volume's empty mountpoint is made immutable (`chattr +i`) before it is
+mounted, so containers bound to it while the mount is missing cannot write to the host's disk; the mount unit is
+ordered `Before=docker.service`. `volume.resize` to the current size still runs `losetup -c` and `resize2fs`, so a
+resize that failed half way can be retried.
+
+## Security baseline (v0.10.0)
+`security.audit` (redeliverable, read-only) runs every check within 55 s, each command with its own short timeout,
+file walks bounded (depth and entries) and never following symlinks, without network calls: `apt-get -s upgrade` reads
+the package lists already on disk. The payload carries what the control plane expects — `managed_keys` (per unix
+user; other authorized keys are reported by fingerprint, never by content), `expected_ports` (what the firewall
+accepts; public listeners outside them are reported), `known_users`, `ssh_port`. Evidence is short and secret-free.
+
+`security.fix {fix_id}` runs only fixes compiled into the agent (`agent/internal/security/fixes.go`); the control
+plane can't send commands or paths. Each fix is idempotent (`changed: false` and no backup when there is nothing to
+do), saves every file it touches under `/var/lib/falak/security-backups/<backup_id>/` (`manifest.json`: path, mode,
+owner, sha256 and a copy; secret files' permission fixes record mode, owner and inode only, never their content),
+validates (`sshd -t` and `sshd -T`, `apt-config dump`, `fail2ban-client -t`, `dockerd --validate`, `sysctl -p`) and
+restores the backup on failure. `ssh.harden` refuses when no login user has a key, writes every hardened setting
+into `50-falak.conf` and comments out conflicting lines elsewhere (an earlier drop-in such as `50-cloud-init.conf`
+wins otherwise). Container secret files stay 0444 (their 0700 parent and 0555 / 0500 directories are what is checked); the permissions fix opens files component by component without symlinks and skips hard-linked files and owners other than the site's user. `ssh.harden` also needs a user sshd lets in (`sshd -T -C`) with a shell key Falak did not install for its falak user (`managed_keys`), refuses two-factor setups, and restarts sshd after a rollback. `security.undo {fix_id, backup_id, force?}` refuses files changed since the fix unless `force`; it restores the backup exactly (a copy whose checksum does not
+match, or a secret file swapped since, is refused) and reloads what the fix changed; backups older than 7 days are
+pruned. `firewall.apply` and `firewall.close_port:<proto>:<port>` are applied by the control plane (Network owns the
+firewall); the agent refuses them.
 
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of
@@ -163,8 +256,9 @@ Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s
 A lost command whose schema has `"x-falak-redeliverable": true` at its root is queued again (up to 5 deliveries);
 the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
 declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
-`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `db.redis.apply`, `db.redis.remove`,
-`system.ssh_key.sync`), read-only commands
+`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `db.instance.create`, `db.instance.update`,
+`db.instance.stop`, `db.instance.delete`, `db.instance.secrets`,
+`system.ssh_key.sync`, `site.env.write`), read-only commands
 (`proc.status`, `system.facts`, `docker.compose.ps`, `provision.inspect`) and `system.upgrade_agent` (a no-op once
 installed). Any other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent
 restarted before running the command" when it was never started, `timed_out` otherwise (a late result still

@@ -43,6 +43,11 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `projects.view` / `projects.manage` | view: all; manage: admin, developer | projects + environments / create, rename, delete, duplicate environments |
 | `functions.view` | admin, developer, viewer | functions, their code, versions, schedules and runs |
 | `functions.deploy` | admin, developer | deploy function code and versions (also needs `deployments.create`), run schedules |
+| `secrets.view` | admin, developer, viewer | secret names, metadata, versions (never values) |
+| `secrets.manage` | admin, developer | create secrets, set values, roll back, delete |
+| `secrets.reveal` | admin, developer | read a non-sensitive value; a token needs this ability **by name** (`*` is not enough) |
+| `security.view` | admin, developer, viewer | servers' security baseline reports |
+| `security.fix` | admin | run audits, apply and undo baseline fixes |
 
 ## Identity
 
@@ -81,20 +86,6 @@ for the server's architecture, or the agent already runs it.
 {"data": {"id": "01k…", "server_id": "01k…", "status": "running", "from_version": "v0.3.0", "to_version": "v0.4.0",
           "rollout_id": null, "error": null, "requested_at": "2026-09-28T10:00:00+00:00", "finished_at": null}}
 ```
-
-### `POST /api/v1/servers/{server}/database-engine` — update permission on the server
-Adds a database engine to a provisioned server that has none: `{"engine": "postgresql|mysql|mariadb"}`, or Redis /
-Valkey to one without a cache engine: `{"engine": "redis|valkey"}` (server types with a cache component: `app`,
-`cache`; Valkey only where the OS packages it: Ubuntu 24.04 and 26.04, Debian 13). One engine install runs at a time. The engine
-joins the server's stack and the provisioning plan converges with it (`provision.apply`: the distribution's packages
-and service, as at creation). `202` `{"data": {"engine", "status": "installing", "command_id"}}`. Once the agent
-reports success the engine appears under Databases (and, on app servers, is reachable from the server's containers);
-when the plan fails it is taken back out of the stack (audit `server.database_engine_install_failed`). `422` for an
-unsupported engine, a server that already runs (or is installing) one, a server type without databases (only `app`
-servers may add one; `database` servers always have one), or a server that is not active, and when the server's
-machine check blocks that engine (another engine of the kind, or its port taken; the message names it). An engine
-the machine check found is adopted rather than installed again. Rate limited to 10/min.
-Panel: server Settings → Database engine.
 
 ### Machine check
 Before provisioning (after enrollment, on Re-provision), servers whose agent has the `provision.v2` feature get a
@@ -143,6 +134,44 @@ agents get the plan directly. `202` `{"data": {"status", "status_message", "stag
 (`status_message` starts with "Re-provisioning stopped."); it never goes to `needs_attention`. `422` while the server is
 being deleted. Rate limited to 10/min.
 
+### `GET /api/v1/servers/{server}/capacity` — `servers.view`
+What every service on the server may use against what it has (the agent's facts): each site, compose service,
+worker, daemon, database instance and function with its effective limits (memory in MB, `null` = unlimited), the
+totals, and `overcommitted` (memory limits or reservations over the RAM, CPU limits over the cores) with warnings.
+A function counts `max_instances` × its memory and CPUs; a database instance reserves its whole memory.
+```json
+{"data": {"server": {"id": "…", "name": "app-1", "memory_mb": 2048, "cpus": 2},
+          "totals": {"memory_limit_mb": 2176, "memory_reservation_mb": 1280, "cpus": 3.5},
+          "unlimited": {"memory": 0, "cpus": 1}, "overcommitted": {"memory": true, "reservations": false, "cpus": true},
+          "items": [{"kind": "database", "id": "…", "name": "app", "memory_limit_mb": 1024, "memory_reservation_mb": 1024, "cpus": 1.5, "url": "/databases/…"}],
+          "warnings": ["Memory limits add up to 2176 MB, more than the server's 2 GB: …"]}}
+```
+
+### Security baseline
+
+Every active server is audited daily (and after provisioning, and on demand) by the agent's read-only
+`security.audit`: SSH, updates, firewall, fail2ban, Docker, files, kernel settings, accounts, time sync; the
+control plane adds the backup checks. Each check has a `status` (`pass|warn|fail|info`) and a `severity`
+(`critical|high|medium|low|info`). **Score** = 100 minus the cost of every failing check (critical 30, high 15,
+medium 5, low 2) and warning (critical 15, high 7, medium 2, low 1), never below 0. `production_ready` is true when
+no check of high or critical severity fails.
+
+### `GET /api/v1/servers/{server}/security` — `security.view`
+The latest completed report: `{id, score, production_ready, counts, trigger, duration_ms, ran_at, findings: [{id,
+title, area, status, severity, evidence, fix_id}]}`. `404` before the first audit.
+
+### `POST /api/v1/servers/{server}/security/audit` — `security.fix` (10/min)
+`202 {id, status, error}`; one audit runs per server at a time (a running one is returned).
+
+### `POST /api/v1/servers/{server}/security/fixes` `{fix_id, confirm?, reboot_at?}` — `security.fix` (30/min)
+Applies a fix the latest report offers (`422` otherwise). Fixes come from an allowlist compiled into the agent
+(`ssh.harden`, `updates.unattended`, `updates.install`, `updates.reboot`, `fail2ban.sshd`, `docker.tcp_off`,
+`kernel.sysctl`, `files.secret_permissions`, `time.sync`) or are applied by the control plane (`firewall.apply`,
+`firewall.close_port:<tcp|udp>:<port>`, a Network deny rule). Disruptive fixes (`ssh.harden`, `updates.install`,
+`updates.reboot`, `docker.tcp_off`) need `confirm: true`; `reboot_at` (`HH:MM`, server time) sets the reboot window.
+`202 {id, fix_id, status, error}`; the server is audited again once the fix settles. Fixes with a backup can be
+undone from the server's Security tab for 7 days.
+
 ## Sites
 
 ### `GET /api/v1/sites` · `GET /api/v1/sites/{site}` — `sites.view`
@@ -158,11 +187,12 @@ being deleted. Rate limited to 10/min.
   "targets": [{"id": "…", "server_id": "…", "server_name": "web-1", "server_ip": "203.0.113.1", "role": "leader", "status": "ready", "status_message": null, "command_id": null}],
   "strategy": "zero-downtime",
   "current_release": {"id": "01k…", "commit": "a1b2…", "branch": "main", "deployment_id": "01k…", "active": true, "…": "see Release"},
+  "release_watch": {"enabled": false, "minutes": 5, "…": "see Watch after deploy"},
   "created_at": "2026-09-26T10:00:00+00:00"
 }}
 ```
-`show` also returns `deploy_script`, `shared_paths`, `laravel`. `strategy` / `current_release` are contributed by
-Deployments through `Sites\Contracts\SiteResourceExtension`.
+`show` also returns `deploy_script`, `shared_paths`, `laravel`. `strategy` / `current_release` / `release_watch` are
+contributed by Deployments through `Sites\Contracts\SiteResourceExtension`.
 
 ### `POST /api/v1/sites` — `sites.create`
 Same body and validation as the web form (`name`, `framework`, `server_ids[]`, optional `leader_server_id`, `runtime`,
@@ -253,6 +283,23 @@ Laravel toggles, each optional (unchanged when omitted): `scheduler`, `horizon`,
 cannot be set. `422` for a Laravel toggle on a non-Laravel site, an unavailable server, or no free port.
 ```json
 {"data": {"scheduler": true, "horizon": false, "octane": true, "maintenance": false, "octane_server": "frankenphp", "octane_port": 8412}}
+```
+
+### Resource limits — `GET|PUT /api/v1/sites/{site}/limits` · `PUT /api/v1/sites/{site}/compose/services/{service}/limits` — `sites.view` / `sites.manage`
+`{"limits": {…}}` with any of `memory_limit` (MB, ≥ 32), `memory_reservation` (MB, at most the limit), `cpus`
+(cores, decimal), `pids_limit`, `restart_policy` (`always|unless-stopped|on-failure`), `max_restarts` (on-failure
+only), `log_max_size` (MB per file), `log_max_files`, `oom` (`protect` = killed last | `normal`); `null` or `{}`
+clears them. Memory and CPUs are bounded by the smallest server of the site (`422` otherwise). Docker sites and
+compose services get them as container limits, classic sites as a systemd slice (PHP-FPM in its own master, Octane,
+the web process). `applied` says how they took effect: `live` (docker update / set-property), `redeploy` (log caps,
+the OOM preference, removed limits and compose services need a new container) or `none`. What is stored is what runs
+(`effective` = `limits`): a site or worker created outside production starts with the environment's defaults
+(`defaults`; `config/limits.php`) written on it, never merged later. A compose project's `*` entry is what its
+services without their own get. Compose projects are limited per service; static and
+function sites have no limits here; FrankenPHP sites only take `restart_policy`, `max_restarts`, log caps and `oom`.
+Workers and daemons take the same `limits` object in their forms.
+```json
+{"data": {"limits": {"memory_limit": 512, "cpus": 1}, "effective": {"memory_limit": 512, "cpus": 1}, "applied": "live"}}
 ```
 
 ### `GET /api/v1/sites/{site}/logs` — `telemetry.view`
@@ -354,26 +401,40 @@ With `from_environment_id` (also needs `sites.create`), every site is copied thr
 position and service name; databases are not copied. `201 {data, warnings[]}`.
 ### `POST /api/v1/projects/{project}/environments/{environment}/services` — `projects.manage` + `databases.manage` / `sites.create`
 The canvas' Create. Databases: `{kind: "database", engine: postgresql|mysql|mariadb|redis|valkey, server_id, name,
-maxmemory_mb?, eviction?, persistence?}` (the last three for Redis / Valkey: memory limit in MB, default 128 capped at ¾
-of the server's RAM; `noeviction` (default), `allkeys-lru`, `allkeys-lfu`, `allkeys-random`, `volatile-lru`,
-`volatile-lfu`, `volatile-random`, `volatile-ttl`; `rdb` (default), `aof`, `none` — nothing on disk, every restart
-starts empty). The server must run the engine; a Redis / Valkey instance gets its own port (6380–6479) and password,
-and needs an agent with `db.redis` (`422` "Update the agent on <server> first" otherwise). Sites: the `POST /sites`
-body with `kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the instance is `provisioning` until the agent
-confirms.
+version?, memory_mb?, disk_gb?, eviction?, persistence?}`: a database container on the server (a Falak image of the
+major, default the engine's first; memory default 512 MB, 128 MB for Redis / Valkey; disk default 10 GB, 2 GB), joined
+to the environment's network. SQL engines get a database and a user named after it; Redis / Valkey their keyspace and
+`default` user (`eviction`: `noeviction` default, `allkeys-lru`, …; `persistence`: `rdb` default, `aof`, `none`). A
+major this release ships no pinned image of is a `422` on `version`. Sites: the `POST /sites` body with
+`kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the service is `provisioning` until the container runs.
 
-Database backups have no `/api/v1` endpoints yet; the panel's session routes (CSRF, `Accept: application/json` for
-errors as JSON) are the same for SQL databases and Redis / Valkey instances (v0.9.0, agent feature `db.redis.backup`,
-`422` "Update the agent on <server> first" without it): `POST /databases/databases/{database}/backups
-{storage_provider_id, compression?: gzip|none}` (key-value: an RDB snapshot, object `….rdb.gz`), `POST
-/databases/servers/{databaseServer}/schedules {name, storage_provider_id, database_ids[], cron, retention_count?,
-retention_days?, compression?, enabled?}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST
-/databases/schedules/{schedule}/run`, `POST /databases/backups/{backup}/restore {database_server_id, database,
-confirm}` (`databases.restore`; key-value: `database` is an existing, active instance of a Redis or Valkey server,
-snapshots never go into SQL engines nor dumps into instances), `GET /databases/backups/{backup}/download` (302 to a
-presigned URL valid 5 minutes, or `{url}` as JSON; `databases.restore`, audited), `DELETE /databases/backups/{backup}`,
-`GET /databases/databases/{database}` (JSON: the panel's backups, schedules, restores, `restore_targets[]` with
-`engine` and key-value `instances[]`).
+Database containers and backups have no `/api/v1` endpoints yet; the session routes (CSRF, `Accept: application/json`
+for errors as JSON): `POST /databases/instances {engine, server_id, name, version?, memory_mb?, cpus?, disk_gb?,
+settings?}`, `PUT /databases/instances/{instance} {memory_mb?, cpus?, settings?, public_access?, require_tls?,
+allowed_sources?}` (a setting given as `null` returns to its default; `allowed_sources`: IPv4 CIDRs allowed to reach a
+public port), `POST /databases/instances/{instance}/restart|upgrade {version?}|password {password?}|network` (`network`
+applies pending published addresses: the container is recreated), `DELETE /databases/instances/{instance} {confirm,
+delete_volume?}`, `POST /databases/databases/{database}/backups {storage_provider_id}`, `POST
+/databases/instances/{instance}/schedules {name, storage_provider_id, database_ids, cron, retention_count?,
+retention_days?, enabled?, encryption_mode? (cp|customer), age_recipient?, drill? (off|weekly|monthly), drill_query?,
+drill_server_id?}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST /databases/schedules/{schedule}/run|drill`,
+`POST /databases/backups/{backup}/restore {database_instance_id, database, confirm, identity?}` (`databases.restore`;
+into an existing database of a running instance of the same family; `identity`: the age private key of a
+customer-held backup, used once), `POST /databases/backups/{backup}/key` (`databases.restore` and a re-authentication
+within 5 minutes, else `423`: the backup's data key as a `falak-restore` key file, audited), `GET
+/databases/backups/{backup}/download` (the encrypted FKB1 file), `DELETE /databases/backups/{backup}`, `GET
+/databases/databases/{database}` (JSON: the panel). Volumes: `POST /volumes/{volume}/schedules` and `PUT
+/volumes/schedules/{schedule}` take the same `encryption_mode`, `age_recipient`, `drill` and `drill_server_id`; `POST
+/volumes/schedules/{schedule}/drill`, `POST /volumes/backups/{backup}/restore {…, identity?}`, `POST
+/volumes/backups/{backup}/key` (`volumes.browse` and a re-authentication). Point-in-time recovery (SQL instances):
+`PUT /databases/instances/{instance}/pitr {enabled, storage_provider_id?, encryption_mode? (cp|customer), age_recipient?,
+window_days? (1–35), base_interval_days?}` (`databases.manage`; turning it on takes a base backup), `POST
+/databases/instances/{instance}/pitr/base` (a base now), `POST /databases/instances/{instance}/pitr/restore
+{target_time | "latest", identity?}` (JSON, `databases.restore`: `202 {data: {id, restored_instance_id}}`, a new read-only
+instance at the time), `POST /databases/pitr-restores/{restore}/decision {decision: swap|keep|discard}`
+(`databases.restore`), `POST /databases/pitr-restores/{restore}/inspection` (`databases.restore`: the read-only copy's
+`falak_inspect` password). Turning PITR off or shortening the window takes `databases.restore`. Backups, drills and PITR:
+docs/BACKUPS.md.
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 
@@ -381,44 +442,86 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (depends on the site, below; never a public address), `DB_PORT`, `DB_DATABASE`,
-`DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
-Redis and Valkey services (instances) expose `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
-`REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). `REDIS_HOST` /
-`REDIS_URL` depend on the site (v0.7.1, agents with `db.redis.network`; older agents keep the instance on 127.0.0.1 and
-everyone else gets a resolution error saying to update the agent):
-- a native site on the instance's server: `127.0.0.1`;
-- a container there (Docker site, compose stack, function): the Docker bridge's address (`docker0`, `172.17.0.1` out of
-  the box), which the instance listens on; the firewall opens the instance's port to the Docker ranges on the bridges
-  only;
-- a site on another server of the environment (native or containers, also a site spanning both): the instance server's
-  address on a private network they share — a Falak private network (WireGuard) first, else the provider private network
-  only where both servers are on it for sure (created by Falak with the same provider credential, in the same region, on
-  DigitalOcean or Lightsail, whose servers of one account and region share a private network by default; never Hetzner,
-  Vultr, Linode, whose private networks are opt-in, nor custom servers). The instance listens there while a site of its
-  environment runs on another server; the firewall opens its port to those servers' addresses only. **Never a public
-  address:** servers sharing no private network get `… shares no private network with <server> … Add both servers to a
-  private network (Network → Private networks)`. Until the agent listens on the address (a restart that keeps the data),
-  the reference says so (`does not listen on <address> yet`).
-The instance always keeps its password, `protected-mode` and the disabled commands.
+`DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the
+database); Redis and Valkey services `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
+`REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`); site services their own variables. The host and port
+depend on the site:
+- a container on the database's server (Docker site, compose stack): `falak-db-<id>` and the engine's port, on the
+  environment's Docker network;
+- a native site there: `127.0.0.1` and the container's host port;
+- a site on another server of the environment: the database server's address on a private network they share (a Falak
+  private network first, else the provider private network where both servers are on it for sure) and the host port,
+  once that address is published (a restart someone applies). **Never a public address**: otherwise the reference
+  fails with the reason (`… shares no private network with <server> …`, `… is not published on <address> yet …`).
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
-An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
-consumer running on that server alone:
-- a native site gets `127.0.0.1`;
-- a container on it (Docker site, compose stack, function) gets the Docker bridge's address (`docker0`: the one the
-  agent reported for a Redis / Valkey instance on the server, else `FALAK_DOCKER_BRIDGE_HOST`, default `172.17.0.1`).
-  The engine accepts the Docker address
-  ranges (`FALAK_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
-  per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
-  newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
-  and says to update the agent.
+`${{ secrets.NAME }}` reads the secret store instead of a service (`secrets` is never a service name there): the
+current version of the nearest secret `NAME` of the service owning the variable — its service, environment, project,
+then organization secrets. A missing secret fails the deployment (`STRIPE_KEY: secret STRIPE_KEY is not defined for
+this service …`), as does a linked secret whose provider is not configured. Each read is in the secret's access log
+(once per deployment and version).
 
-A site on other servers gets a resolution error naming the reason instead of a host it cannot reach; use a dedicated
-database server for those. A dedicated database server resolves like a Redis / Valkey instance: `127.0.0.1` for a native
-site on it, the Docker bridge for containers there, and for sites on other servers its address on a private network all
-of them share with it (a Falak private network first, else the provider private network where both servers are on it for
-sure, as above). **Never a public address** — servers sharing no private network get `… shares no private network with
-<server>, and database references never point at a public address. Add both servers to a private network …`.
+## Secrets
+
+Organization secrets in four scopes (`organization`, `project`, `environment`, `service` — a project service id),
+referenced from variables as `${{ secrets.NAME }}`. Names are environment variable names (`^[A-Z_][A-Z0-9_]*$`), unique
+per scope. Every value is a new immutable version, sealed under the organization's data key and bound to the secret and
+version. Responses carry metadata only (`id, name, scope, scope_id, scope_label, kind, sensitive, available_to_previews,
+description, rotation_days, rotation_due_at, current_version, last_accessed_at, created_at, updated_at`, plus for linked
+secrets `provider_id, watch_minutes, on_change, last_polled_at`). Secrets of other organizations are `404`.
+
+### `GET /api/v1/secrets[?scope=&scope_id=]` · `GET /api/v1/secrets/{secret}` — `secrets.view`
+### `POST /api/v1/secrets` — `secrets.manage`
+`{name, scope, scope_id, value | (kind: "linked", reference, provider_id?, watch_minutes?, on_change?), sensitive?
+(default true), available_to_previews? (default false), description?, rotation_days?}`. `201`. A linked secret's
+reference must match its provider's type (see [SECRET_PROVIDERS.md](SECRET_PROVIDERS.md)); without `provider_id` the
+organization's only provider of that type is used. `watch_minutes` (1–1440, null: not watched) and `on_change`
+(`none|restart|redeploy`) set the watch. A **sensitive** secret is write-only:
+it can be replaced, never revealed, and stays sensitive.
+### `PUT /api/v1/secrets/{secret}/value` `{value}` — `secrets.manage`
+A new version, current from the next deployment.
+### `POST /api/v1/secrets/{secret}/rollback` `{version}` — `secrets.manage`
+A new version with that version's value (history is never rewritten). Disabled versions can't be restored. A linked
+version that recorded its value upstream is restored **pinned** to that value until a new reference is saved.
+### `DELETE /api/v1/secrets/{secret}` — `secrets.manage`
+Every version goes; the access log stays. References to it fail the next deployment.
+### `POST /api/v1/secrets/{secret}/reveal[?version=]` — `secrets.reveal`, by name on the token
+`{data: {version, value}}` (a linked secret: its reference). `403` for sensitive secrets and for tokens without the
+`secrets.reveal` ability itself. Logged in the access log as the token, and audited.
+
+### Secret providers
+External providers behind linked secrets (Vault / OpenBao, AWS Secrets Manager and SSM, 1Password Connect, Doppler,
+Infisical, HTTPS webhook): settings, references, caching and the webhook contract in
+[SECRET_PROVIDERS.md](SECRET_PROVIDERS.md). Responses never carry credentials:
+```json
+{"id": "01k…", "name": "Production Vault", "type": "vault", "type_label": "HashiCorp Vault / OpenBao", "scheme": "vault",
+ "settings": {"address": "https://vault.example.com", "kv_version": "2", "auth_method": "approle", "role_id": "…"},
+ "stored_credentials": ["secret_id"], "allow_private_network": false, "cache_ttl_seconds": 300,
+ "status": "untested|ok|error", "last_checked_at": "…", "last_error": null, "secrets_count": 3, "created_at": "…", "updated_at": "…"}
+```
+### `GET /api/v1/secrets/providers` · `GET /api/v1/secrets/providers/{provider}` — `secrets.view`
+### `POST /api/v1/secrets/providers` — `secrets.providers.manage` (admins)
+`{name, type: vault|aws_secrets_manager|aws_ssm|onepassword|doppler|infisical|http, config: {…}, allow_private_network?,
+cache_ttl_seconds? (0–86400, default 300)}`. `config` per type:
+- `vault`: `address, namespace?, kv_version (2|1), auth_method (approle|token|jwt), token | role_id + secret_id | role + jwt,
+  auth_mount?, ca_pem?`
+- `aws_secrets_manager`, `aws_ssm`: `region, auth_method (keys|instance_profile), access_key_id, secret_access_key,
+  session_token?, role_arn?, external_id?`
+- `onepassword`: `connect_url, token, ca_pem?` · `doppler`: `token` · `infisical`: `base_url, client_id, client_secret, ca_pem?`
+- `http`: `base_url, header_name?, header_value?, ca_pem?`
+
+URLs are `https://` and must resolve to public addresses unless `allow_private_network` (self-hostable types only, and
+only when the instance sets `FALAK_SECRETS_PROVIDERS_ALLOW_PRIVATE=true`). With `auth_method: instance_profile`,
+`role_arn` is required and the external ID is always the organization id.
+### `PATCH /api/v1/secrets/providers/{provider}` — `secrets.providers.manage`
+Same fields but `type`; without `config` the settings stay as they are. Credentials left empty keep their stored value,
+unless a setting that decides where they are sent (URL, CA, namespace, region, role, external ID, header) changes:
+then every credential must be sent again (`422` otherwise). Changing settings resets the status to `untested` and drops
+the cached values.
+### `POST /api/v1/secrets/providers/{provider}/test` — `secrets.providers.manage`
+Checks the endpoint and credentials (Vault `lookup-self`, STS `GetCallerIdentity`, Doppler `/v3/me`, Infisical login,
+Connect `/v1/vaults`, webhook test ref) and records the status. `422 {errors: {provider: [reason]}}` when it fails.
+### `DELETE /api/v1/secrets/providers/{provider}` — `secrets.providers.manage`
+`422` while linked secrets use it. Its cached values are deleted.
 
 ## Source control
 
@@ -441,11 +544,27 @@ other connection and can be used as `source_connection_id` for sites.
  "trigger": "manual|push|api|hook|rollback", "strategy": "zero-downtime",
  "branch": "main", "commit": "a1b2c3…", "message": "Fix checkout", "author": "Ada",
  "release_id": "01k…", "build_id": "01k…", "rolled_back": false,
+ "rolled_back_reason": null, "rolled_back_at": null, "auto_rollback_of": null, "watch": null,
  "url": "https://falak.example.com/sites/01k…/deployments/01k…", "error": null,
  "waiting_reason": null, "waiting_since": null,
  "created_at": "…", "started_at": "…", "finished_at": "…"}
 ```
 `rolled_back: true` with `status: failed` means servers that had switched were returned to the previous release.
+With `status: succeeded` it means the release went live and its watch rolled it back (`rolled_back_reason` says
+which trigger, with the numbers); `auto_rollback_of` on a `rollback` deployment names the deployment it replaced.
+
+`watch` (null unless the site watched the release, see "Watch after deploy" below):
+```json
+{"status": "watching|passed|rolled_back|alerted|stopped", "on_trigger": "rollback|alert_only",
+ "triggers": {"health": true, "health_failures": 3, "crashes": true, "errors": true, "issues": false},
+ "migrations": true, "started_at": "…", "ends_at": "…", "remaining_s": 212, "checked_at": "…",
+ "checks": {"health": {"ok": true, "failures": 0, "threshold": 3, "message": "GET https://shop.example.com/up via 203.0.113.1 → 200 …"},
+            "errors": {"total": 412, "errors": 3, "rate": 0.0073, "threshold": 0.05, "min_requests": 20}},
+ "baseline": {"total": 5120, "errors": 21, "rate": 0.0041},
+ "trigger": null, "reason": null, "rollback_deployment_id": null, "finished_at": null}
+```
+`alerted`: a trigger fired but the site is set to alert only, or the loop guard held the rollback back (`reason`
+and the alert say why). `stopped`: another deployment of the site started or went live.
 
 `waiting`: the deployment was triggered while some of the site's servers are still being prepared (site user,
 PHP-FPM pool, Bun/Deno runtime). It holds the site's queue, `waiting_reason` says why
@@ -453,6 +572,28 @@ PHP-FPM pool, Bun/Deno runtime). It holds the site's queue, `waiting_reason` say
 own once every preparing server is ready (`started_at` is set then). Servers whose preparation failed are skipped
 with a warning in the output as long as another server is ready; it fails (`error` says why) when the leader's
 preparation fails, when no server can be prepared, or after `FALAK_DEPLOY_WAIT_TIMEOUT_MINUTES` (default 30).
+
+### Watch after deploy — `GET|PUT /api/v1/sites/{site}/release-watch` — `deployments.view` / `deployments.manage`
+Rollback after a release goes live, opt-in per site (suggested for production services). `PUT` takes any of
+`{"enabled": true, "minutes": 5, "health": true, "health_failures": 3, "crashes": true, "errors": true,
+"issues": false, "on_trigger": "rollback|alert_only"}` (`minutes` 1–60, `health_failures` 1–20); both return those
+fields plus `migrations` (the deploy script, or a compose `falak.deploy.leader_command`, runs database migrations,
+which a rollback doesn't reverse) and `production` (the site's environment). Changes apply from the next deployment.
+
+After a successful deployment (not the site's first, not a rollback, not a function) a window opens for `minutes`.
+Every 30 s the health check runs through the edge on each server (`health_failures` failures in a row, at least 25 s
+apart, trip it; skipped while the site's health check is off, and servers without an address are skipped), and the
+release's 5xx share in the edge access log (the control plane's own health checks left out) is compared with
+`max(3 × baseline, 5%)` once it has served at least 20 requests and 5 errors (baseline: the previous release's last
+hour; no data → 5%). OOM kills and restart loops of the site, its compose services, workers and daemons that happen
+after the release went live trip it at once, as does (opt-in) a new exception issue in Insights — Insights doesn't
+record which release raised an issue, so any new one during the window counts; hence off by default. A window only
+opens for the site's live release with nothing queued behind it. The first
+trigger queues a `rollback` deployment to the previous release (`deployments.rolled_back` fires once it is live), or
+with `alert_only` fires `deployments.watch_triggered`. Loop guard: never back to a release that was itself rolled back
+automatically, at most one automatic rollback per site per hour, never while another deployment of the site is
+queued or running (checked again under the site's trigger lock); a held-back rollback alerts instead. A rollback that
+only starts after another release went live is cancelled with the reason.
 
 ### `POST /api/v1/sites/{site}/deployments` — `deployments.create`
 Body (all optional): `{"branch": "main", "commit": "<sha>"}`. Without a commit the branch head is resolved

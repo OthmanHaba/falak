@@ -54,6 +54,8 @@ export interface FalakEnvironment {
     name: string;
     slug: string;
     is_production: boolean;
+    /** A pull request's preview (grouped under "Previews" in the switcher). */
+    is_preview?: boolean;
 }
 
 export interface FalakProject {
@@ -128,8 +130,8 @@ export interface CanvasService {
     badges?: string[];
     /** User group the card sits in (its position is then relative to the group's anchor). */
     group_id?: string | null;
-    /** Persistent storage drawn as a strip under the card (compose volumes, engine data dir, shared paths). */
-    volumes?: { name: string; detail: string | null }[];
+    /** Disks drawn under the card: attached volumes (with usage, linking to their page), an engine's data dir. */
+    volumes?: CanvasVolume[];
     /** Compose sites: drawn as a group of their compose services (§4.3). */
     compose?: { template: string | null; collapsed: boolean; services: ComposeChild[] } | null;
     last_deployment: { id: string; status: string; commit: string | null; message: string | null; finished_at: string | null } | null;
@@ -143,8 +145,19 @@ export interface ComposeChild {
     status: CanvasStatus;
     status_label: string;
     url: string | null;
-    volumes: string[];
+    /** The service's volumes (Volumes rows once the stack went live; names from the file before). */
+    volumes: CanvasVolume[];
     position: { x: number; y: number };
+}
+
+/** A disk on a canvas card: a volume (id + url once it is a Volumes row) with used / limit bytes when known. */
+export interface CanvasVolume {
+    id: string | null;
+    name: string;
+    detail: string | null;
+    used_bytes: number | null;
+    limit_bytes: number | null;
+    url: string | null;
 }
 
 /** A user-created canvas group: `position` is the anchor its members' positions are relative to. */

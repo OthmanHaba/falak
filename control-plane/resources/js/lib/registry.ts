@@ -94,7 +94,21 @@ export interface SettingsNavItem {
     permission?: string;
     /** Only shown when the user has a current organization. */
     requiresOrganization?: boolean;
+    /** Extra condition on the shell context (e.g. a shared prop only some organizations get). */
+    when?: (ctx: ShellContext) => boolean;
     keywords?: string[];
+}
+
+/**
+ * A notice above every page of the app shell (e.g. Recovery's "set up disaster recovery" for the install's admins).
+ * The component decides itself whether it renders (from shared props).
+ */
+export interface ShellBanner {
+    id: string;
+    /** Lower comes first. */
+    order: number;
+    permission?: string;
+    component: ComponentType;
 }
 
 /**
@@ -243,6 +257,21 @@ export interface ServiceLayer {
  */
 export const CREATE_SERVICE_EVENT = 'falak:canvas-create';
 
+export interface ServerSectionProps {
+    serverId: string;
+}
+
+/**
+ * A block of the server page (below its services), e.g. Limits' capacity card. Modules register theirs in register.ts.
+ */
+export interface ServerSection {
+    id: string;
+    /** Lower comes first. */
+    order: number;
+    permission?: string;
+    component: ComponentType<ServerSectionProps>;
+}
+
 export interface CreateOptionProps {
     projectId: string;
     environmentSlug: string;
@@ -372,6 +401,7 @@ const serviceTabs = new Map<string, ServiceTab>();
 const serviceActions = new Map<string, ServiceAction>();
 const settingsSections = new Map<string, ServiceSettingsSection>();
 const createOptions = new Map<string, CreateOption>();
+const serverSections = new Map<string, ServerSection>();
 const serviceLayers = new Map<string, ServiceLayer>();
 
 export function registerServiceLayers(...layers: ServiceLayer[]): void {
@@ -407,6 +437,16 @@ export function headerItemsFor(ctx: ShellContext): HeaderItem[] {
     return [...headerItems.values()].filter((item) => !item.permission || ctx.can(item.permission)).sort((a, b) => a.order - b.order);
 }
 
+const shellBanners = new Map<string, ShellBanner>();
+
+export function registerShellBanners(...banners: ShellBanner[]): void {
+    banners.forEach((banner) => shellBanners.set(banner.id, banner));
+}
+
+export function shellBannersFor(ctx: ShellContext): ShellBanner[] {
+    return [...shellBanners.values()].filter((banner) => !banner.permission || ctx.can(banner.permission)).sort((a, b) => a.order - b.order);
+}
+
 export function registerSettingsNav(...items: SettingsNavItem[]): void {
     items.forEach((item) => settingsItems.set(item.id, item));
 }
@@ -415,7 +455,10 @@ export function settingsNavFor(ctx: ShellContext): SettingsNavItem[] {
     const hasOrganization = Boolean(ctx.props.organization?.current);
 
     return [...settingsItems.values()]
-        .filter((item) => (!item.permission || ctx.can(item.permission)) && (!item.requiresOrganization || hasOrganization))
+        .filter(
+            (item) =>
+                (!item.permission || ctx.can(item.permission)) && (!item.requiresOrganization || hasOrganization) && (!item.when || item.when(ctx)),
+        )
         .sort((a, b) => a.order - b.order);
 }
 
@@ -469,6 +512,14 @@ export function registerCreateOptions(...options: CreateOption[]): void {
 
 export function createOptionsFor(ctx: Pick<ShellContext, 'can'>): CreateOption[] {
     return [...createOptions.values()].filter((option) => !option.permission || ctx.can(option.permission)).sort((a, b) => a.order - b.order);
+}
+
+export function registerServerSections(...sections: ServerSection[]): void {
+    sections.forEach((section) => serverSections.set(section.id, section));
+}
+
+export function serverSectionsFor(ctx: Pick<ShellContext, 'can'>): ServerSection[] {
+    return [...serverSections.values()].filter((section) => !section.permission || ctx.can(section.permission)).sort((a, b) => a.order - b.order);
 }
 
 export function navigationFor(ctx: ShellContext): ModuleNavItem[] {

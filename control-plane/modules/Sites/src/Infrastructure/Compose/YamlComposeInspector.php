@@ -54,13 +54,45 @@ final class YamlComposeInspector implements ComposeInspector
         }
 
         $volumes = [];
+        $volumeDefinitions = [];
 
         foreach ((array) ($doc['volumes'] ?? []) as $name => $volume) {
             $volumes[] = (string) $name;
+            // The Docker volume behind a key: `name:` when set (external volumes too, legacy `external: {name: x}`
+            // included), else Compose's <project>_<key>.
+            $legacy = is_array($volume) && is_array($volume['external'] ?? null) && is_string($volume['external']['name'] ?? null) && $volume['external']['name'] !== ''
+                ? $volume['external']['name'] : null;
+            $volumeDefinitions[(string) $name] = [
+                'name' => is_array($volume) && is_string($volume['name'] ?? null) && $volume['name'] !== '' ? $volume['name'] : $legacy,
+                'external' => is_array($volume) && (($volume['external'] ?? false) === true || is_array($volume['external'] ?? null)),
+            ];
             $device = is_array($volume) ? ($volume['driver_opts']['device'] ?? null) : null;
 
             if (is_string($device) && str_starts_with($device, '/')) {
                 $violations[] = "Volume {$name} binds the host path {$device} (driver_opts.device).";
+            }
+        }
+
+        // Falak's own networks (environment networks with database containers, falak-*) and labels (falak.*: managed
+        // containers, volumes and networks, their secrets) are never claimed by a compose file: Falak joins the stack to
+        // its environment's network itself. Hard errors, whatever the privileged-compose setting.
+        foreach ((array) ($doc['networks'] ?? []) as $key => $network) {
+            $network = is_array($network) ? $network : [];
+            $external = $network['external'] ?? false;
+            $real = is_string($network['name'] ?? null) ? $network['name'] : (is_array($external) && is_string($external['name'] ?? null) ? $external['name'] : ((($external === true) ? (string) $key : null)));
+
+            if ($real !== null && str_starts_with(strtolower($real), 'falak')) {
+                $errors[] = "Network {$key} is {$real}: Falak's networks are not available to compose files (Falak connects the stack to its environment's network itself).";
+            }
+
+            if (self::falakLabels($network['labels'] ?? []) !== []) {
+                $errors[] = "Network {$key} sets Falak's labels (falak.*).";
+            }
+        }
+
+        foreach ((array) ($doc['volumes'] ?? []) as $key => $volume) {
+            if (is_array($volume) && self::falakLabels($volume['labels'] ?? []) !== []) {
+                $errors[] = "Volume {$key} sets Falak's labels (falak.*).";
             }
         }
 
@@ -88,6 +120,22 @@ final class YamlComposeInspector implements ComposeInspector
 
             if ($image === null && ! $build) {
                 $errors[] = "Service {$name} has neither `image` nor `build`.";
+            }
+
+            // Another container's namespaces (a database container's, any container outside the stack) are never
+            // shared; `service:` only names a service of this file.
+            foreach (['network_mode', 'pid', 'ipc'] as $key) {
+                $mode = is_string($service[$key] ?? null) ? $service[$key] : '';
+
+                if (str_starts_with($mode, 'container:')) {
+                    $errors[] = "Service {$name}: {$key}: {$mode} shares another container's namespace; only services of this file can (service:<name>).";
+                } elseif (str_starts_with($mode, 'service:') && ! array_key_exists(substr($mode, 8), (array) $definitions)) {
+                    $errors[] = "Service {$name}: {$key}: {$mode} names no service of this file.";
+                }
+            }
+
+            if (($forbidden = self::falakLabels($service['labels'] ?? [])) !== []) {
+                $errors[] = "Service {$name} sets Falak's labels (".implode(', ', $forbidden).').';
             }
 
             // ---- policy
@@ -119,7 +167,7 @@ final class YamlComposeInspector implements ComposeInspector
                 }
             }
 
-            [$named, $binds] = $this->volumes($service['volumes'] ?? [], $volumes);
+            [$named, $binds, $mounts] = $this->volumes($service['volumes'] ?? [], $volumes);
 
             foreach ($binds as $source) {
                 if (str_contains($source, 'docker.sock')) {
@@ -151,10 +199,11 @@ final class YamlComposeInspector implements ComposeInspector
                 healthcheck: $healthcheck,
                 dependsOn: array_values(array_map('strval', is_array($service['depends_on'] ?? null) ? (array_is_list($service['depends_on']) ? $service['depends_on'] : array_keys($service['depends_on'])) : [])),
                 leaderCommand: $leader,
+                namedMounts: $mounts,
             );
         }
 
-        return new ComposeSummary($services, $volumes, array_values(array_unique($violations)), $errors, $warnings);
+        return new ComposeSummary($services, $volumes, array_values(array_unique($violations)), $errors, $warnings, $volumeDefinitions);
     }
 
     /**
@@ -165,6 +214,17 @@ final class YamlComposeInspector implements ComposeInspector
     public static function load(string $yaml): mixed
     {
         return Yaml::parse($yaml);
+    }
+
+    /**
+     * Labels in Falak's namespace (falak.*) a compose file may not set. falak.deploy.leader_command is the stack's own;
+     * falak.site, falak.release and falak.service are the ones Falak's rendering sets (and overwrites).
+     *
+     * @return list<string>
+     */
+    public static function falakLabels(mixed $labels): array
+    {
+        return array_values(array_filter(array_keys(self::labels($labels)), fn (string $key) => str_starts_with(strtolower($key), 'falak.') && ! in_array($key, [self::LEADER_COMMAND_LABEL, 'falak.site', 'falak.release', 'falak.service'], true)));
     }
 
     /**
@@ -218,12 +278,13 @@ final class YamlComposeInspector implements ComposeInspector
 
     /**
      * @param  list<string>  $declared  top-level named volumes
-     * @return array{0: list<string>, 1: list<string>} named volumes, bind sources
+     * @return array{0: list<string>, 1: list<string>, 2: list<array{volume: string, target: string, read_only: bool}>} named volumes, bind sources, named volume mounts
      */
     private function volumes(mixed $volumes, array $declared): array
     {
         $named = [];
         $binds = [];
+        $mounts = [];
 
         foreach (is_array($volumes) ? $volumes : [] as $volume) {
             if (is_array($volume)) {
@@ -234,6 +295,10 @@ final class YamlComposeInspector implements ComposeInspector
                     $binds[] = $source;
                 } elseif ($type === 'volume' && $source !== '') {
                     $named[] = $source;
+
+                    if (is_string($volume['target'] ?? null) && str_starts_with($volume['target'], '/')) {
+                        $mounts[] = ['volume' => $source, 'target' => $volume['target'], 'read_only' => ($volume['read_only'] ?? false) === true];
+                    }
                 }
 
                 continue;
@@ -251,10 +316,14 @@ final class YamlComposeInspector implements ComposeInspector
                 $binds[] = $source;
             } else {
                 $named[] = $source;
+
+                if (str_starts_with($parts[1], '/')) {
+                    $mounts[] = ['volume' => $source, 'target' => $parts[1], 'read_only' => in_array('ro', explode(',', $parts[2] ?? ''), true)];
+                }
             }
         }
 
-        return [array_values(array_unique($named)), array_values(array_unique($binds))];
+        return [array_values(array_unique($named)), array_values(array_unique($binds)), $mounts];
     }
 
     /**

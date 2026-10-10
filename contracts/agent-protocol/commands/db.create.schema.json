@@ -1,18 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.create.schema.json",
-  "title": "db.create — create database if missing",
+  "title": "db.create — create a database in an instance if missing (falak-db database create)",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "instance",
     "engine",
     "name"
   ],
   "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
     "engine": {
       "enum": [
+        "postgres",
         "mysql",
-        "postgres"
+        "mariadb"
       ]
     },
     "name": {
@@ -21,14 +27,19 @@
     },
     "charset": {
       "type": "string",
-      "default": "utf8mb4"
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+      "default": "utf8mb4",
+      "description": "mysql / mariadb"
     },
     "collation": {
-      "type": "string"
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+      "description": "mysql / mariadb"
     },
     "owner": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+      "description": "postgres"
     }
   },
   "$defs": {
@@ -41,7 +52,7 @@
       "properties": {
         "changed": {
           "type": "boolean",
-          "description": "true when the host state was modified"
+          "description": "true when the instance's state was modified"
         }
       }
     }

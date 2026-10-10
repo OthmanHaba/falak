@@ -14,7 +14,6 @@ use Falak\Databases\Events\BackupSucceeded;
 use Falak\Databases\Events\RestoreFinished;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\Role;
-use Falak\Servers\Contracts\ServerType;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
@@ -28,16 +27,30 @@ beforeEach(function () {
     Carbon::setTestNow('2026-09-27 02:59:30');
     $this->agents = FakeAgentGateway::install();
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
-    $this->engine = databases_engine($this->organization, 'mysql', ServerType::Database);
+    $this->engine = databases_instance($this->organization, 'mysql');
     $this->db = databases_active_db($this->engine, 'shop');
     $this->provider = databases_provider($this->organization);
 });
 
 afterEach(fn () => Carbon::setTestNow());
 
-function backups_result(string $content = 'dump'): array
+/**
+ * The agent's db.backup result for the backup of $command (encrypted with its key).
+ *
+ * @param  array<string, mixed>  $command
+ */
+function backups_result(array $command, string $content = 'dump'): array
 {
-    return ['size_bytes' => strlen($content) * 1000, 'sha256' => hash('sha256', $content), 'location' => 's3://falak-backups/x', 'duration_ms' => 4200];
+    return ['size_bytes' => strlen($content) * 1000, 'sha256' => hash('sha256', $content), 'location' => 's3://falak-backups/x', 'duration_ms' => 4200,
+        'plaintext_sha256' => hash('sha256', "plain {$content}"), 'encryption' => $command['payload']['encryption']['mode'],
+        'key_id' => $command['payload']['encryption']['key_id'], 'cipher' => 'aes-256-gcm', 'compression' => 'zstd'];
+}
+
+/** The last db.backup succeeds. */
+function backups_succeed(FakeAgentGateway $agents, string $content = 'dump', array $extra = []): void
+{
+    $command = $agents->last('db.backup');
+    $agents->succeed($command['handle'], [...backups_result($command, $content), ...$extra]);
 }
 
 it('dispatches db.backup with a presigned PUT URL and never the credentials', function () {
@@ -49,10 +62,12 @@ it('dispatches db.backup with a presigned PUT URL and never the credentials', fu
     parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
 
     expect(databases_schema_errors($command))->toBe([])
-        ->and($command['payload'])->toMatchArray(['engine' => 'mysql', 'database' => 'shop', 'compression' => 'gzip'])
+        ->and($command['payload'])->toMatchArray(['instance' => $this->engine->id, 'engine' => 'mysql', 'database' => 'shop'])
+        ->and($command['payload']['encryption'])->toMatchArray(['mode' => 'cp', 'key_id' => $backup->id])
+        ->and(strlen((string) base64_decode($command['payload']['encryption']['key'], true)))->toBe(32)
         ->and($command['payload']['destination']['kind'])->toBe('presigned_url')
         ->and($command['handle']->idempotencyKey)->toBe("db.backup:{$backup->id}")
-        ->and($backup->object_key)->toMatch('#^acme/'.preg_quote(Str::slug($this->engine->server_name), '#').'-[a-z0-9]{6}/shop/2026/09/20260927T025930Z-'.$backup->id.'\.sql\.gz$#')
+        ->and($backup->object_key)->toMatch('#^acme/'.preg_quote(Str::slug($this->engine->name), '#').'-[a-z0-9]{6}/shop/2026/09/20260927T025930Z-'.$backup->id.'\.sql\.zst\.fkb$#')
         ->and($url)->toStartWith('https://falak-backups.s3.eu-central-1.amazonaws.com/'.$backup->object_key.'?')
         ->and($query)->toMatchArray(['X-Amz-Algorithm' => 'AWS4-HMAC-SHA256', 'X-Amz-Expires' => '43200', 'X-Amz-SignedHeaders' => 'host'])
         ->and($query['X-Amz-Signature'])->toMatch('/^[a-f0-9]{64}$/')
@@ -63,8 +78,8 @@ it('dispatches db.backup with a presigned PUT URL and never the credentials', fu
 
 it('records size, checksum and duration and announces BackupSucceeded', function () {
     Event::fake([BackupSucceeded::class]);
-    $this->post("/databases/databases/{$this->db->id}/backups", ['storage_provider_id' => $this->provider->id, 'compression' => 'none']);
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result());
+    $this->post("/databases/databases/{$this->db->id}/backups", ['storage_provider_id' => $this->provider->id]);
+    backups_succeed($this->agents);
 
     $backup = Backup::query()->firstOrFail();
     expect($backup)
@@ -72,7 +87,9 @@ it('records size, checksum and duration and announces BackupSucceeded', function
         ->size_bytes->toBe(4000)
         ->sha256->toBe(hash('sha256', 'dump'))
         ->duration_ms->toBe(4200)
-        ->object_key->toEndWith('.sql')
+        ->object_key->toEndWith('.sql.zst.fkb')
+        ->plaintext_sha256->toBe(hash('sha256', 'plain dump'))
+        ->encryption_mode->toBe('cp')
         ->and($backup->isRestorable())->toBeTrue();
 
     Event::assertDispatched(BackupSucceeded::class, fn ($e) => $e->backupId === $backup->id && $e->sizeBytes === 4000 && $e->databaseName === 'shop' && $e->trigger === 'manual');
@@ -105,10 +122,10 @@ it('rejects manual backups of inactive databases and foreign providers', functio
 });
 
 it('validates schedules and computes the next run in UTC', function () {
-    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Bad', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => 'every day'])
+    $this->post("/databases/instances/{$this->engine->id}/schedules", ['name' => 'Bad', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => 'every day'])
         ->assertSessionHasErrors('cron');
 
-    $this->post("/databases/servers/{$this->engine->id}/schedules", [
+    $this->post("/databases/instances/{$this->engine->id}/schedules", [
         'name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *', 'retention_count' => 7,
     ])->assertSessionHasNoErrors();
 
@@ -118,7 +135,7 @@ it('validates schedules and computes the next run in UTC', function () {
 });
 
 it('runs due schedules exactly once and advances next_run_at', function () {
-    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
+    $this->post("/databases/instances/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
 
     (new RunDueBackups)->handle(app(RunBackupSchedule::class), app(CurrentOrganization::class));
     expect(Backup::query()->count())->toBe(0);
@@ -137,7 +154,7 @@ it('runs due schedules exactly once and advances next_run_at', function () {
 it('marks scheduled backups failed when the agent is offline', function () {
     Event::fake([BackupFailed::class]);
     $this->agents->unavailable($this->engine->server_id);
-    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
+    $this->post("/databases/instances/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
 
     Carbon::setTestNow('2026-09-27 03:00:10');
     dispatch_sync(new RunDueBackups);
@@ -147,7 +164,7 @@ it('marks scheduled backups failed when the agent is offline', function () {
 });
 
 it('runs a schedule manually, recorded as manual, and reports a missing agent', function () {
-    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
+    $this->post("/databases/instances/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
     $scheduleId = BackupSchedule::query()->value('id');
 
     $this->post("/databases/schedules/{$scheduleId}/run")->assertSessionHasNoErrors();
@@ -159,14 +176,14 @@ it('runs a schedule manually, recorded as manual, and reports a missing agent', 
 
 it('prunes by retention count and age with signed DELETEs, always keeping the newest', function () {
     Http::fake(['*' => Http::response('', 204)]);
-    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *', 'retention_count' => 2, 'retention_days' => 30]);
+    $this->post("/databases/instances/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *', 'retention_count' => 2, 'retention_days' => 30]);
     $schedule = BackupSchedule::query()->firstOrFail();
 
     $make = function (string $when, string $key) use ($schedule) {
         $backup = Backup::query()->create([
-            'organization_id' => $this->organization->id, 'schedule_id' => $schedule->id, 'database_id' => $this->db->id, 'database_server_id' => $this->engine->id,
+            'organization_id' => $this->organization->id, 'schedule_id' => $schedule->id, 'database_id' => $this->db->id, 'database_instance_id' => $this->engine->id,
             'server_id' => $this->engine->server_id, 'server_name' => $this->engine->server_name, 'database_name' => 'shop', 'engine' => 'mysql',
-            'storage_provider_id' => $this->provider->id, 'object_key' => $key, 'compression' => 'gzip', 'trigger' => 'scheduled',
+            'storage_provider_id' => $this->provider->id, 'object_key' => $key, 'compression' => 'zstd', 'trigger' => 'scheduled', 'encryption_mode' => 'cp', 'wrapped_key' => 'x',
             'status' => BackupStatus::Succeeded, 'sha256' => str_repeat('b', 64), 'size_bytes' => 10,
         ]);
         $backup->forceFill(['created_at' => Carbon::parse($when)])->save();
@@ -181,7 +198,7 @@ it('prunes by retention count and age with signed DELETEs, always keeping the ne
 
     // A new successful scheduled backup triggers pruning.
     $this->post("/databases/schedules/{$schedule->id}/run");
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result());
+    backups_succeed($this->agents);
 
     expect($oldest->refresh()->status)->toBe(BackupStatus::Pruned)
         ->and($third->refresh()->status)->toBe(BackupStatus::Pruned)
@@ -196,14 +213,14 @@ it('prunes by retention count and age with signed DELETEs, always keeping the ne
 
 it('keeps rows when a prune DELETE fails and retries next time', function () {
     Http::fake(['*' => Http::response('<Error><Code>AccessDenied</Code></Error>', 403)]);
-    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *', 'retention_count' => 1]);
+    $this->post("/databases/instances/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *', 'retention_count' => 1]);
     $schedule = BackupSchedule::query()->firstOrFail();
 
     $this->post("/databases/schedules/{$schedule->id}/run");
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result('a'));
+    backups_succeed($this->agents, 'a');
     Carbon::setTestNow(now()->addMinute());
     $this->post("/databases/schedules/{$schedule->id}/run");
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result('b'));
+    backups_succeed($this->agents, 'b');
 
     $old = Backup::query()->orderBy('created_at')->orderBy('id')->first();
     expect($old->status)->toBe(BackupStatus::Succeeded)->and($old->prune_error)->toContain('AccessDenied');
@@ -212,26 +229,31 @@ it('keeps rows when a prune DELETE fails and retries next time', function () {
 it('restores with confirmation through a presigned GET and checksum', function () {
     Event::fake([RestoreFinished::class]);
     $this->post("/databases/databases/{$this->db->id}/backups", ['storage_provider_id' => $this->provider->id]);
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result());
+    backups_succeed($this->agents);
     $backup = Backup::query()->firstOrFail();
 
-    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop'])
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop_restored'])
+        ->assertSessionHasErrors('database');
+    databases_active_db($this->engine, 'shop_restored');
+
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop'])
         ->assertSessionHasErrors('confirm');
 
-    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop_restored'])
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop_restored'])
         ->assertSessionHasNoErrors();
 
     $command = $this->agents->last('db.restore');
     $restore = Restore::query()->firstOrFail();
 
     expect(databases_schema_errors($command))->toBe([])
-        ->and($command['payload'])->toMatchArray(['engine' => 'mysql', 'database' => 'shop_restored', 'compression' => 'gzip', 'sha256' => hash('sha256', 'dump')])
+        ->and($command['payload'])->toMatchArray(['instance' => $this->engine->id, 'engine' => 'mysql', 'database' => 'shop_restored', 'sha256' => hash('sha256', 'dump'), 'plaintext_sha256' => hash('sha256', 'plain dump')])
+        ->and($command['payload']['encryption'])->toMatchArray(['mode' => 'cp', 'key_id' => $backup->id])
         ->and($command['payload']['source']['kind'])->toBe('url')
         ->and($command['payload']['source']['url'])->toStartWith("https://falak-backups.s3.eu-central-1.amazonaws.com/{$backup->object_key}?")
         ->and($command['payload']['source']['url'])->toContain('X-Amz-Expires=21600')
         ->and($command['handle']->idempotencyKey)->toBe("db.restore:{$restore->id}");
 
-    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop_restored'])
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop_restored', 'confirm' => 'shop_restored'])
         ->assertSessionHasErrors('database');
 
     $this->agents->succeed($command['handle'], ['bytes' => 123456, 'duration_ms' => 900]);
@@ -244,15 +266,15 @@ it('restores with confirmation through a presigned GET and checksum', function (
 
 it('only lets admins restore and refuses cross-engine restores', function () {
     $this->post("/databases/databases/{$this->db->id}/backups", ['storage_provider_id' => $this->provider->id]);
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result());
+    backups_succeed($this->agents);
     $backup = Backup::query()->firstOrFail();
-    $pg = databases_engine($this->organization, 'postgresql');
+    $pg = databases_instance($this->organization, 'postgresql');
 
-    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $pg->id, 'database' => 'shop', 'confirm' => 'shop'])
-        ->assertSessionHasErrors('database_server_id');
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $pg->id, 'database' => 'shop', 'confirm' => 'shop'])
+        ->assertSessionHasErrors('database_instance_id');
 
     [$developer] = memberOf($this->organization, Role::Developer);
-    $this->actingAs($developer)->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'shop', 'confirm' => 'shop'])
+    $this->actingAs($developer)->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop', 'confirm' => 'shop'])
         ->assertForbidden();
 
     $this->agents->assertNothingDispatched('db.restore');
@@ -261,10 +283,10 @@ it('only lets admins restore and refuses cross-engine restores', function () {
 it('records failed restores', function () {
     Event::fake([RestoreFinished::class]);
     $this->post("/databases/databases/{$this->db->id}/backups", ['storage_provider_id' => $this->provider->id]);
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result());
+    backups_succeed($this->agents);
     $backup = Backup::query()->firstOrFail();
 
-    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'shop', 'confirm' => 'shop']);
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop', 'confirm' => 'shop']);
     $this->agents->fail($this->agents->last('db.restore')['handle'], 'sha256 mismatch');
 
     expect(Restore::query()->first())->status->toBe(RestoreStatus::Failed)->error->toBe('sha256 mismatch');
@@ -278,7 +300,7 @@ it('deletes a backup and its object', function () {
 
     $this->delete("/databases/backups/{$backup->id}")->assertSessionHasErrors('backup');
 
-    $this->agents->succeed($this->agents->last('db.backup')['handle'], backups_result());
+    backups_succeed($this->agents);
     $this->delete("/databases/backups/{$backup->id}")->assertSessionHasNoErrors();
 
     expect(Backup::query()->count())->toBe(0);
@@ -288,10 +310,10 @@ it('deletes a backup and its object', function () {
 it('lists backup history across the organization', function () {
     $this->post("/databases/databases/{$this->db->id}/backups", ['storage_provider_id' => $this->provider->id]);
     [, $other] = memberOf();
-    $otherEngine = databases_engine($other, 'mysql');
+    $otherEngine = databases_instance($other, 'mysql');
     Backup::query()->create([
         'organization_id' => $other->id, 'server_id' => $otherEngine->server_id, 'server_name' => 'x', 'database_name' => 'x', 'engine' => 'mysql',
-        'object_key' => 'x', 'compression' => 'gzip', 'trigger' => 'manual', 'status' => BackupStatus::Failed,
+        'object_key' => 'x', 'compression' => 'zstd', 'trigger' => 'manual', 'status' => BackupStatus::Failed,
     ]);
 
     $this->get('/databases/backups')->assertOk()->assertInertia(fn ($page) => $page

@@ -27,7 +27,8 @@ final class SlackSender extends HttpSender
     {
         $title = self::escape($message->headline());
         $heading = $message->url ? "*<{$message->url}|{$title}>*" : "*{$title}*";
-        $text = $heading.($message->body !== '' ? "\n".self::escape($message->body) : '');
+        $text = $heading.($message->body !== '' ? "\n".self::escape($message->body) : '')
+            .($message->url && $message->action ? "\n<{$message->url}|".self::escape("Suggested fix: {$message->action}").'>' : '');
 
         $context = collect($message->context)
             ->filter(fn ($value) => $value !== null && $value !== '')

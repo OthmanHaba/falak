@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -22,7 +23,7 @@ type SharedPath struct {
 	Type string `json:"type,omitempty"` // dir (default) | file
 }
 
-// EnvFile is written into shared/.
+// EnvFile is the site's dotenv: written to the tmpfs (Options.EnvDir), with shared/<path> a symlink to it.
 type EnvFile struct {
 	Content string `json:"content"`
 	Path    string `json:"path,omitempty"`
@@ -38,6 +39,17 @@ type PreparePayload struct {
 	Owner        *Owner        `json:"owner,omitempty"`
 	WritableDirs []string      `json:"writable_dirs,omitempty"`
 	Context      *Context      `json:"context,omitempty"`
+	Mask         []string      `json:"mask,omitempty"`
+	// ConfigCache gives the release a tmpfs cache directory linked as .falak-cache (Laravel's config cache).
+	ConfigCache bool `json:"config_cache,omitempty"`
+}
+
+// Secrets are the values of the masked variables in the env file.
+func (p PreparePayload) Secrets() []string {
+	if p.EnvFile == nil {
+		return nil
+	}
+	return redact.FromDotenv(p.EnvFile.Content, p.Mask)
 }
 
 // PrepareResult is deploy.prepare's result.
@@ -52,7 +64,7 @@ var DefaultShared = []SharedPath{{Path: "storage", Type: "dir"}, {Path: ".env", 
 // Prepare creates shared paths, seeds them from the first release that ships them, and replaces the
 // release copies with relative symlinks into shared/.
 func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Stream) (_ any, err error) {
-	defer d.failed(lifecycle{site: p.Site, phase: PhasePrepare, releaseID: p.ReleaseID, ctx: p.Context}, &err)
+	defer d.failed(lifecycle{site: p.Site, phase: PhasePrepare, releaseID: p.ReleaseID, ctx: p.Context, mask: redact.FromContext(ctx)}, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
@@ -67,6 +79,11 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 	shared := DefaultShared
 	if p.SharedPaths != nil {
 		shared = *p.SharedPaths
+	}
+	// The site user owns the site directory: a shared/ it replaced with a symlink is never followed (chown, chmod and
+	// the env link below would act on the link's target).
+	if fi, err := os.Lstat(st.shared()); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink: refusing to prepare through it", st.shared())
 	}
 	if err := os.MkdirAll(st.shared(), 0o755); err != nil {
 		return nil, err
@@ -95,15 +112,17 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 		if err != nil {
 			return nil, err
 		}
-		// Env files hold secrets: 0640, never world-readable.
-		ch, err := d.o.FS.WriteFile(filepath.Join(st.host, "shared", c), []byte(p.EnvFile.Content), 0o640)
+		// Env files hold secrets: on the tmpfs only, 0440, never world-readable.
+		ch, err := d.writeEnv(st, p.Site, c, p.EnvFile.Content, p.Owner)
 		if err != nil {
 			return nil, err
 		}
-		if err := chownHost(filepath.Join(st.shared(), c)); err != nil {
+		res.Changed = res.Changed || ch
+	}
+	if p.ConfigCache {
+		if err := d.releaseCache(st, p.Site, p.ReleaseID, p.Owner); err != nil {
 			return nil, err
 		}
-		res.Changed = res.Changed || ch
 	}
 	for _, sp := range shared {
 		c, err := cleanRel(sp.Path)
@@ -204,7 +223,12 @@ type HookPayload struct {
 	Cwd       string            `json:"cwd,omitempty"`
 	Env       map[string]string `json:"env,omitempty"`
 	Context   *Context          `json:"context,omitempty"`
+	// Mask names the secret variables of env and of the site's env file (which the script may print).
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the values of the masked variables in env.
+func (p HookPayload) Secrets() []string { return redact.FromEnv(p.Env, p.Mask) }
 
 // HookResult is deploy.hook's result.
 type HookResult struct {
@@ -251,11 +275,13 @@ func HookEnv(site, siteRoot, releaseDir, releaseID string, c *Context, extra map
 
 // Hook runs one deploy script step. A non-zero exit fails the command with that exit code.
 func (d *Deployer) Hook(ctx context.Context, p HookPayload, s commands.Stream) (_ any, err error) {
-	defer d.failed(lifecycle{site: p.Site, phase: PhaseHook, releaseID: p.ReleaseID, hook: p.Name, ctx: p.Context}, &err)
+	defer d.failed(lifecycle{site: p.Site, phase: PhaseHook, releaseID: p.ReleaseID, hook: p.Name, ctx: p.Context, mask: redact.FromContext(ctx)}, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
 	}
+	// Scripts read the site's .env (php artisan, node): its secrets are masked too.
+	redact.Add(ctx, d.envSecrets(p.Site, p.Mask)...)
 	if err := checkRelease(p.ReleaseID); err != nil {
 		return nil, err
 	}
@@ -474,6 +500,7 @@ func (d *Deployer) Prune(ctx context.Context, p PrunePayload, s commands.Stream)
 		if err := os.RemoveAll(st.release(id)); err != nil {
 			return res, err
 		}
+		_ = os.RemoveAll(d.o.FS.P(CacheDir(d.o.EnvDir, p.Site, id)))
 		res.Removed = append(res.Removed, id)
 		fmt.Fprintf(s.Stdout(), "removed release %s\n", id)
 	}
@@ -516,6 +543,17 @@ func (d *Deployer) reload(ctx context.Context, rs []Reload, s commands.Stream) e
 				names = []string{r.Name}
 			}
 			err = d.o.Procs.Restart(ctx, names)
+		case "site_procs":
+			// A site's programs (they read its .env when they start).
+			if d.o.Procs == nil {
+				err = errors.New("process supervisor unavailable")
+				break
+			}
+			if !slugRE.MatchString(r.Name) {
+				err = fmt.Errorf("site_procs reload needs a site slug, got %q", r.Name)
+				break
+			}
+			_, err = d.o.Procs.RestartSite(ctx, r.Name)
 		case "frankenphp":
 			if d.o.Workers == nil {
 				err = errors.New("edge client unavailable")

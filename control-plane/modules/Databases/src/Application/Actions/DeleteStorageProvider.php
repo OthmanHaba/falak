@@ -5,12 +5,13 @@ namespace Falak\Databases\Application\Actions;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Databases\Events\StorageProviderDeleted;
 use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Removes a provider (objects in the bucket are left untouched). Backups stored there become
- * unrestorable from Falak.
+ * unrestorable from Falak. Other modules' schedules that used it stop (StorageProviderDeleted).
  */
 final class DeleteStorageProvider
 {
@@ -28,5 +29,6 @@ final class DeleteStorageProvider
         $provider->delete();
 
         $this->audit->record('databases.storage_provider_deleted', 'storage_provider', $provider->id, ['name' => $provider->name], $provider->organization_id);
+        StorageProviderDeleted::dispatch($provider->id, $provider->organization_id, $provider->name);
     }
 }

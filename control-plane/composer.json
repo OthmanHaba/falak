@@ -57,9 +57,15 @@
             "Falak\\Insights\\": "modules/Insights/src/",
             "Falak\\Alerting\\": "modules/Alerting/src/",
             "Falak\\Terminal\\": "modules/Terminal/src/",
+            "Falak\\Recovery\\": "modules/Recovery/src/",
             "Falak\\Projects\\": "modules/Projects/src/",
             "Falak\\Templates\\": "modules/Templates/src/",
             "Falak\\Functions\\": "modules/Functions/src/",
+            "Falak\\Secrets\\": "modules/Secrets/src/",
+            "Falak\\Volumes\\": "modules/Volumes/src/",
+            "Falak\\Limits\\": "modules/Limits/src/",
+            "Falak\\Security\\": "modules/Security/src/",
+            "Falak\\Previews\\": "modules/Previews/src/",
             "Falak\\Identity\\Database\\Factories\\": "modules/Identity/database/factories/",
             "Falak\\Providers\\Database\\Factories\\": "modules/Providers/database/factories/",
             "Falak\\Fleet\\Database\\Factories\\": "modules/Fleet/database/factories/",
@@ -87,9 +93,15 @@
             "Falak\\Insights\\Tests\\": "modules/Insights/tests/",
             "Falak\\Alerting\\Tests\\": "modules/Alerting/tests/",
             "Falak\\Terminal\\Tests\\": "modules/Terminal/tests/",
+            "Falak\\Recovery\\Tests\\": "modules/Recovery/tests/",
             "Falak\\Projects\\Tests\\": "modules/Projects/tests/",
             "Falak\\Templates\\Tests\\": "modules/Templates/tests/",
-            "Falak\\Functions\\Tests\\": "modules/Functions/tests/"
+            "Falak\\Functions\\Tests\\": "modules/Functions/tests/",
+            "Falak\\Secrets\\Tests\\": "modules/Secrets/tests/",
+            "Falak\\Volumes\\Tests\\": "modules/Volumes/tests/",
+            "Falak\\Limits\\Tests\\": "modules/Limits/tests/",
+            "Falak\\Security\\Tests\\": "modules/Security/tests/",
+            "Falak\\Previews\\Tests\\": "modules/Previews/tests/"
         }
     },
     "scripts": {

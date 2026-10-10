@@ -3,9 +3,12 @@
 namespace Falak\Builds\Application;
 
 use Falak\Projects\Contracts\VariableReferences;
+use Falak\Secrets\Contracts\Data\SecretAccessor;
+use Falak\Secrets\Contracts\Secrets;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
+use RuntimeException;
 
 /**
  * What a site's build depends on: mode, build-time environment and the cache key that identifies
@@ -16,6 +19,7 @@ final class BuildConfiguration
     public function __construct(
         private readonly SiteDirectory $sites,
         private readonly VariableReferences $references,
+        private readonly Secrets $secrets,
     ) {}
 
     public static function mode(SiteData $site): ?string
@@ -31,38 +35,51 @@ final class BuildConfiguration
      * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…) plus the
      * ones exposed to the deploy script (the user's opt-in for other build-time settings, e.g. Astro's SITE_URL),
      * with `${{ service.KEY }}` references resolved (unresolvable ones stay literal; the deploy fails on them).
+     * Only those variables are resolved, and secrets they read are logged as read by $accessor.
      *
      * @return array<string, string>
+     *
+     * @throws RuntimeException when a public front-end variable would carry a sensitive secret into the build
      */
-    public function environment(SiteData $site): array
+    public function environment(SiteData $site, ?SecretAccessor $accessor = null): array
     {
         $environment = $this->sites->environment($site->id);
         $variables = $environment->variables ?? [];
         $exposed = array_flip($environment->exposedToDeployScript ?? []);
-        $prefixes = (array) config('builds.env_prefixes', []);
 
-        $public = array_filter($variables, function ($value, $key) use ($prefixes, $exposed) {
-            if (isset($exposed[$key])) {
-                return true;
-            }
-
-            foreach ($prefixes as $prefix) {
-                if (str_starts_with((string) $key, (string) $prefix)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }, ARRAY_FILTER_USE_BOTH);
+        $public = array_filter($variables, fn ($value, $key) => isset($exposed[$key]) || self::isPublic((string) $key), ARRAY_FILTER_USE_BOTH);
 
         if ($public === []) {
             return [];
         }
 
-        // Resolve against the full set so public variables may reference the site's own keys.
-        $resolved = $this->references->resolveForSite($site->id, $variables)->variables;
+        // Only the build's variables; self-references still see the full set.
+        $resolved = $this->secrets->accessedAs(
+            $accessor ?? SecretAccessor::system('Build configuration'),
+            fn () => $this->references->resolveForSite($site->id, $variables, array_map('strval', array_keys($public))),
+        );
 
-        return array_intersect_key($resolved, $public);
+        // Front-end variables end up in the shipped bundle: a write-only secret must never get there.
+        $leaking = array_values(array_filter($resolved->sensitiveKeys, fn (string $key) => self::isPublic($key)));
+
+        if ($leaking !== []) {
+            throw new RuntimeException(implode(', ', $leaking).' would put a sensitive secret into the public front-end build ('
+                .implode(', ', (array) config('builds.env_prefixes', [])).' variables are shipped to browsers). Reference a non-sensitive secret, or rename the variable.');
+        }
+
+        return array_intersect_key($resolved->variables, $public);
+    }
+
+    /** A variable with a public front-end prefix (builds.env_prefixes): its value is shipped to browsers. */
+    public static function isPublic(string $key): bool
+    {
+        foreach ((array) config('builds.env_prefixes', []) as $prefix) {
+            if (str_starts_with($key, (string) $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -81,9 +98,9 @@ final class BuildConfiguration
         ], fn (string $command) => $command !== '');
     }
 
-    public function cacheKey(SiteData $site, string $mode, ?string $commit): string
+    public function cacheKey(SiteData $site, string $mode, ?string $commit, ?SecretAccessor $accessor = null): string
     {
-        $env = $this->environment($site);
+        $env = $this->environment($site, $accessor);
         ksort($env);
         $commands = $mode === 'native' ? $this->commands($site) : [];
 

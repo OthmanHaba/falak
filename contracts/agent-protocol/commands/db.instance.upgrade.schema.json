@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.instance.upgrade.schema.json",
+  "title": "db.instance.upgrade — major version upgrade of a SQL instance: users applied on the target, the source made read-only, every database copied (backup logical | restore logical) and its row counts compared table by table, then the DNS alias moved to the target and the source stopped (read-only, its volume kept). A failure makes the source writable again",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "source",
+    "target",
+    "databases",
+    "alias"
+  ],
+  "properties": {
+    "mode": {
+      "const": "major"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "engine"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$"
+        },
+        "engine": {
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb"
+          ]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "engine"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$"
+        },
+        "engine": {
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb"
+          ]
+        }
+      }
+    },
+    "databases": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "charset": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "collation": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "owner": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+            "description": "postgres: the role that gets the copied database and its objects"
+          }
+        }
+      }
+    },
+    "users": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "description": "secret"
+          },
+          "host": {
+            "type": "string",
+            "description": "mysql / mariadb account host (default %)"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "database"
+              ],
+              "properties": {
+                "database": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+                },
+                "privileges": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z ]+$"
+                  },
+                  "minItems": 1,
+                  "default": [
+                    "ALL PRIVILEGES"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "string",
+      "pattern": "^falak-env-[0-9a-z]{26}$"
+    },
+    "alias": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,62}$"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "databases"
+      ],
+      "properties": {
+        "databases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "bytes"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "bytes": {
+                "type": "integer"
+              },
+              "tables": {
+                "type": "integer"
+              },
+              "rows": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "duration_ms": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

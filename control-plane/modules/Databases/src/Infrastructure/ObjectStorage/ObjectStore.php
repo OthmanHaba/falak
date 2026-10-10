@@ -4,6 +4,8 @@ namespace Falak\Databases\Infrastructure\ObjectStorage;
 
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Kernel\Network\EndpointGuard;
+use Falak\Kernel\Support\Aws\SigV4Signer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Response;
@@ -18,7 +20,9 @@ final class ObjectStore
         private readonly StorageProvider $provider,
         private readonly HttpFactory $http,
         private readonly int $timeout = 30,
-        private readonly EndpointGuard $guard = new EndpointGuard(allowPrivate: true),
+        private readonly EndpointGuard $guard = new EndpointGuard,
+        // Private endpoints (a MinIO on the LAN): databases.allow_private_endpoints.
+        private readonly bool $allowPrivate = true,
     ) {}
 
     /**
@@ -105,13 +109,40 @@ final class ObjectStore
     }
 
     /**
+     * The stored size of an object (HEAD), null when there is none.
+     *
+     * @throws StorageRequestFailed
+     */
+    public function size(string $key): ?int
+    {
+        $url = $this->url($key);
+        $headers = $this->signer()->signHeaders('HEAD', $url);
+        $response = $this->send(fn () => $this->http->withHeaders($headers)->timeout($this->timeout)->head($url), 'HEAD', $key, allowNotFound: true);
+
+        return $response->status() === 404 ? null : (int) $response->header('Content-Length');
+    }
+
+    /**
+     * The SHA-256 of an object's content (GET; for small objects: it is held in memory).
+     *
+     * @throws StorageRequestFailed
+     */
+    public function sha256(string $key): string
+    {
+        $url = $this->url($key);
+        $headers = $this->signer()->signHeaders('GET', $url);
+
+        return hash('sha256', $this->send(fn () => $this->http->withHeaders($headers)->timeout($this->timeout)->get($url), 'GET', $key)->body());
+    }
+
+    /**
      * @param  callable(): Response  $request
      *
      * @throws StorageRequestFailed
      */
-    private function send(callable $request, string $method, string $key, bool $allowNotFound = false): void
+    private function send(callable $request, string $method, string $key, bool $allowNotFound = false): Response
     {
-        if ($refusal = $this->guard->refusal($this->url($key))) {
+        if ($refusal = $this->guard->refusal($this->url($key), $this->allowPrivate)) {
             throw new StorageRequestFailed($refusal);
         }
 
@@ -122,7 +153,7 @@ final class ObjectStore
         }
 
         if ($response->successful() || ($allowNotFound && $response->status() === 404)) {
-            return;
+            return $response;
         }
 
         $code = null;

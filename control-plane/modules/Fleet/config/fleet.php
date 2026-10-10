@@ -16,6 +16,9 @@ return [
     'fingerprint_header' => 'X-Falak-Client-Cert-Fingerprint',
     'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', (string) env('FALAK_AGENT_TRUSTED_PROXIES', '127.0.0.1/32,::1/128'))))),
 
+    // Agent requests (POST /agent/v1/requests/{type}) per agent and type and minute.
+    'agent_requests_per_minute' => 120,
+
     // Public URLs handed to agents. Defaults derive from APP_URL.
     'panel_url' => env('FALAK_PANEL_URL'),
     'api_url' => env('FALAK_AGENT_API_URL'),
@@ -53,6 +56,9 @@ return [
     'long_poll_max_seconds' => 60,
 
     'commands' => [
+        // Payload secrets of settled commands (backup keys, an age identity) are forgotten by the sweep after this long
+        // when their module did not do it, and those of commands stuck this long past their timeout.
+        'forget_secrets_after_minutes' => 10,
         // Lease: a delivered command the agent has not reported as started/running/finished after this long was
         // lost (e.g. the agent restarted). Redeliverable types (x-falak-redeliverable in the command schema) are
         // queued again, others fail. Agent restarts are also detected sooner through the agent session id.

@@ -272,6 +272,15 @@ type Container struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	// HostConfig: the limits db containers change in place (ContainerUpdate).
+	HostConfig struct {
+		Memory   int64 `json:"Memory"`
+		NanoCpus int64 `json:"NanoCpus"`
+	} `json:"HostConfig"`
+	Mounts []struct {
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+	} `json:"Mounts"`
 	NetworkSettings struct {
 		Ports    map[string][]PortBinding `json:"Ports"`
 		Networks map[string]struct {
@@ -290,6 +299,13 @@ func (c *Client) ImageRepoDigests(ctx context.Context, ref string) ([]string, bo
 		return nil, false, nil
 	}
 	return out.RepoDigests, err == nil, err
+}
+
+// ContainerUpdate changes a running container's memory limit (swap at the same value: none) and CPUs in place.
+func (c *Client) ContainerUpdate(ctx context.Context, id string, memory, nanoCPUs int64) error {
+	body := map[string]any{"Memory": memory, "MemorySwap": memory, "NanoCpus": nanoCPUs}
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/update", nil, body, nil)
+	return err
 }
 
 // ContainerRestart restarts a container (stop timeout t).
@@ -378,8 +394,19 @@ type ContainerSummary struct {
 	Names   []string          `json:"Names"`
 	Image   string            `json:"Image"`
 	State   string            `json:"State"`
+	Status  string            `json:"Status"` // "Up 5 minutes (healthy)"
 	Created int64             `json:"Created"`
 	Labels  map[string]string `json:"Labels"`
+	Mounts  []MountPoint      `json:"Mounts,omitempty"`
+}
+
+// MountPoint is one of a container's mounts as GET /containers/json lists it (Name: a named volume's name;
+// Source: the host path behind it).
+type MountPoint struct {
+	Type        string `json:"Type"`
+	Name        string `json:"Name,omitempty"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
 }
 
 // ContainerList lists containers (all states when all=true) matching label filters ("k=v").
@@ -407,24 +434,65 @@ type CreateBody struct {
 	WorkingDir   string              `json:"WorkingDir,omitempty"`
 	Labels       map[string]string   `json:"Labels,omitempty"`
 	ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
-	HostConfig   HostConfig          `json:"HostConfig"`
+	Healthcheck  *Healthcheck        `json:"Healthcheck,omitempty"`
+	// StopTimeout is the seconds `docker stop` (and a daemon shutdown) waits before SIGKILL.
+	StopTimeout      *int              `json:"StopTimeout,omitempty"`
+	HostConfig       HostConfig        `json:"HostConfig"`
+	NetworkingConfig *NetworkingConfig `json:"NetworkingConfig,omitempty"`
+}
+
+// Healthcheck of a container (durations in nanoseconds).
+type Healthcheck struct {
+	Test        []string `json:"Test"`
+	Interval    int64    `json:"Interval,omitempty"`
+	Timeout     int64    `json:"Timeout,omitempty"`
+	Retries     int      `json:"Retries,omitempty"`
+	StartPeriod int64    `json:"StartPeriod,omitempty"`
+}
+
+// NetworkingConfig names the endpoint a container is created on (HostConfig.NetworkMode), with its DNS aliases.
+type NetworkingConfig struct {
+	EndpointsConfig map[string]EndpointConfig `json:"EndpointsConfig"`
+}
+
+// EndpointConfig is one network endpoint.
+type EndpointConfig struct {
+	Aliases []string `json:"Aliases,omitempty"`
 }
 
 // HostConfig subset.
 type HostConfig struct {
-	PortBindings  map[string][]PortBinding `json:"PortBindings,omitempty"`
-	Binds         []string                 `json:"Binds,omitempty"`
-	NetworkMode   string                   `json:"NetworkMode,omitempty"`
-	RestartPolicy RestartPolicy            `json:"RestartPolicy"`
-	Memory        int64                    `json:"Memory,omitempty"`
-	NanoCPUs      int64                    `json:"NanoCpus,omitempty"`
+	PortBindings map[string][]PortBinding `json:"PortBindings,omitempty"`
+	Binds        []string                 `json:"Binds,omitempty"`
+	// Mounts, unlike Binds, never create a missing bind source: a container whose secret files are gone after a
+	// reboot fails to start instead of starting without them.
+	Mounts        []Mount       `json:"Mounts,omitempty"`
+	NetworkMode   string        `json:"NetworkMode,omitempty"`
+	RestartPolicy RestartPolicy `json:"RestartPolicy"`
+	Memory        int64         `json:"Memory,omitempty"`
+	// MemorySwap is memory + swap (equal to Memory: no swap on top of the limit).
+	MemorySwap        int64      `json:"MemorySwap,omitempty"`
+	MemoryReservation int64      `json:"MemoryReservation,omitempty"`
+	NanoCPUs          int64      `json:"NanoCpus,omitempty"`
+	OomScoreAdj       int        `json:"OomScoreAdj,omitempty"`
+	LogConfig         *LogConfig `json:"LogConfig,omitempty"`
+	ShmSize           int64      `json:"ShmSize,omitempty"`
 	// Hardening (function containers).
 	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`
 	CapDrop        []string          `json:"CapDrop,omitempty"`
+	CapAdd         []string          `json:"CapAdd,omitempty"`
 	SecurityOpt    []string          `json:"SecurityOpt,omitempty"`
 	PidsLimit      int64             `json:"PidsLimit,omitempty"`
 	AutoRemove     bool              `json:"AutoRemove,omitempty"`
+}
+
+// Mount is a bind mount.
+type Mount struct {
+	Type     string `json:"Type"`
+	Source   string `json:"Source"`
+	Target   string `json:"Target"`
+	ReadOnly bool   `json:"ReadOnly,omitempty"`
 }
 
 // PortBinding is host ip/port.
@@ -435,7 +503,8 @@ type PortBinding struct {
 
 // RestartPolicy of a container.
 type RestartPolicy struct {
-	Name string `json:"Name,omitempty"`
+	Name              string `json:"Name,omitempty"`
+	MaximumRetryCount int    `json:"MaximumRetryCount,omitempty"`
 }
 
 // ContainerCreate creates a named container.
@@ -622,4 +691,59 @@ func (c *Client) NetworkCreate(ctx context.Context, name string, labels map[stri
 		return nil
 	}
 	return err
+}
+
+// ContainerPause freezes a container's processes.
+func (c *Client) ContainerPause(ctx context.Context, id string) error {
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/pause", nil, nil, nil)
+	return err
+}
+
+// ContainerUnpause thaws a paused container.
+func (c *Client) ContainerUnpause(ctx context.Context, id string) error {
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/unpause", nil, nil, nil)
+	return err
+}
+
+// Volume is a named volume (GET /volumes/{name}).
+type Volume struct {
+	Name       string            `json:"Name"`
+	Driver     string            `json:"Driver"`
+	Mountpoint string            `json:"Mountpoint"`
+	Labels     map[string]string `json:"Labels"`
+}
+
+// VolumeCreate creates a local named volume (an existing one is returned as is).
+func (c *Client) VolumeCreate(ctx context.Context, name string, labels map[string]string) (Volume, error) {
+	var out Volume
+	_, err := c.do(ctx, http.MethodPost, "/volumes/create", nil, map[string]any{"Name": name, "Driver": "local", "Labels": labels}, &out)
+	return out, err
+}
+
+// VolumeInspect returns a named volume; exists=false on 404.
+func (c *Client) VolumeInspect(ctx context.Context, name string) (Volume, bool, error) {
+	var out Volume
+	_, err := c.do(ctx, http.MethodGet, "/volumes/"+url.PathEscape(name), nil, nil, &out)
+	if IsNotFound(err) {
+		return Volume{}, false, nil
+	}
+	return out, err == nil, err
+}
+
+// VolumeList lists every named volume.
+func (c *Client) VolumeList(ctx context.Context) ([]Volume, error) {
+	var out struct {
+		Volumes []Volume `json:"Volumes"`
+	}
+	_, err := c.do(ctx, http.MethodGet, "/volumes", nil, nil, &out)
+	return out.Volumes, err
+}
+
+// VolumeRemove removes a named volume; existed=false on 404. Docker refuses a volume a container still uses (409).
+func (c *Client) VolumeRemove(ctx context.Context, name string) (bool, error) {
+	_, err := c.do(ctx, http.MethodDelete, "/volumes/"+url.PathEscape(name), nil, nil, nil)
+	if IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
 }

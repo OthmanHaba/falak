@@ -138,7 +138,7 @@ it('creates Laravel sites logging to files and migrates the old stderr default',
 
     $current = EnvironmentVersion::query()->where('site_id', $this->site->id)->firstOrFail();
     app(SaveEnvironment::class)($this->site, ['LOG_CHANNEL' => 'stderr', 'A' => 'b'], ['A'], null);
-    $custom = Site::query()->create(array_merge($this->site->only(['organization_id', 'runtime', 'build_mode', 'framework', 'php_version', 'unix_user', 'deploy_script', 'laravel', 'shared_paths']), ['name' => 'Custom', 'slug' => 'custom']));
+    $custom = Site::query()->create(array_merge($this->site->only(['organization_id', 'runtime', 'build_mode', 'framework', 'php_version', 'unix_user', 'deploy_script', 'laravel']), ['name' => 'Custom', 'slug' => 'custom']));
     app(SaveEnvironment::class)($custom, ['LOG_CHANNEL' => 'papertrail'], [], null);
 
     (require base_path('modules/Sites/database/migrations/2026_10_03_600001_switch_laravel_sites_to_file_logs.php'))->up();
@@ -149,4 +149,14 @@ it('creates Laravel sites logging to files and migrates the old stderr default',
         ->and($latest->exposed)->toBe(['A'])
         ->and($latest->changed_keys)->toBe(['LOG_CHANNEL'])
         ->and(EnvironmentVersion::query()->where('site_id', $custom->id)->count())->toBe(1);
+});
+
+it('skips sites whose environment does not open (APP_KEY ciphertext or another KEK) when switching log channels', function () {
+    $version = EnvironmentVersion::query()->where('site_id', $this->site->id)->orderByDesc('version')->firstOrFail();
+    DB::table('sites_environment_versions')->where('id', $version->id)->update(['variables' => 'eyJpdiI6Im5vdC1zZWFsZWQifQ==']);
+    $count = EnvironmentVersion::query()->where('site_id', $this->site->id)->count();
+
+    (require base_path('modules/Sites/database/migrations/2026_10_03_600001_switch_laravel_sites_to_file_logs.php'))->up();
+
+    expect(EnvironmentVersion::query()->where('site_id', $this->site->id)->count())->toBe($count);
 });

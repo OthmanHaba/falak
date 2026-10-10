@@ -2,6 +2,8 @@
 
 namespace Falak\Sites\Contracts\Data;
 
+use Falak\Limits\Contracts\LimitDefaults;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Framework;
@@ -16,11 +18,15 @@ final readonly class SiteData
      * @param  string  $webDirectory  document root relative to the release ("public", "" for the release root)
      * @param  ?int  $appPort  loopback host port Caddy proxies to (node/bun/deno listen on it; docker/compose publish to it)
      * @param  ?string  $testDomain  <slug>.<FALAK_TEST_DOMAIN> when enabled
-     * @param  list<SharedPath>  $sharedPaths
      * @param  list<SiteTargetData>  $targets
      * @param  ?ComposeConfig  $compose  compose runtime only
      * @param  ?int  $containerPort  docker runtime: the port the app listens on inside its container
      * @param  ?string  $rootDirectory  repository subfolder the app lives in (monorepos; null = the repository root)
+     * @param  ResourceLimits  $limits  the site's limits (its container, or its slice on hosts), as stored: a site created in
+     *                                  a non-production environment got that environment's defaults written here
+     *                                  ({@see LimitDefaults}); nothing is merged at runtime
+     * @param  array<string, ResourceLimits>  $composeLimits  compose runtime: the limits of each service by name; '*' is
+     *                                                        what services without their own get
      */
     public function __construct(
         public string $id,
@@ -49,11 +55,12 @@ final readonly class SiteData
         public string $deployScript,
         public LaravelSettings $laravel,
         public ?string $testDomain,
-        public array $sharedPaths,
         public array $targets,
         public ?ComposeConfig $compose = null,
         public ?int $containerPort = null,
         public ?string $rootDirectory = null,
+        public ResourceLimits $limits = new ResourceLimits,
+        public array $composeLimits = [],
     ) {}
 
     /** Docker runtime: the in-container port (sites from before container_port listen on their host port). */
@@ -71,11 +78,18 @@ final readonly class SiteData
             || ($this->compose?->source === ComposeSource::Inline && $this->compose->version !== null);
     }
 
+    /** A compose service's limits: its own, else the project's '*' (defaults written at creation), else none. */
+    public function composeServiceLimits(string $service): ResourceLimits
+    {
+        return $this->composeLimits[$service] ?? $this->composeLimits['*'] ?? new ResourceLimits;
+    }
+
     public function currentPath(): string
     {
         return $this->rootPath.'/current';
     }
 
+    /** Where shared paths live on every server (Volumes: shared_path volumes). */
     public function sharedPath(): string
     {
         return $this->rootPath.'/shared';

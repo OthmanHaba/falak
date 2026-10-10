@@ -41,6 +41,11 @@ class GitHubClient extends HttpProviderClient
         return (string) ($this->json($connection, '/user')['login'] ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        return $connection->isApp() ? null : ((string) ($this->json($connection, '/user')['id'] ?? '') ?: null);
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         if ($connection->isApp()) {
@@ -220,7 +225,7 @@ class GitHubClient extends HttpProviderClient
         $response = $this->send($connection, 'POST', '/repos/'.$this->path($repository).'/hooks', body: [
             'name' => 'web',
             'active' => true,
-            'events' => ['push'],
+            'events' => ['push', 'pull_request', 'issue_comment'],
             'config' => ['url' => $url, 'content_type' => 'json', 'secret' => $secret, 'insecure_ssl' => '0'],
         ]);
 
@@ -230,6 +235,30 @@ class GitHubClient extends HttpProviderClient
     public function deleteWebhook(Connection $connection, string $repository, string $hookId): void
     {
         $this->send($connection, 'DELETE', '/repos/'.$this->path($repository).'/hooks/'.rawurlencode($hookId), nullOn404: true);
+    }
+
+    public function commentOnPullRequest(Connection $connection, string $repository, int $number, string $body, ?string $commentId = null): ?string
+    {
+        // Pull request comments are issue comments.
+        if ($commentId !== null) {
+            $response = $this->send($connection, 'PATCH', '/repos/'.$this->path($repository).'/issues/comments/'.rawurlencode($commentId), body: ['body' => $body], nullOn404: true);
+
+            return $response === null ? null : (string) $response->json('id');
+        }
+
+        $response = $this->send($connection, 'POST', '/repos/'.$this->path($repository).'/issues/'.$number.'/comments', body: ['body' => $body]);
+
+        return (string) $response?->json('id');
+    }
+
+    public function setCommitStatus(Connection $connection, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        $this->send($connection, 'POST', '/repos/'.$this->path($repository).'/statuses/'.rawurlencode($sha), body: array_filter([
+            'state' => $state,
+            'context' => $context,
+            'description' => mb_substr($description, 0, 140),
+            'target_url' => $url,
+        ], fn ($v) => $v !== null));
     }
 
     public function sshUrl(Connection $connection, string $repository): string

@@ -58,14 +58,23 @@ export function ConnectionCard({ connection, databases, users, canReveal }: Prop
 
         const db = database?.name ?? 'database';
         const username = user?.username ?? 'user';
+
+        if (connection.kind === 'key_value') {
+            return {
+                url: (secret: string) => `redis://default:${encodeURIComponent(secret)}@${host.value}:${host.port}`,
+                env: (secret: string) =>
+                    ['REDIS_CLIENT=phpredis', `REDIS_HOST=${host.value}`, `REDIS_PORT=${host.port}`, `REDIS_PASSWORD=${secret}`].join('\n'),
+            };
+        }
+
         const scheme = connection.driver === 'pgsql' ? 'postgresql' : 'mysql';
         const url = (secret: string) =>
-            `${scheme}://${encodeURIComponent(username)}:${encodeURIComponent(secret)}@${host.value}:${connection.port}/${encodeURIComponent(db)}`;
+            `${scheme}://${encodeURIComponent(username)}:${encodeURIComponent(secret)}@${host.value}:${host.port}/${encodeURIComponent(db)}`;
         const env = (secret: string) =>
             [
                 `DB_CONNECTION=${connection.driver}`,
                 `DB_HOST=${host.value}`,
-                `DB_PORT=${connection.port}`,
+                `DB_PORT=${host.port}`,
                 `DB_DATABASE=${db}`,
                 `DB_USERNAME=${username}`,
                 `DB_PASSWORD=${secret}`,
@@ -78,19 +87,19 @@ export function ConnectionCard({ connection, databases, users, canReveal }: Prop
         <Card>
             <CardHeader>
                 <CardTitle className="text-base">Connection</CardTitle>
-                <CardDescription>Hosts applications can reach this engine on, most private first.</CardDescription>
+                <CardDescription>Where applications reach this database, most private first.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <ul className="divide-y rounded-md border text-sm">
                     {connection.hosts.map((candidate, index) => (
-                        <li key={candidate.label} className="flex items-center justify-between gap-2 px-3 py-2">
+                        <li key={`${candidate.label}-${candidate.value}`} className="flex items-center justify-between gap-2 px-3 py-2">
                             <button type="button" className="text-left" onClick={() => setHostIndex(index)}>
                                 <span className={index === hostIndex ? 'font-medium' : undefined}>{candidate.label}</span>
                                 <span className="text-muted-foreground block text-xs">{candidate.hint}</span>
                             </button>
                             <span className="flex items-center gap-1 font-mono text-xs">
-                                {candidate.value}:{connection.port}
-                                <CopyButton value={candidate.value} label="Copy host" />
+                                {candidate.value}:{candidate.port}
+                                <CopyButton value={`${candidate.value}:${candidate.port}`} label="Copy address" />
                             </span>
                         </li>
                     ))}
@@ -98,7 +107,7 @@ export function ConnectionCard({ connection, databases, users, canReveal }: Prop
 
                 {snippets && databases.length > 0 && users.length > 0 && (
                     <div className="space-y-3">
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className={connection.kind === 'key_value' ? 'hidden' : 'grid gap-3 sm:grid-cols-2'}>
                             <div className="grid gap-1.5">
                                 <Label>Database</Label>
                                 <Select value={database?.id} onValueChange={setDatabaseId}>
@@ -155,6 +164,27 @@ export function ConnectionCard({ connection, databases, users, canReveal }: Prop
                             {shown && password && <CopyButton value={snippets.env(password)} label="Copy .env" />}
                         </div>
                         {error && <p className="text-sm text-red-600">{error}</p>}
+                    </div>
+                )}
+
+                {connection.access.length > 0 && (
+                    <div className="space-y-2">
+                        <Label>Sites of this environment</Label>
+                        <ul className="divide-y rounded-md border text-sm">
+                            {connection.access.map((item) => (
+                                <li key={item.name} className="px-3 py-2">
+                                    <span className="font-medium">{item.name}</span>
+                                    {item.host ? (
+                                        <span className="text-muted-foreground ml-2 font-mono text-xs">
+                                            {item.host}:{item.port}
+                                        </span>
+                                    ) : (
+                                        <span className="ml-2 text-xs text-amber-600">can&apos;t connect</span>
+                                    )}
+                                    {item.reason && <p className="text-muted-foreground text-xs">{item.reason}</p>}
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 )}
             </CardContent>

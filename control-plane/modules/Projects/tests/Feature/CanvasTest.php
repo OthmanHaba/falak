@@ -1,6 +1,6 @@
 <?php
 
-use Falak\Databases\Application\EngineInventory;
+use Falak\Fleet\Events\AgentServiceEventsReported;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Servers\Contracts\ServerType;
@@ -8,6 +8,7 @@ use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Volumes\Domain\Models\Volume;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -38,6 +39,7 @@ it('returns every service of the environment with live status, servers and refer
     $engineServer = Server::query()->find($engine->server_id);
 
     $response = $this->getJson("{$this->url}/canvas")->assertOk();
+    $storage = Volume::query()->where('name', "{$shop->slug}/storage")->firstOrFail();
 
     expect($response->json('services'))->toHaveCount(3)
         ->and($response->json('services.0'))->toBe([
@@ -51,10 +53,10 @@ it('returns every service of the environment with live status, servers and refer
             'status' => 'active',
             'status_label' => 'Active',
             'url' => null,
-            'subtitle' => 'PostgreSQL 16 · '.$engineServer->name,
+            'subtitle' => 'PostgreSQL 17 · 512 MB · '.$engineServer->name,
             'servers' => [['id' => $engineServer->id, 'name' => $engineServer->name, 'leader' => false, 'online' => false]],
             'badges' => [],
-            'volumes' => [['name' => 'postgresql-data', 'detail' => $engineServer->name]],
+            'volumes' => [],
             'compose' => null,
             'last_deployment' => null,
         ])
@@ -75,7 +77,7 @@ it('returns every service of the environment with live status, servers and refer
                 ['id' => $web2->id, 'name' => 'web-2', 'leader' => false, 'online' => false],
             ],
             'badges' => [],
-            'volumes' => [['name' => 'storage', 'detail' => 'shared']],
+            'volumes' => [['id' => $storage->id, 'name' => 'storage', 'detail' => 'shared', 'used_bytes' => null, 'limit_bytes' => null, 'url' => "/volumes/{$storage->id}"]],
             'compose' => null,
             'last_deployment' => [
                 'id' => $done->id,
@@ -98,14 +100,14 @@ it('returns every service of the environment with live status, servers and refer
     // The engine runs on an app server the sites don't run on: their host references don't resolve, and the edges
     // say why before a deploy fails on it. Keys without a host (none here) and site edges carry nothing.
     $problems = collect($response->json('edges'))->mapWithKeys(fn (array $edge) => ["{$edge['from']}>{$edge['to']}" => $edge['problem'] ?? null]);
-    expect($problems["{$serviceIds[$shop->id]}>{$serviceIds[$database->id]}"])->toStartWith('DATABASE_URL: shop.DATABASE_URL cannot be used here: Storefront runs on web-1, web-2, but the database runs on')
-        ->and($problems["{$serviceIds[$api->id]}>{$serviceIds[$database->id]}"])->toStartWith('DB: shop.DB_HOST cannot be used here: Api runs on web-1, but')
+    expect($problems["{$serviceIds[$shop->id]}>{$serviceIds[$database->id]}"])->toStartWith("DATABASE_URL: shop.DATABASE_URL cannot be used here: Storefront runs on web-1, web-2, which shares no private network with {$engineServer->name}")
+        ->and($problems["{$serviceIds[$api->id]}>{$serviceIds[$database->id]}"])->toStartWith('DB: shop.DB_HOST cannot be used here: Api runs on web-1, which shares no private network')
         ->and($problems["{$serviceIds[$shop->id]}>{$serviceIds[$api->id]}"])->toBeNull();
 });
 
 it('flags references to a dedicated database server that shares no private network with the site (v0.9.0: never public)', function () {
-    $dbServer = databases_server($this->organization, 'postgresql', ServerType::Database, ['name' => 'db-1', 'provider' => 'hetzner']);
-    [$database] = projects_database($this->organization, 'shop', $this->environment, engineServer: app(EngineInventory::class)->sync($dbServer->id));
+    $dbServer = databases_server($this->organization, ServerType::Database, ['name' => 'db-1', 'provider' => 'hetzner']);
+    [$database, , $instance] = projects_database($this->organization, 'shop', $this->environment, server: $dbServer);
     $web = sites_server($this->organization->id, ['name' => 'web-1', 'provider' => 'hetzner']);
     $site = projects_site($this->organization, 'Storefront', ['DB_HOST' => '${{ shop.DB_HOST }}', 'DB_DATABASE' => '${{ shop.DB_DATABASE }}'], $this->environment, [$web]);
     // Only the database name: nothing to resolve per server.
@@ -115,13 +117,13 @@ it('flags references to a dedicated database server that shares no private netwo
     $edges = collect($this->getJson("{$this->url}/canvas")->assertOk()->json('edges'))->keyBy(fn (array $edge) => $edge['from']);
 
     expect($edges[$serviceIds[$site->id]]['problem'])
-        ->toBe('DB_HOST: shop.DB_HOST cannot be used here: Storefront runs on web-1, which shares no private network with db-1, and database references never point at a public address. Add both servers to a private network (Network → Private networks).')
+        ->toBe("DB_HOST: shop.DB_HOST cannot be used here: Storefront runs on web-1, which shares no private network with db-1, and PostgreSQL {$instance->name} on db-1 is never exposed on a public address for references. Add both servers to a private network (Network → Private networks).")
         ->and($edges[$serviceIds[$other->id]])->not->toHaveKey('problem');
 });
 
 it('flags no reference edge whose database host resolves', function () {
-    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['name' => 'app-1']);
-    [$database] = projects_database($this->organization, 'shop', $this->environment, engineServer: app(EngineInventory::class)->sync($server->id));
+    $server = databases_server($this->organization, ServerType::App, ['name' => 'app-1']);
+    [$database] = projects_database($this->organization, 'shop', $this->environment, server: $server);
     projects_site($this->organization, 'Storefront', ['DB_HOST' => '${{ shop.DB_HOST }}'], $this->environment, [$server]);
 
     $edges = $this->getJson("{$this->url}/canvas")->assertOk()->json('edges');
@@ -229,4 +231,14 @@ it('shows compose sites as "Compose · N services" and crashed when a service is
     ]);
 
     expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['status' => 'crashed', 'status_label' => '2/3 services healthy · cache down']);
+});
+
+it('shows a site’s limits in its card subtitle and OOM kills as a badge', function () {
+    $web = sites_server($this->organization->id, ['name' => 'web-1']);
+    $site = projects_site($this->organization, 'Storefront', [], $this->environment, [$web], ['runtime' => 'php-fpm', 'limits' => ['memory_limit' => 512, 'cpus' => 1]]);
+    AgentServiceEventsReported::dispatch('agent', $this->organization->id, $web->id, [
+        ['kind' => 'oom_kill', 'source' => 'slice', 'name' => 'site_'.str_replace('-', '_', $site->slug), 'site' => null, 'project' => null, 'service' => null, 'instance' => null, 'count' => 1, 'at' => now()->toIso8601String()],
+    ]);
+
+    expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['subtitle' => 'Laravel · PHP 8.4 · 512 MB · 1 CPU', 'badges' => ['OOM killed']]);
 });

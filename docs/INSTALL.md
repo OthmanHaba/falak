@@ -28,7 +28,10 @@ Releases are published from [github.com/OthmanHaba/falak](https://github.com/Oth
 
 This host runs only Falak. The servers Falak manages are separate machines: Ubuntu 22.04, 24.04 or 26.04 (the agent
 installer warns on other apt-based systems). On 26.04 PHP comes from Ubuntu's archive (PHP 8.5 only) until `ppa:ondrej/php`
-publishes packages for it; databases are the release's own (PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0, Valkey 9.0).
+publishes packages for it. Every server runs Docker Engine 28 or newer from Docker's apt repository (`docker-ce`, key fingerprint
+`9DC8 5822 9FC7 DD38 854A  E2D8 8D81 803C 0EBF CD88` checked): provisioning replaces an older Docker (containers, images and
+volumes stay); where Docker's repository has no packages for the release yet, the release's `docker.io` is used if it is
+28 or newer, else provisioning stops with that reason. Databases run as containers of Falak's images (`docs/DB_IMAGES.md`).
 
 **Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 
@@ -148,6 +151,7 @@ The agent binaries come from the control-plane image, so servers download them f
 
 ```
 /opt/falak/.env            settings + secrets (install.sh; never commit or share)
+/opt/falak/secrets/kek     key-encryption key: decrypts every secret in the database (see "Encryption keys")
 /opt/falak/custom.env      optional extra app env (GITHUB_APP_*, mirrors, FALAK_* tuning) — loaded by the app containers
 /opt/falak/deploy/         compose.yml, falak-ctl, image support files (replaced on update; previous kept as deploy.prev)
 /opt/falak/observability/  Loki/Tempo/Grafana/gateway configs
@@ -156,13 +160,54 @@ The agent binaries come from the control-plane image, so servers download them f
 ```
 
 **Which file?** `.env` holds the settings `deploy/compose.yml` passes to the containers by name (domains, secrets,
-`MAIL_*`, sizing, telemetry, `FALAK_REGISTRATION`, …) plus falak-ctl's own (`FALAK_BACKUP_*`, `FALAK_PRUNE_IMAGES`).
+`MAIL_*`, sizing, telemetry, `FALAK_REGISTRATION`, …) plus falak-ctl's own (`FALAK_BACKUP_KEEP`, `FALAK_PRUNE_IMAGES`).
+The DR bucket and passphrase are not there: they live in `/opt/falak/dr/dr.env` (`falak-ctl dr setup`).
 Every other app variable — e.g. `GITHUB_APP_*`, `FALAK_WEBHOOK_URL`, `FALAK_*_MIRROR` — goes in `custom.env`;
 compose does not forward it from `.env`. A variable compose passes by name always comes from `.env`: setting it in
 `custom.env` has no effect.
 
 For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and
 `MAIL_FROM_ADDRESS` in `/opt/falak/.env`, then run `falak-ctl up`.
+
+### Encryption keys
+
+Every secret Falak stores (site environments, database and storage credentials, private keys, tokens, two-factor
+secrets) is encrypted at rest with AES-256-GCM under a **data key**. Data keys are stored in the database, wrapped
+by the **key-encryption key (KEK)**. The KEK is not `APP_KEY` and is never in `.env` or the database, so a copy of
+the database together with `.env` reveals no secrets. Each value is bound to its row: copied to another row or
+column (another organization's, say), it no longer decrypts.
+
+- **Where.** `install.sh` creates `/opt/falak/secrets/kek`: 32 random bytes, mode `0400`, owned by uid 33 (the
+  containers' `www-data`), in a `0711` directory. It is mounted read-only into the PHP containers (`control-plane`,
+  `agent-api`, `horizon`, `reverb`, `scheduler`). They refuse to start without a usable KEK, and the panel also
+  refuses one that doesn't unwrap the database's data keys. `falak-ctl kek init` creates a missing KEK (never
+  replaces one) and fixes its permissions; `falak-ctl doctor` checks it.
+- **Emergency kit.** Save it right after installing, and after every rotation:
+  `falak-ctl kek export /root/falak-emergency-kit.txt`, then move the file to a password manager or offline
+  storage and delete it from the host. It is never printed to the terminal. `falak-ctl kek import <file>` puts the
+  KEK back (`--force` replaces a different one, which is kept aside).
+- **Backups.** A backup contains the KEK only when it is encrypted (the DR passphrase, `falak-ctl dr setup`). Otherwise
+  `falak-ctl backup` warns that the backup can't be decrypted without the KEK, which you then keep separately (the
+  emergency kit). It also leaves the KMS / Vault credentials (`FALAK_KEK_AWS_ACCESS_KEY_ID`,
+  `FALAK_KEK_AWS_SECRET_ACCESS_KEY`, `FALAK_KEK_AWS_SESSION_TOKEN`, `FALAK_KEK_VAULT_TOKEN`) out of an unencrypted
+  backup's `.env` / `custom.env`, with the same warning. `falak-ctl restore` refuses a backup without its KEK when
+  this host has neither the KEK its data keys are wrapped by nor its predecessor (`kek.previous`); import it first,
+  or pass `--force`.
+- **Rotation.** `falak-ctl kek rotate` creates a new KEK, keeps the old one as `secrets/kek.previous` (backups from
+  before the rotation need it) and re-wraps every data key (`falak:keys:rotate-kek`). Secrets are not re-encrypted:
+  only the data keys change. It refuses to start while a data key is still wrapped by `kek.previous` (an unfinished
+  rotation: run `falak-ctl artisan falak:keys:rotate-kek` first). A `kek.previous` from an earlier rotation moves to
+  `kek.retired-<id>`. `falak-ctl artisan falak:keys:rotate-data` starts a new data key and re-encrypts every value
+  under it in batches. Running workers may use the old key for up to a minute (`FALAK_KEYS_ACTIVE_TTL`), so it passes
+  again after that until nothing is left under the old key; if it is interrupted, run it again with `--resume`.
+- **KMS / Vault.** Set `FALAK_KEK_PROVIDER=aws-kms` or `vault-transit` in `.env` to keep the KEK in AWS KMS or a
+  Vault/OpenBao transit key: it never leaves them, and there is no file. Put the provider's settings in
+  `custom.env`: `FALAK_KEK_AWS_KMS_KEY_ID`, `FALAK_KEK_AWS_REGION`, `FALAK_KEK_AWS_ACCESS_KEY_ID`,
+  `FALAK_KEK_AWS_SECRET_ACCESS_KEY` (optional `FALAK_KEK_AWS_SESSION_TOKEN`), or `FALAK_KEK_VAULT_ADDR`,
+  `FALAK_KEK_VAULT_TOKEN`, `FALAK_KEK_VAULT_KEY` (default `falak`), `FALAK_KEK_VAULT_MOUNT` (default `transit`) and
+  optionally `FALAK_KEK_VAULT_NAMESPACE`. To move existing data keys, keep the old KEK readable (for a local KEK, as
+  `secrets/kek.previous`) and run `falak-ctl artisan falak:keys:rotate-kek`. After rotating the key inside KMS or
+  Vault, `--all` re-wraps every data key under the newest key version.
 
 ### Connect GitHub (GitHub App, one click)
 
@@ -216,15 +261,6 @@ an HTTPS mirror with the same path layout. Set these in `/opt/falak/custom.env`,
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
 
-### Docker address ranges (optional)
-
-Containers on an app or worker server (compose stacks, Docker sites, functions) reach that server's databases
-through the Docker bridge (agent 0.4.5+). The engines accept connections from Docker's default address pools,
-`172.16.0.0/12,192.168.0.0/16`; the firewall only lets them in on the Docker bridges. If the Docker daemon on your
-servers uses other `default-address-pools`, set `FALAK_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs, /8–/30) in
-`/opt/falak/custom.env` and run `falak-ctl up`; it applies to database users created or updated afterwards. Entries
-that are not such ranges are ignored with a warning in the logs (Docker's defaults apply when none is left).
-
 ### Extra sites on the control-plane host (optional)
 
 The edge (Caddy, ports 80/443) also loads every `/opt/falak/edge/*.caddyfile`. The folder is mounted read-only at
@@ -277,6 +313,7 @@ falak-ctl logs [service] [-f]             # e.g. falak-ctl logs control-plane -f
 falak-ctl doctor                          # DNS, certificates, ports, disk, containers, agent API (mTLS), PHP threads, backups
 falak-ctl admin reset-password you@example.com [--password=...]
 falak-ctl admin create ops@example.com [--token=cli]
+falak-ctl kek status | export <file> | import <file> | rotate   # key-encryption key (see "Encryption keys")
 falak-ctl artisan <command>               # php artisan in the control-plane container
 falak-ctl prune-images [--dry-run]        # remove Falak images except the current and previous version
 falak-ctl registry status                 # built-in image registry: address, size, answers with its credentials
@@ -371,9 +408,66 @@ with <server>, and database references never point at a public address". Before 
 Engines on app / worker servers are unaffected for native sites (`127.0.0.1`); containers on that server now get the
 Docker bridge address (`172.17.0.1`, or `FALAK_DOCKER_BRIDGE_HOST`) instead of the server's own address.
 
+**Upgrading to v0.10.0: secrets move from `APP_KEY` to the key-encryption key.** Every encrypted column is
+re-encrypted once by a migration during the update (see [Encryption keys](#encryption-keys)): it decrypts each value
+with `APP_KEY` and seals it under a new data key. Values already converted are skipped, so an interrupted migration
+can run again. There is no fallback afterwards: keep `APP_KEY` unchanged until the update has finished. The KEK file
+must exist before v0.10.0 starts, and the falak-ctl that runs the update is the one already installed. Install the
+v0.10.0 falak-ctl first; it creates the KEK during the update. The `agent-api`, `horizon`, `reverb` and `scheduler`
+services wait until the `control-plane` service has run the migrations:
+
+```bash
+curl -fsSL https://github.com/OthmanHaba/falak/releases/download/v0.10.0/falak-ctl -o /usr/local/bin/falak-ctl
+chmod 755 /usr/local/bin/falak-ctl
+falak-ctl update --version v0.10.0
+falak-ctl kek export /root/falak-emergency-kit.txt   # then store it offline and delete it here
+```
+
+If you update with an older falak-ctl, the containers refuse to start without the KEK and the update rolls back.
+That update has already installed the new falak-ctl, so running `falak-ctl update` again then works. Backups taken
+before v0.10.0 hold `APP_KEY` ciphertexts and restore as before: the migration converts them again.
+
 If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
 `FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
+
+### Upgrading to v0.10.0: databases in containers
+
+v0.10.0 runs every managed database in a container and no longer manages the PostgreSQL, MySQL, MariaDB, Redis and
+Valkey engines earlier versions installed on servers. They keep running, but Falak forgets them: no backups, no
+references. The update's migration refuses to run while those databases are registered, and nothing changes:
+
+```
+Falak v0.10 runs every database in a container and no longer manages the host databases of earlier versions …
+```
+
+1. Back up every database you need (a dump of each, kept outside Falak).
+2. Set `FALAK_DROP_LEGACY_DATABASES=1` in `/opt/falak/custom.env` and run `falak-ctl update` again. The old rows, their
+   backup history and their canvas services go (references to them fail until they point at new services).
+3. Create database containers (canvas → Create → Database) and restore your dumps into them, then remove the flag.
+
+### Upgrading to v0.10.0: resource limits
+
+Services can have memory, CPU, process, restart, log and OOM limits (a site's or compose service's Settings →
+Resources, a worker's or daemon's form). The upgrade sets none: **every existing site, compose service, worker and
+daemon keeps running without limits**, in production and elsewhere, until you set them. Only services created after
+the upgrade outside a production environment start with that environment's defaults (512 MB, 1 CPU, 512 processes,
+20 MB × 3 log files; `FALAK_LIMITS_NONPROD_*` in `/opt/falak/custom.env`), written on the service when it is created —
+changing the defaults later, or moving a service, never changes the limits of services that exist. A PHP-FPM site
+that gets memory, CPU or process limits moves into its own PHP-FPM master (a short restart of its pool).
+
+### Upgrading to v0.10.0: disaster recovery
+
+- `FALAK_BACKUP_PASSPHRASE` and `FALAK_BACKUP_S3_*` are no longer read from `.env`: run `falak-ctl dr setup`
+  with the same bucket and passphrase (it stores them in `/opt/falak/dr/dr.env`, root only), then delete them
+  from `.env`. Encrypted backups taken before need that passphrase.
+- The cron line from earlier docs (`/etc/cron.d/falak-backup`) is replaced by `falak-backup.timer`: remove it.
+- Backups now also hold `edge-pki`; restoring an older backup keeps this host's.
+- Backups are `*.fdr` now (encrypted and authenticated). Older `*.tar.gz.enc` backups restore from local files only
+  (no MAC: with a warning), never from the bucket: take a new backup (`falak-ctl backup --upload`) after upgrading.
+- Single-organization installs need nothing; on installs with several organizations, set `FALAK_DR_ORGANIZATION`
+  (the operator organization's id) in `.env` and run `falak-ctl up`, or nobody sees the control plane's DR.
+- The PHP containers mount `/opt/falak/state` read-only (`state/dr.json`, written by falak-ctl, no secrets).
 
 ### Upgrading the server agents
 
@@ -455,26 +549,49 @@ A backup contains:
 
 - `db.dump`: `pg_dump -Fc` of the database;
 - the `falak-ca` volume (Fleet CA certificate and agent API certificate), `app-storage` (build artifacts,
-  app files) and `caddy-data` (ACME account and certificates);
-- `.env` and `custom.env`.
+  app files), `caddy-data` (ACME account and certificates) and `edge-pki` (the edge's client certificate for
+  the agent API); `registry-data` (the built-in registry's images) with `--include-registry` or
+  `falak-ctl dr setup --include-registry`;
+- `.env` and `custom.env`;
+- the key-encryption key (`secrets/kek`, and `kek.previous`), **only when the backup is encrypted with the DR
+  passphrase**. Without a passphrase the backup warns that it can't be decrypted without the KEK: keep the
+  emergency kit (`falak-ctl kek export`) apart from the backups;
+- a `manifest`: Falak version, image digests, volumes, KEK id(s), row counts of the main tables (drills compare
+  them).
 
-> **The Fleet CA is critical.** Every agent trusts only this CA, and its private key is stored in the database
-> encrypted with `APP_KEY`. A backup is only useful with its **database and `.env` together**. If you lose
-> either one, every server must be re-enrolled. Keep copies **off the host**.
+> **The Fleet CA is critical.** Every agent trusts only this CA, and its private key is stored in the database,
+> sealed under the KEK. A backup is only useful with its **database, `.env` and the KEK together**. If you lose
+> any of them, every server must be re-enrolled and every secret entered again. Keep copies **off the host**.
 
-- Retention: the newest `FALAK_BACKUP_KEEP` backups are kept (default 14).
-- Schedule a daily backup with cron:
-  `echo '15 3 * * * root /usr/local/bin/falak-ctl backup --quiet' > /etc/cron.d/falak-backup`
-- Encryption: set `FALAK_BACKUP_PASSPHRASE` in `.env` to write `*.tar.gz.enc` (AES-256, `openssl enc -pbkdf2`).
-  `restore` needs the same passphrase.
-- Off-site copies (S3-compatible, via `curl --aws-sigv4`): set `FALAK_BACKUP_S3_ENDPOINT`
-  (e.g. `https://s3.eu-central-1.amazonaws.com`), `FALAK_BACKUP_S3_BUCKET`, `FALAK_BACKUP_S3_REGION`,
-  `FALAK_BACKUP_S3_ACCESS_KEY`, `FALAK_BACKUP_S3_SECRET_KEY`, and optionally `FALAK_BACKUP_S3_PREFIX`. Uploads
-  use path-style URLs. The local copy is kept even when an upload fails.
+- Retention: the newest `FALAK_BACKUP_KEEP` backups are kept on the host (default 14). Expire old uploads with
+  a lifecycle rule on the bucket, and turn on versioning or object lock there.
+- **Off-site, encrypted, on a schedule: `falak-ctl dr setup`.** It asks for an S3-compatible bucket (endpoint,
+  bucket, region, keys, prefix) and a DR passphrase, tests the bucket, and installs `falak-backup.timer`
+  (every 6 h by default, `falak-ctl backup --upload --scheduled`) and a monthly `falak-drill.timer`. The settings
+  live in `/opt/falak/dr/dr.env` (root only, never mounted into a container, never in a backup). Uploads are always
+  encrypted and authenticated (`*.fdr`: AES-256 then HMAC-SHA256, PBKDF2 with 600 000 iterations; see
+  DISASTER_RECOVERY.md "Backup format"); `backup --upload` without the passphrase is refused. `falak-ctl dr status` and Settings → Disaster recovery show the last
+  backup, its age and size, and the last drill. Until it is configured the panel shows its owners and admins a
+  banner, `doctor` warns and a weekly `dr.not_configured` alert goes out.
+- **Restore drills:** `falak-ctl dr drill` downloads the latest upload, restores it into a throwaway compose
+  project (`falak-drill`: its own directory, volumes, network and subnet; postgres, valkey and the control plane
+  only, so nothing talks to your servers), checks the migrations, that the KEK unwraps every data key and the row
+  counts, then removes it.
+- `restore` takes a file, a name in `backups/`, `s3://latest` or `s3://<backup name>` (downloaded, authenticated
+  with the DR passphrase before it is decrypted; only `.fdr` objects).
 
-**Move to a new host:** install Falak on the new host with the same `--domain`, copy the backup over, run
-`falak-ctl restore <file> --yes`, then point DNS at the new host. The restore brings back the old `.env`
-(including `APP_KEY`), so agents keep working without re-enrolling.
+**Move to a new host, or the host is lost:** see [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md). In short, on a
+fresh VPS with the same `--domain`:
+
+```bash
+curl -fsSL https://falak.sh/install.sh | sudo bash -s -- --domain falak.example.com --email you@example.com \
+  --restore-from s3://latest      # asks for the bucket settings and the DR passphrase
+```
+
+then point DNS at the new host. The restore brings back the old `.env` (including `APP_KEY`), the KEK, the Fleet
+CA and the edge PKI, so agents reconnect without re-enrolling. With a local file instead: install, copy it over,
+`falak-ctl restore <file> --yes`. For an unencrypted backup, import the KEK first:
+`falak-ctl kek import <emergency kit> --force`.
 
 ## 7. Change the domain
 
@@ -520,7 +637,7 @@ data. Managed servers keep running. Remove the agent there with `systemctl disab
 | New server stays **Waiting for agent** after you deleted the old one and reinstalled on the same machine | From v0.5.2 a new install command replaces the old identity: the old files move to `/etc/falak/previous/<UTC time>/`. The agent logs `this agent was revoked or its server was removed from Falak` while it still has a deleted server's identity. Install commands from Falak before v0.5.2 enroll only when `/etc/falak` has no identity, so they keep the deleted server's certificate and get `401`. On such a machine: `sudo systemctl stop falak-agent && sudo mkdir -p /root/falak-old && sudo mv /etc/falak/agent.key /etc/falak/agent.crt /etc/falak/ca.crt /etc/falak/agent.json /root/falak-old/`, then run a freshly generated install command. |
 | Provisioning step `apt`, `caddy` or `php:<version>` fails on `apt-get update` | The error names the repository and its file under `/etc/apt/sources.list.d`; fix or remove that file and retry. A `ppa:ondrej/php` source without a release for the server's Ubuntu (e.g. 26.04) is disabled automatically (`<file>.disabled-by-falak`). Without the PPA, PHP comes from Ubuntu's archive: on Ubuntu 26.04 that is PHP 8.5 only, and a server planned with another version gets 8.5 instead (the server's status says so). |
 | Server shows **Needs attention** | The machine check (v0.6.0 agents) found software Falak won't change on its own and installed nothing. The server page's *Machine check* panel lists each conflict with its fix; after fixing, click **Re-check**, then **Provision**. The rows below are the conflicts it reports. Agents before v0.6.0 skip the check: update the agent and Re-provision to use it. |
-| Machine check: `Port 80/443/2019 is in use by nginx` (apache2, …) | Another web server holds the edge's ports: `systemctl disable --now nginx` (or move it to other ports), then Re-check. Falak's edge (falak-edge) serves 80 and 443. |
+| Machine check: `Port 80/443 is in use by nginx` (apache2, …) | Another web server holds the edge's ports: `systemctl disable --now nginx` (or move it to other ports), then Re-check. Falak's edge (falak-edge) serves 80 and 443. |
 | Machine check: `caddy.service is running` | Falak would stop it for falak-edge. Move the sites it serves into Falak, `systemctl disable --now caddy`, Re-check. |
 | Machine check: `A container (…) publishes port 5432/3306/6379/80` | A container holds a port Falak's engine or edge needs: `docker stop <name>` or publish it on another port, then Re-check. To keep the database in Docker, add it to Falak as a compose service instead of choosing the engine for the server. |
 | Machine check: `MariaDB … is installed, but this server is set up for MySQL` (or the reverse, Redis ↔ Valkey, Percona) | Falak won't run two engines of a kind on one machine. Remove the other one (`apt purge mariadb-server`) or create the server in Falak with the engine that is installed (it is then used as is). |

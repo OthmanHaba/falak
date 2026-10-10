@@ -5,6 +5,7 @@ namespace Falak\Fleet\Domain\Models;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Data\CommandHandle;
 use Falak\Fleet\Contracts\Data\CommandResult;
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -71,7 +72,7 @@ class Command extends Model
     protected function casts(): array
     {
         return [
-            'payload' => 'encrypted',
+            'payload' => Sealed::class,
             'status' => CommandStatus::class,
             'result' => 'array',
             'queued_at' => 'datetime',

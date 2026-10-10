@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
@@ -30,7 +31,15 @@ type Options struct {
 	FS        hostfs.FS
 	Upstreams UpstreamSetter
 	HTTP      *http.Client // health checks
-	Logger    *slog.Logger
+	// SecretsDir holds containers' secret files, on a tmpfs; default DefaultSecretsDir.
+	SecretsDir string
+	// EnvDir holds compose projects' env files, on a tmpfs; default envlinks.DefaultEnvDir.
+	EnvDir string
+	// Links remembers the release links to compose env files (MissingSecrets after a reboot); nil = none.
+	Links interface {
+		Record(site, link, target string) error
+	}
+	Logger *slog.Logger
 	// Client overrides the Engine client (tests).
 	Client *Client
 }
@@ -53,6 +62,12 @@ func New(o Options) *Service {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
+	if o.SecretsDir == "" {
+		o.SecretsDir = DefaultSecretsDir
+	}
+	if o.EnvDir == "" {
+		o.EnvDir = envlinks.DefaultEnvDir
+	}
 	c := o.Client
 	if c == nil {
 		c = NewClient(o.Socket)
@@ -63,12 +78,13 @@ func New(o Options) *Service {
 // Client exposes the Engine client (facts).
 func (s *Service) Client() *Client { return s.c }
 
-// Register adds docker.* and deploy.container.swap.
+// Register adds docker.* (docker.update changes live limits) and deploy.container.swap.
 func (s *Service) Register(reg *commands.Registry) {
 	reg.Register("docker.pull", commands.Typed(s.pull))
 	reg.Register("docker.run", commands.Typed(s.run))
 	reg.Register("docker.stop", commands.Typed(s.stop))
 	reg.Register("docker.prune", commands.Typed(s.prune))
+	reg.Register("docker.update", commands.Typed(s.update))
 	reg.Register("docker.compose.up", commands.Typed(s.composeUp))
 	reg.Register("docker.compose.down", commands.Typed(s.composeDown))
 	reg.Register("docker.compose.pull", commands.Typed(s.composePull))
@@ -141,23 +157,29 @@ type VolumeSpec struct {
 }
 
 type RunPayload struct {
-	Name          string            `json:"name"`
-	Image         string            `json:"image"`
-	Pull          string            `json:"pull,omitempty"`
-	Auth          *Auth             `json:"auth,omitempty"`
-	Env           map[string]string `json:"env,omitempty"`
-	Command       []string          `json:"command,omitempty"`
-	Entrypoint    []string          `json:"entrypoint,omitempty"`
-	User          string            `json:"user,omitempty"`
-	Ports         []PortSpec        `json:"ports,omitempty"`
-	Volumes       []VolumeSpec      `json:"volumes,omitempty"`
-	Network       string            `json:"network,omitempty"`
-	Networks      []NetworkJoin     `json:"networks,omitempty"`
-	Labels        map[string]string `json:"labels,omitempty"`
-	RestartPolicy string            `json:"restart_policy,omitempty"`
-	MemoryBytes   int64             `json:"memory_bytes,omitempty"`
-	CPUs          float64           `json:"cpus,omitempty"`
+	Name       string            `json:"name"`
+	Image      string            `json:"image"`
+	Pull       string            `json:"pull,omitempty"`
+	Auth       *Auth             `json:"auth,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Command    []string          `json:"command,omitempty"`
+	Entrypoint []string          `json:"entrypoint,omitempty"`
+	User       string            `json:"user,omitempty"`
+	Ports      []PortSpec        `json:"ports,omitempty"`
+	Volumes    []VolumeSpec      `json:"volumes,omitempty"`
+	Network    string            `json:"network,omitempty"`
+	Networks   []NetworkJoin     `json:"networks,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	// Limits: memory, CPUs, processes, restart policy, log caps and OOM preference.
+	Limits
+	// SecretFiles are mounted read-only at /run/secrets/<name> (never in the container's env, which docker inspect shows).
+	SecretFiles []SecretFile `json:"secret_files,omitempty"`
+	// Mask names the secret variables of env.
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values and the secret files.
+func (p RunPayload) Secrets() []string { return secretValues(p.Env, p.Mask, p.SecretFiles) }
 
 // NetworkJoin is an existing network the container joins besides its own, under extra DNS names (a compose service
 // run as its own Falak site joins its stack's network as the service it was, so both sides keep resolving each other).
@@ -168,6 +190,24 @@ type NetworkJoin struct {
 	// agent creates it with Compose's own labels, so the project's first `docker compose up` adopts it instead of
 	// failing. A service split out of a stack at creation can then deploy before the stack.
 	Compose *ComposeNetwork `json:"compose,omitempty"`
+	// Environment marks a Falak environment network (falak-env-<id>, where the environment's databases answer by
+	// name): created when missing instead of waited for.
+	Environment bool `json:"environment,omitempty"`
+}
+
+// EnvironmentNetworkRe is the name of a Falak environment network.
+var EnvironmentNetworkRe = regexp.MustCompile(`^falak-env-[0-9a-z]{26}$`)
+
+// ensureEnvironmentNetwork creates an environment network when missing (labels falak.managed, falak.network).
+func (s *Service) ensureEnvironmentNetwork(ctx context.Context, name string) error {
+	if !EnvironmentNetworkRe.MatchString(name) {
+		return &commands.PayloadError{Err: fmt.Errorf("invalid environment network %q", name)}
+	}
+	ok, err := s.c.NetworkExists(ctx, name)
+	if err != nil || ok {
+		return err
+	}
+	return s.c.NetworkCreate(ctx, name, map[string]string{LabelManaged: "true", "falak.network": "environment"})
 }
 
 // ComposeNetwork is the compose project and network key that own a network.
@@ -204,7 +244,7 @@ const (
 // specHash hashes everything that defines the container (not pull policy or credentials).
 func (p RunPayload) specHash() string {
 	q := p
-	q.Pull, q.Auth = "", nil
+	q.Pull, q.Auth, q.Mask = "", nil, nil
 	b, _ := json.Marshal(q)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
@@ -253,19 +293,16 @@ func (p RunPayload) createBody(hash string) CreateBody {
 		b.HostConfig.Binds = append(b.HostConfig.Binds, bind)
 	}
 	b.HostConfig.NetworkMode = p.Network
-	rp := p.RestartPolicy
-	if rp == "" {
-		rp = "unless-stopped"
-	}
-	b.HostConfig.RestartPolicy = RestartPolicy{Name: rp}
-	b.HostConfig.Memory = p.MemoryBytes
-	b.HostConfig.NanoCPUs = int64(p.CPUs * 1e9)
+	p.Limits.apply(&b.HostConfig)
 	return b
 }
 
 func (s *Service) run(ctx context.Context, p RunPayload, st commands.Stream) (any, error) {
 	if !containerNameRe.MatchString(p.Name) || p.Image == "" {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("name and image are required")}
+	}
+	if err := p.Limits.validate(); err != nil {
+		return nil, &commands.PayloadError{Err: err}
 	}
 	id, changed, err := s.ensureContainer(ctx, p, st)
 	return RunResult{Changed: changed, ContainerID: id}, err
@@ -309,7 +346,16 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 			return "", false, err
 		}
 	}
-	id, err := s.c.ContainerCreate(ctx, p.Name, p.createBody(hash))
+	if len(p.SecretFiles) > 0 {
+		if err := s.writeSecrets(p.Name, numericOwner(p.User), p.SecretFiles); err != nil {
+			return "", false, err
+		}
+	} else {
+		s.removeSecrets(p.Name)
+	}
+	body := p.createBody(hash)
+	s.withSecrets(&body, p.Name, p.User, p.SecretFiles)
+	id, err := s.c.ContainerCreate(ctx, p.Name, body)
 	if err != nil {
 		return "", false, err
 	}
@@ -327,6 +373,12 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 // someone else and is only waited for.
 func (s *Service) awaitNetworks(ctx context.Context, joins []NetworkJoin, st commands.Stream) error {
 	for _, n := range joins {
+		if n.Environment {
+			if err := s.ensureEnvironmentNetwork(ctx, n.Name); err != nil {
+				return err
+			}
+			continue
+		}
 		deadline := time.Now().Add(networkWait)
 		for said := false; ; said = true {
 			ok, err := s.c.NetworkExists(ctx, n.Name)
@@ -394,6 +446,7 @@ func (s *Service) stop(ctx context.Context, p StopPayload, _ commands.Stream) (a
 		if err := s.c.ContainerRemove(ctx, cur.ID); err != nil {
 			return nil, err
 		}
+		s.removeSecrets(p.Name)
 		changed = true
 	}
 	return ChangedResult{Changed: changed}, nil

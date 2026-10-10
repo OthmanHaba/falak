@@ -30,6 +30,12 @@ trait PresentsDeployments
             'release_id' => $deployment->release_id,
             'build_id' => $deployment->build_id,
             'rolled_back' => $deployment->rolled_back,
+            // Set when the watch after the release went live tripped: why it rolled back (or only alerted).
+            'rolled_back_reason' => $deployment->rolled_back_reason,
+            'rolled_back_at' => $deployment->rolled_back_at?->toIso8601String(),
+            // A rollback deployment started by the watch of that deployment.
+            'auto_rollback_of' => $deployment->auto_rollback_of,
+            'watch' => $deployment->watch?->toApi(),
             // A compose stack's bootstrap pass: only these services run until its split-out sites are live and the
             // full stack deploys (docs/COMPOSE_TEMPLATES.md §1.7).
             'partial' => ($bootstrap = (array) $deployment->setting('bootstrap', [])) !== [] ? ['services' => $bootstrap, 'awaits_sites' => (array) $deployment->setting('awaits_sites', [])] : null,

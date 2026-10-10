@@ -1,1 +1,1 @@
-{"engine": "postgres", "name": "staging_shop"}
+{"instance": "01hzyinst00000000000000001", "engine": "postgres", "name": "shop"}

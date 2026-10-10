@@ -2,6 +2,7 @@
 
 namespace Falak\Fleet\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -34,7 +35,7 @@ class CertificateAuthority extends Model
     protected function casts(): array
     {
         return [
-            'private_key' => 'encrypted',
+            'private_key' => Sealed::class,
             'not_before' => 'datetime',
             'not_after' => 'datetime',
             'active' => 'boolean',

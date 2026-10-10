@@ -46,6 +46,7 @@ beforeEach(function () {
     $this->slackResponse = ['ok', 200];
     Http::fake(fn () => Http::response(...$this->slackResponse));
     [$this->owner, $this->organization] = memberOf();
+    alerting_without_default_pack($this->organization->id);
     $this->slack = alerting_channel($this->organization->id);
 });
 

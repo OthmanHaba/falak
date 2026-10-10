@@ -14,6 +14,8 @@ final readonly class MetricSample
         public ?float $cpuPercent,
         public int $memoryUsedBytes,
         public int $diskUsedBytes,
+        /** @var array<string, array{0: int, 1: int, 2: int}> mount => [used, available, total] bytes (agents since v0.10.0) */
+        public array $disks = [],
     ) {}
 
     /**

@@ -10,11 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { router, useForm } from '@inertiajs/react';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { type DatabaseRow, type DatabaseServer, type DatabaseUserRow } from '../types';
+import { type DatabaseInstance, type DatabaseRow, type DatabaseUserRow } from '../types';
 import { StatusBadge } from './database-ui';
 
 interface Props {
-    server: DatabaseServer;
+    instance: DatabaseInstance;
     users: DatabaseUserRow[];
     databases: DatabaseRow[];
     privileges: string[];
@@ -97,8 +97,8 @@ function GrantsEditor({
     );
 }
 
-export function UsersCard({ server, users, databases, privileges, canManage }: Props) {
-    const mysql = server.engine !== 'postgresql';
+export function UsersCard({ instance, users, databases, privileges, canManage }: Props) {
+    const mysql = instance.engine !== 'postgresql';
     const levels = (Object.keys(LEVELS) as AccessLevel[]).filter((level) => LEVELS[level].privileges.every((p) => privileges.includes(p)));
     const [creating, setCreating] = useState(false);
     const [editing, setEditing] = useState<DatabaseUserRow | null>(null);
@@ -123,7 +123,7 @@ export function UsersCard({ server, users, databases, privileges, canManage }: P
     const submitCreate: FormEventHandler = (event) => {
         event.preventDefault();
         create.transform((data) => ({ ...data, password: data.password || null, host: mysql ? data.host : null }));
-        create.post(`/databases/servers/${server.id}/users`, {
+        create.post(`/databases/instances/${instance.id}/users`, {
             preserveScroll: true,
             onSuccess: () => {
                 create.reset();
@@ -362,7 +362,7 @@ export function UsersCard({ server, users, databases, privileges, canManage }: P
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Delete {deleting?.username}?</DialogTitle>
-                        <DialogDescription>The account is dropped from {server.server_name}; applications using it lose access.</DialogDescription>
+                        <DialogDescription>The account is dropped from {instance.name}; applications using it lose access.</DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
                         <Button variant="ghost" onClick={() => setDeleting(null)}>

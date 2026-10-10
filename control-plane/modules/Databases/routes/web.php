@@ -3,9 +3,10 @@
 use Falak\Databases\Http\Controllers\BackupController;
 use Falak\Databases\Http\Controllers\BackupScheduleController;
 use Falak\Databases\Http\Controllers\DatabaseController;
+use Falak\Databases\Http\Controllers\DatabaseInstanceController;
 use Falak\Databases\Http\Controllers\DatabasePanelController;
-use Falak\Databases\Http\Controllers\DatabaseServerController;
 use Falak\Databases\Http\Controllers\DatabaseUserController;
+use Falak\Databases\Http\Controllers\PitrController;
 use Falak\Databases\Http\Controllers\StorageProviderController;
 use Falak\Kernel\Http\LegacyRedirect;
 use Illuminate\Support\Facades\Route;
@@ -17,17 +18,27 @@ Route::middleware(['auth', 'org'])->group(function () {
 });
 
 Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->group(function () {
-    Route::get('/', [DatabaseServerController::class, 'index'])->name('index');
+    Route::get('/', [DatabaseInstanceController::class, 'index'])->name('index');
 
-    Route::get('servers/{databaseServer}', [DatabaseServerController::class, 'show'])->name('servers.show');
-    Route::put('servers/{databaseServer}', [DatabaseServerController::class, 'update'])->name('servers.update');
-    Route::post('servers/{databaseServer}/databases', [DatabaseController::class, 'store'])->name('databases.store');
-    Route::post('servers/{databaseServer}/users', [DatabaseUserController::class, 'store'])->name('users.store');
-    Route::post('servers/{databaseServer}/schedules', [BackupScheduleController::class, 'store'])->name('schedules.store');
+    Route::post('instances', [DatabaseInstanceController::class, 'store'])->name('instances.store');
+    Route::get('instances/{instance}', [DatabaseInstanceController::class, 'show'])->name('instances.show');
+    Route::put('instances/{instance}', [DatabaseInstanceController::class, 'update'])->name('instances.update');
+    Route::post('instances/{instance}/restart', [DatabaseInstanceController::class, 'restart'])->name('instances.restart');
+    Route::post('instances/{instance}/network', [DatabaseInstanceController::class, 'network'])->name('instances.network');
+    Route::post('instances/{instance}/upgrade', [DatabaseInstanceController::class, 'upgrade'])->name('instances.upgrade');
+    Route::post('instances/{instance}/password', [DatabaseInstanceController::class, 'password'])->name('instances.password');
+    Route::delete('instances/{instance}', [DatabaseInstanceController::class, 'destroy'])->name('instances.destroy');
+    Route::post('instances/{instance}/databases', [DatabaseController::class, 'store'])->name('databases.store');
+    Route::post('instances/{instance}/users', [DatabaseUserController::class, 'store'])->name('users.store');
+    Route::post('instances/{instance}/schedules', [BackupScheduleController::class, 'store'])->name('schedules.store');
+    Route::put('instances/{instance}/pitr', [PitrController::class, 'update'])->name('pitr.update');
+    Route::post('instances/{instance}/pitr/base', [PitrController::class, 'base'])->middleware('throttle:10,1')->name('pitr.base');
+    Route::post('instances/{instance}/pitr/restore', [PitrController::class, 'restore'])->middleware('throttle:10,1')->name('pitr.restore');
+    Route::post('pitr-restores/{restore}/decision', [PitrController::class, 'decide'])->name('pitr.decide');
+    Route::post('pitr-restores/{restore}/inspection', [PitrController::class, 'inspection'])->middleware('throttle:30,1')->name('pitr.inspection');
 
     Route::get('databases/{database}', [DatabasePanelController::class, 'show'])->name('databases.show');
     Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');
-    Route::put('databases/{database}/settings', [DatabasePanelController::class, 'settings'])->name('databases.settings');
     Route::post('databases/{database}/backups', [DatabaseController::class, 'backup'])->name('databases.backup');
 
     Route::put('users/{databaseUser}', [DatabaseUserController::class, 'update'])->name('users.update');
@@ -37,11 +48,13 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
 
     Route::put('schedules/{backupSchedule}', [BackupScheduleController::class, 'update'])->name('schedules.update');
     Route::post('schedules/{backupSchedule}/run', [BackupScheduleController::class, 'run'])->name('schedules.run');
+    Route::post('schedules/{backupSchedule}/drill', [BackupScheduleController::class, 'drill'])->middleware('throttle:10,1')->name('schedules.drill');
     Route::delete('schedules/{backupSchedule}', [BackupScheduleController::class, 'destroy'])->name('schedules.destroy');
 
     Route::get('backups', [BackupController::class, 'index'])->name('backups.index');
     Route::post('backups/{backup}/restore', [BackupController::class, 'restore'])->name('backups.restore');
     Route::get('backups/{backup}/download', [BackupController::class, 'download'])->middleware('throttle:30,1')->name('backups.download');
+    Route::post('backups/{backup}/key', [BackupController::class, 'exportKey'])->middleware(['reauthenticated', 'throttle:10,1'])->name('backups.key');
     Route::delete('backups/{backup}', [BackupController::class, 'destroy'])->name('backups.destroy');
 
     Route::post('storage', [StorageProviderController::class, 'store'])->name('storage.store');

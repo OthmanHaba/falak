@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/security.audit.schema.json",
+  "title": "security.audit — the server baseline report: read-only checks (SSH, updates, firewall, fail2ban, Docker, files, kernel, accounts, time), at most 55 s, no network",
+  "x-falak-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "managed_keys": {
+      "type": "object",
+      "description": "Unix user → public keys Falak installs; other authorized keys are reported. Absent: keys are not compared",
+      "propertyNames": {
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      }
+    },
+    "expected_ports": {
+      "type": "array",
+      "description": "Ports the firewall accepts; public listeners outside them are reported. Absent: listeners are not compared",
+      "items": {
+        "type": "string",
+        "pattern": "^(tcp|udp|any)/([0-9]{1,5}(-[0-9]{1,5})?|\\*)$"
+      }
+    },
+    "known_users": {
+      "type": "array",
+      "description": "Unix users Falak manages; other login users are listed (info)",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+      }
+    },
+    "ssh_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checks",
+        "duration_ms"
+      ],
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "area",
+              "status",
+              "severity",
+              "evidence",
+              "disruptive"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_.-]+$",
+                "maxLength": 120
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "area": {
+                "enum": [
+                  "ssh",
+                  "updates",
+                  "firewall",
+                  "intrusion",
+                  "docker",
+                  "files",
+                  "kernel",
+                  "accounts",
+                  "time",
+                  "audit"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "warn",
+                  "fail",
+                  "info"
+                ]
+              },
+              "severity": {
+                "enum": [
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "info"
+                ]
+              },
+              "evidence": {
+                "type": "string",
+                "maxLength": 600,
+                "description": "Short and secret-free: setting values, counts, a few names or paths"
+              },
+              "fix_id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+(:[a-z0-9_.-]+)*$",
+                "description": "Agent fixes (security.fix) or control-plane fixes (firewall.apply, firewall.close_port:<proto>:<port>)"
+              },
+              "disruptive": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

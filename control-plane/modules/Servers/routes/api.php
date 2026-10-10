@@ -1,7 +1,6 @@
 <?php
 
 use Falak\Servers\Http\Controllers\Api\ServerApiController;
-use Falak\Servers\Http\Controllers\DatabaseEngineController;
 use Falak\Servers\Http\Controllers\MachineCheckController;
 use Illuminate\Support\Facades\Route;
 
@@ -11,7 +10,6 @@ Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group
     Route::get('servers/{server}', [ServerApiController::class, 'show'])->name('servers.show');
     Route::delete('servers/{server}', [ServerApiController::class, 'destroy'])->name('servers.destroy');
     Route::post('servers/{server}/agent/upgrade', [ServerApiController::class, 'upgradeAgent'])->middleware('throttle:30,1')->name('servers.agent.upgrade');
-    Route::post('servers/{server}/database-engine', [DatabaseEngineController::class, 'storeApi'])->middleware('throttle:10,1')->name('servers.database-engine.store');
     Route::get('servers/{server}/inspection', [MachineCheckController::class, 'show'])->name('servers.inspection.show');
     Route::post('servers/{server}/inspection', [MachineCheckController::class, 'storeApi'])->middleware('throttle:10,1')->name('servers.inspection.store');
     Route::post('servers/{server}/provision', [MachineCheckController::class, 'provisionApi'])->middleware('throttle:10,1')->name('servers.provision');

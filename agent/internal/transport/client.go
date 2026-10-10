@@ -250,6 +250,26 @@ func (c *Client) PostInsights(ctx context.Context, ndjson []byte) error {
 	return err
 }
 
+// Request posts one JSON request to the control plane (POST /requests/<type>) and decodes its JSON reply into out (nil:
+// ignored). Modules answer them: pitr.upload_urls, pitr.shipped and pitr.gap (contracts/agent-protocol/README.md).
+func (c *Client) Request(ctx context.Context, typ string, in, out any) error {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	body, err := c.do(ctx, http.MethodPost, "/requests/"+typ, "application/json", b, 60*time.Second)
+	if err != nil {
+		return err
+	}
+	if out == nil || len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("%s: decode reply: %w", typ, err)
+	}
+	return nil
+}
+
 // Renew posts a CSR to /renew and returns the new certificate PEM.
 func (c *Client) Renew(ctx context.Context, csrPEM []byte) ([]byte, error) {
 	b, _ := json.Marshal(map[string]string{"csr_pem": string(csrPEM)})

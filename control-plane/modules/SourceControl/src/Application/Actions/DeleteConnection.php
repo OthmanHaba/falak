@@ -29,6 +29,8 @@ final class DeleteConnection
     public function __invoke(Connection $connection, bool $cleanUpProvider = true): void
     {
         if ($cleanUpProvider) {
+            // The connection goes: pinned webhooks (previews) too.
+            $connection->webhooks()->update(['pinned' => false]);
             $connection->webhooks()->get()->each(fn (Webhook $webhook) => $this->gateway->removeWebhook($connection->id, $webhook->repository));
             $connection->deployKeys()->get()->each(fn (DeployKey $key) => $this->gateway->removeDeployKey($key->id));
 

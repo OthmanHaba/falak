@@ -74,13 +74,14 @@ function sites_fake_agent_memory(array $memory): void
  * An active site-hosting server with installed PHP versions.
  *
  * @param  list<string>  $php
+ * @param  bool  $docker  ignored: every server runs Docker
  */
 function sites_server(string $organizationId, array $attributes = [], array $php = ['8.4'], string $phpRuntime = 'frankenphp', bool $docker = false): Server
 {
     $server = Server::factory()->create([
         'organization_id' => $organizationId,
         'type' => ServerType::Web,
-        'stack' => new Stack($phpRuntime, $php, $php[0] ?? null, '22', null, null, $docker),
+        'stack' => new Stack($phpRuntime, $php, $php[0] ?? null, '22'),
         'private_ipv4' => '10.0.0.'.random_int(2, 250),
         ...$attributes,
     ]);

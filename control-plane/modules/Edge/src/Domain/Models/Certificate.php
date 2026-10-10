@@ -2,6 +2,7 @@
 
 namespace Falak\Edge\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -44,7 +45,7 @@ class Certificate extends Model
     {
         return [
             'domains' => 'array',
-            'key_pem' => 'encrypted',
+            'key_pem' => Sealed::class,
             'not_before' => 'datetime',
             'not_after' => 'datetime',
         ];

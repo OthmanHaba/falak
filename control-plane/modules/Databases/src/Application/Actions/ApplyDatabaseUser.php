@@ -3,37 +3,32 @@
 namespace Falak\Databases\Application\Actions;
 
 use Falak\Databases\Application\AgentCommands;
-use Falak\Databases\Application\KeyValue\ApplyKeyValueInstance;
 use Falak\Databases\Domain\Enums\ResourceStatus;
-use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Infrastructure\CommandPayloads;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Converges a user (password, host, grants on active databases) with db.user.apply. Every apply gets a
- * new revision so its idempotency key identifies exactly one desired state. The user row is locked
- * while the revision is taken and dispatched, so concurrent applies (e.g. two databases activating
- * on two workers) never share a key or overwrite each other's command id.
+ * Converges a user (password, host, grants on active databases) with db.user.apply in its instance's container. Every
+ * apply gets a new revision so its idempotency key identifies exactly one desired state. The user row is locked while
+ * the revision is taken and dispatched, so concurrent applies (e.g. two databases activating on two workers) never
+ * share a key or overwrite each other's command id.
+ *
+ * A Redis / Valkey `default` user is the instance's password (db.instance.password), never applied here; users of an
+ * instance that is not running yet wait for it (HandleCommandOutcome applies them when it starts).
  */
 final class ApplyDatabaseUser
 {
-    public function __construct(
-        private readonly AgentCommands $commands,
-        private readonly ApplyKeyValueInstance $applyInstance,
-    ) {}
+    public function __construct(private readonly AgentCommands $commands) {}
 
     /**
      * @param  bool  $background  record "agent not connected" on the user instead of throwing
      */
     public function __invoke(DatabaseUser $user, bool $background = false): void
     {
-        // A Redis / Valkey `default` user is the instance's requirepass: re-applying the instance applies it.
-        if ($user->databaseServer->engine->isKeyValue()) {
-            $user->grants()->with('database')->get()->pluck('database')->filter()
-                ->reject(fn (Database $database) => $database->status === ResourceStatus::Deleting)
-                ->each(fn (Database $database) => ($this->applyInstance)($database, $background));
+        $instance = $user->instance;
 
+        if ($instance->engine->isKeyValue() || ! $instance->isRunning()) {
             return;
         }
 
@@ -47,9 +42,8 @@ final class ApplyDatabaseUser
 
     private function apply(DatabaseUser $user, bool $background): void
     {
-        $server = $user->databaseServer;
         $revision = $user->revision + 1;
-        $payload = CommandPayloads::userPresent($server, $user);
+        $payload = CommandPayloads::userPresent($user->instance, $user);
         $key = "db.user.apply:{$user->id}:{$revision}";
         $timeout = (int) config('databases.timeouts.ddl', 300);
 

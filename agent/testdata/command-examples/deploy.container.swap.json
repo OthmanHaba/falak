@@ -38,5 +38,28 @@
   "drain_s": 10,
   "labels": {
     "falak.deployment.id": "01J9ZT8K3M4N5P6Q7R8S9T0V1Y"
-  }
+  },
+  "secret_files": [
+    {
+      "name": "DATABASE_URL",
+      "content": "postgres://api:secret@10.0.0.5:5432/api"
+    }
+  ],
+  "mask": [
+    "DATABASE_URL"
+  ],
+  "networks": [
+    {
+      "name": "falak-env-01hzyenv000000000000000001",
+      "environment": true
+    }
+  ],
+  "memory_reservation_bytes": 268435456,
+  "pids_limit": 512,
+  "log": {
+    "max_size_mb": 20,
+    "max_files": 3
+  },
+  "oom_score_adj": -500,
+  "restart_policy": "unless-stopped"
 }

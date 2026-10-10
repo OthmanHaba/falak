@@ -15,10 +15,12 @@ use Falak\Projects\Application\Console\BackfillProjectsCommand;
 use Falak\Projects\Application\Listeners\CreateDefaultProject;
 use Falak\Projects\Application\Listeners\DeleteOrganizationProjects;
 use Falak\Projects\Application\Listeners\PlaceCreatedServices;
+use Falak\Projects\Contracts\PreviewEnvironments;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Domain\Policies\ProjectPolicy;
+use Falak\Projects\Infrastructure\ActionPreviewEnvironments;
 use Falak\Projects\Infrastructure\EloquentProjectDirectory;
 use Falak\Projects\Infrastructure\ReferenceResolver;
 use Falak\Sites\Events\ComposeServiceExtracted;
@@ -45,6 +47,8 @@ class ProjectsServiceProvider extends ModuleServiceProvider
     public array $bindings = [
         // Stateful per resolution run.
         VariableReferences::class => ReferenceResolver::class,
+        // Uses the request-scoped audit log.
+        PreviewEnvironments::class => ActionPreviewEnvironments::class,
     ];
 
     protected function bootModule(): void

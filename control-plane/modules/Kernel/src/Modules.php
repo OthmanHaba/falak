@@ -15,6 +15,7 @@ final class Modules
         'Providers',
         'Fleet',
         'Servers',
+        'Limits',
         'SourceControl',
         'Sites',
         'Edge',
@@ -23,6 +24,8 @@ final class Modules
         'Processes',
         'Databases',
         'Projects',
+        'Volumes',
+        'Secrets',
         'Templates',
         'Functions',
         'Network',
@@ -30,7 +33,10 @@ final class Modules
         'Telemetry',
         'Insights',
         'Alerting',
+        'Security',
+        'Previews',
         'Terminal',
+        'Recovery',
     ];
 
     /** Namespaces that are private to a module. */

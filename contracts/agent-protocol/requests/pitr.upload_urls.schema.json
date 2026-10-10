@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/requests/pitr.upload_urls.schema.json",
+  "title": "POST /agent/v1/requests/pitr.upload_urls — presigned PUT URLs (and encryption) for a batch of an instance's spool files",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "instance",
+    "kind",
+    "segments"
+  ],
+  "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "kind": {
+      "enum": [
+        "wal",
+        "binlog"
+      ]
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "bytes",
+          "sha256"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "the spool file's (plaintext) SHA-256"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "reply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segments"
+      ],
+      "properties": {
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "id"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-z]{26}$",
+                "description": "the segment (its FKB1 key id)"
+              },
+              "shipped": {
+                "type": "boolean",
+                "description": "the control plane has this very file already: the agent only deletes it"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://"
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "encryption": {
+                "$ref": "../commands/db.backup.schema.json#/$defs/encryption"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

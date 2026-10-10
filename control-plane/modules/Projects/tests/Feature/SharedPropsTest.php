@@ -20,11 +20,11 @@ it('shares the falak prop on every authenticated page', function () {
             'id' => $environment->project_id,
             'name' => 'Default',
             'icon' => null,
-            'environments' => [['id' => $environment->id, 'name' => 'production', 'slug' => 'production', 'is_production' => true]],
+            'environments' => [['id' => $environment->id, 'name' => 'production', 'slug' => 'production', 'is_production' => true, 'is_preview' => false]],
         ])
         ->where('falak.projects.1.name', 'Shop')
         ->where('falak.projects.1.icon', 'cart')
-        ->where('falak.projects.1.environments.1', ['id' => $staging->id, 'name' => 'staging', 'slug' => 'staging', 'is_production' => false])
+        ->where('falak.projects.1.environments.1', ['id' => $staging->id, 'name' => 'staging', 'slug' => 'staging', 'is_production' => false, 'is_preview' => false])
         ->where('falak.current', ['project_id' => null, 'environment_id' => null]));
 
     // The URL decides the current project / environment, and it is remembered for other pages.

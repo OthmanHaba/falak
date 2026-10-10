@@ -3,10 +3,14 @@
 package edge
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/OthmanHaba/falak/agent/internal/logs"
 )
@@ -20,6 +24,21 @@ type Payload struct {
 	// TrustedProxies are CIDRs (Cloudflare's ranges when the site is proxied) whose client IP headers are believed:
 	// logs, IP allow / deny lists and rate limits then see the visitor, not the proxy.
 	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+	// WildcardCertificates are obtained and renewed through ACME DNS-01 (a preview domain): sites in tls mode
+	// "wildcard" are served by the one covering their hosts, with no certificate per host.
+	WildcardCertificates []WildcardCertificate `json:"wildcard_certificates,omitempty"`
+}
+
+// WildcardCertificate is one *.<domain> certificate managed by the edge.
+type WildcardCertificate struct {
+	Subject string `json:"subject"`
+	DNS     DNS    `json:"dns"`
+}
+
+// covers reports whether the wildcard covers host (exactly one label below its domain).
+func (w WildcardCertificate) covers(host string) bool {
+	label, ok := strings.CutSuffix(host, strings.TrimPrefix(w.Subject, "*"))
+	return ok && label != "" && !strings.Contains(label, ".")
 }
 
 // Site is one routed site.
@@ -54,6 +73,8 @@ type Site struct {
 
 var accessLogName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
+var wildcardSubject = regexp.MustCompile(`^\*\.[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
 // AccessLogger is the Caddy logger of a site's access log (http.log.access.<AccessLogger>).
 func AccessLogger(name string) string { return "falak-access-" + name }
 
@@ -62,7 +83,7 @@ func AccessLogPath(name string) string { return path.Join(logs.AccessLogDir, nam
 
 // TLS settings.
 type TLS struct {
-	Mode     string `json:"mode,omitempty"` // acme (default) | internal | custom | off
+	Mode     string `json:"mode,omitempty"` // acme (default) | internal | custom | off | wildcard
 	CertName string `json:"cert_name,omitempty"`
 	DNS      *DNS   `json:"dns,omitempty"` // ACME DNS-01 challenge (wildcards)
 	// HTTPChallengeOnly disables TLS-ALPN-01: behind a proxy that terminates TLS (Cloudflare's orange cloud) it can
@@ -95,8 +116,59 @@ type Redirect struct {
 	Status int    `json:"status,omitempty"`
 }
 
-// AdminListen is where the admin API listens (never exposed publicly).
-const AdminListen = "localhost:2019"
+// AdminListen is where the admin API listens: a unix socket only the edge user (and root, the agent) can open, in
+// falak-edge.service's RuntimeDirectory. A TCP port on localhost would let any local process (a site, a preview's
+// build) read the config or POST /load. Needs Caddy 2.8+ (socket permissions in the address).
+const AdminListen = "unix//run/falak-edge/admin.sock|0600"
+
+// AdminSocket is the socket path of AdminListen.
+const AdminSocket = "/run/falak-edge/admin.sock"
+
+// TokenPlaceholder is the {env.NAME} placeholder Caddy resolves a DNS provider token from: the value lives in the
+// edge service's environment (EdgeEnv, root-only), never in the JSON config the admin API returns or on disk.
+func TokenPlaceholder(token string) string { return "{env." + TokenEnv(token) + "}" }
+
+// TokenEnv names the environment variable holding a DNS provider token (derived from it, so a rotated token is a new
+// variable).
+func TokenEnv(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "FALAK_DNS_TOKEN_" + strings.ToUpper(hex.EncodeToString(sum[:6]))
+}
+
+// Secrets are the DNS provider tokens the payload's config refers to, by environment variable.
+func (p Payload) Secrets() []string {
+	var out []string
+	for _, s := range p.Sites {
+		if s.TLS != nil && s.TLS.DNS != nil && s.TLS.DNS.APIToken != "" {
+			out = append(out, s.TLS.DNS.APIToken)
+		}
+	}
+	for _, w := range p.WildcardCertificates {
+		if w.DNS.APIToken != "" {
+			out = append(out, w.DNS.APIToken)
+		}
+	}
+	return out
+}
+
+// Environment is the edge service's environment for the payload: one variable per DNS provider token, sorted.
+func (p Payload) Environment() []byte {
+	seen := map[string]string{}
+	for _, t := range p.Secrets() {
+		seen[TokenEnv(t)] = t
+	}
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("# Managed by Falak: DNS provider tokens of the edge (root only)\n")
+	for _, k := range keys {
+		b.WriteString(k + "=" + seen[k] + "\n")
+	}
+	return []byte(b.String())
+}
 
 // RouteID / UpstreamsID are stable @id values addressable through /id/<id>.
 func RouteID(site string) string     { return "falak-site-" + site }
@@ -174,13 +246,22 @@ func Render(p Payload, certDir string) (obj, error) {
 				"tags":        []any{"falak-" + s.TLS.CertName},
 			})
 			tlsRoutes = append(tlsRoutes, routes...)
+		case "wildcard":
+			// The covering wildcard certificate (automated below) serves these hosts: none of their own.
+			for _, h := range hosts {
+				if !slices.ContainsFunc(p.WildcardCertificates, func(w WildcardCertificate) bool { return w.covers(h) }) {
+					return nil, fmt.Errorf("site %s: no wildcard certificate covers %s", s.ID, h)
+				}
+			}
+			skipCerts = append(skipCerts, hosts...)
+			tlsRoutes = append(tlsRoutes, routes...)
 		case "acme":
 			if s.TLS != nil && s.TLS.DNS != nil {
 				if s.TLS.DNS.Provider == "" || s.TLS.DNS.APIToken == "" {
 					return nil, fmt.Errorf("site %s: tls.dns provider and api_token are required", s.ID)
 				}
 				iss := acmeIssuer(p)
-				iss["challenges"] = obj{"dns": obj{"provider": obj{"name": s.TLS.DNS.Provider, "api_token": s.TLS.DNS.APIToken}}}
+				iss["challenges"] = obj{"dns": obj{"provider": obj{"name": s.TLS.DNS.Provider, "api_token": TokenPlaceholder(s.TLS.DNS.APIToken)}}}
 				dnsPolicies = append(dnsPolicies, obj{"subjects": toAny(hosts), "issuers": []any{iss}})
 			} else if s.TLS != nil && s.TLS.HTTPChallengeOnly {
 				iss := acmeIssuer(p)
@@ -228,14 +309,31 @@ func Render(p Payload, certDir string) (obj, error) {
 		policies = append(policies, obj{"subjects": toAny(internalSubjects), "issuers": []any{obj{"module": "internal"}}})
 	}
 	policies = append(policies, dnsPolicies...)
+	var automate []any
+	for _, w := range p.WildcardCertificates {
+		if !wildcardSubject.MatchString(w.Subject) || w.DNS.Provider == "" || w.DNS.APIToken == "" {
+			return nil, fmt.Errorf("wildcard certificate %q: a *.<domain> subject, dns provider and api_token are required", w.Subject)
+		}
+		iss := acmeIssuer(p)
+		iss["challenges"] = obj{"dns": obj{"provider": obj{"name": w.DNS.Provider, "api_token": TokenPlaceholder(w.DNS.APIToken)}}}
+		policies = append(policies, obj{"subjects": []any{w.Subject}, "issuers": []any{iss}})
+		automate = append(automate, w.Subject)
+	}
 	if len(acmeSubjects) > 0 && (p.ACMEEmail != "" || p.ACMECA != "") {
 		policies = append(policies, obj{"subjects": toAny(acmeSubjects), "issuers": []any{acmeIssuer(p)}})
 	}
 	if len(policies) > 0 {
 		tlsApp["automation"] = obj{"policies": policies}
 	}
+	certs := obj{}
 	if len(loadFiles) > 0 {
-		tlsApp["certificates"] = obj{"load_files": loadFiles}
+		certs["load_files"] = loadFiles
+	}
+	if len(automate) > 0 {
+		certs["automate"] = automate
+	}
+	if len(certs) > 0 {
+		tlsApp["certificates"] = certs
 	}
 	if len(tlsApp) > 0 {
 		cfg["apps"].(obj)["tls"] = tlsApp

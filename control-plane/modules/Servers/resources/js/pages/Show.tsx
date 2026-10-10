@@ -14,9 +14,11 @@ import { StatusBadge } from '@/components/falak/status';
 import { Tag } from '@/components/falak/tag';
 import { toast } from '@/components/falak/toast';
 import ServerLayout from '@/layouts/server-layout';
-import { Link, router, usePoll } from '@inertiajs/react';
+import { serverSectionsFor, shellContext } from '@/lib/registry';
+import { type SharedData } from '@/types';
+import { Link, router, usePage, usePoll } from '@inertiajs/react';
 import { ArrowUpCircle, ChevronRight, Copy, Globe, RefreshCw, RotateCw, Settings, SquareTerminal, Trash2 } from 'lucide-react';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MachineCheckPanel } from '../components/machine-check';
 import { AgentVersion, formatBytes, formatUptime, Sparkline } from '../components/server-ui';
 import { type AgentDetails, type MachineCheck, type MetricSample, type ServerDetails, type ServerService } from '../types';
@@ -176,6 +178,9 @@ export default function Show({ server, agent, metrics, services, machineCheck, c
             },
         );
 
+    const { props: shared } = usePage<SharedData>();
+    // Blocks other modules add below the services (Limits: capacity).
+    const sections = useMemo(() => serverSectionsFor(shellContext(shared)), [shared]);
     const cpu = useMemo(() => metrics.map((sample) => sample.cpu_percent), [metrics]);
     const memory = useMemo(() => metrics.map((sample) => percent(sample.memory_used_bytes, server.memory_bytes)), [metrics, server.memory_bytes]);
     const latest = agent?.metrics ?? {};
@@ -200,9 +205,6 @@ export default function Show({ server, agent, metrics, services, machineCheck, c
         [
             server.stack.php && `${server.stack.php.runtime === 'fpm' ? 'PHP-FPM' : 'FrankenPHP'}${server.php ? ` ${server.php}` : ''}`,
             server.stack.node && `Node ${server.stack.node}`,
-            server.stack.database,
-            server.stack.cache,
-            server.stack.docker && 'Docker',
         ]
             .filter(Boolean)
             .join(' · ') || null;
@@ -420,6 +422,17 @@ export default function Show({ server, agent, metrics, services, machineCheck, c
                     </ul>
                 )}
             </Section>
+
+            {services.length > 0 &&
+                sections.map((section) => {
+                    const Component = section.component;
+
+                    return (
+                        <Suspense key={section.id} fallback={null}>
+                            <Component serverId={server.id} />
+                        </Suspense>
+                    );
+                })}
 
             {!awaitingAgent && (
                 <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

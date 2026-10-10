@@ -14,6 +14,7 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::post('alerting/channels', [ChannelController::class, 'store'])->name('alerting.channels.store');
     Route::put('alerting/channels/{channel}', [ChannelController::class, 'update'])->name('alerting.channels.update');
     Route::delete('alerting/channels/{channel}', [ChannelController::class, 'destroy'])->name('alerting.channels.destroy');
+    Route::post('alerting/channels/{channel}/default', [ChannelController::class, 'makeDefault'])->name('alerting.channels.default');
     Route::post('alerting/channels/{channel}/test', [ChannelController::class, 'test'])->middleware('throttle:10,1')->name('alerting.channels.test');
 
     Route::get('settings/alert-rules', [RuleController::class, 'index'])->name('alerting.rules.index');

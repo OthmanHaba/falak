@@ -10,7 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Inbound push webhooks: POST /api/webhooks/source-control/{webhook}.
+ * Inbound push and pull request webhooks: POST /api/webhooks/source-control/{webhook}.
  */
 final class WebhookController extends Controller
 {
@@ -36,6 +36,6 @@ final class WebhookController extends Controller
 
         $pushes = $receive($model, $request);
 
-        return response()->json(['received' => count($pushes)], 202);
+        return response()->json(['received' => count($pushes), 'pull_request_events' => $receive->pullRequestEvents], 202);
     }
 }

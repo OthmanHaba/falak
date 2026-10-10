@@ -1,12 +1,17 @@
 <?php
 
+use Falak\Identity\Application\Actions\ConfirmTwoFactor;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Application\Actions\EnableTwoFactor;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Fortify\Fortify;
+use PragmaRX\Google2FA\Google2FA;
 
 it('lists only the abilities the user holds and the tokens of the current organization', function () {
     [$user, $organization] = actingAsMember(Role::Viewer);
@@ -28,6 +33,7 @@ it('lists only the abilities the user holds and the tokens of the current organi
 
 it('creates a token and shows the plain text once', function () {
     [$user, $organization] = actingAsMember(Role::Admin);
+    $this->withSession(['identity.reauthenticated_at' => time()]);
 
     $response = $this->post('/settings/api-tokens', ['name' => 'CI', 'abilities' => ['members.view', 'audit.view'], 'expires_in_days' => 30]);
     $response->assertRedirect()->assertSessionHas('plainTextToken');
@@ -43,6 +49,7 @@ it('creates a token and shows the plain text once', function () {
 
 it('refuses abilities the user does not hold', function () {
     actingAsMember(Role::Viewer);
+    $this->withSession(['identity.reauthenticated_at' => time()]);
 
     $this->post('/settings/api-tokens', ['name' => 'x', 'abilities' => ['members.manage']])->assertSessionHasErrors('abilities');
     $this->post('/settings/api-tokens', ['name' => 'x', 'abilities' => []])->assertSessionHasErrors('abilities');
@@ -52,10 +59,34 @@ it('refuses abilities the user does not hold', function () {
 
 it('accepts the wildcard ability', function () {
     actingAsMember(Role::Developer);
+    $this->withSession(['identity.reauthenticated_at' => time()]);
 
     $this->post('/settings/api-tokens', ['name' => 'all', 'abilities' => ['*']])->assertSessionHasNoErrors();
 
     expect(PersonalAccessToken::query()->sole()->abilities)->toBe(['*']);
+});
+
+it('needs a recent re-authentication (with the 2FA code when enabled) to create a token', function () {
+    [$user] = actingAsMember(Role::Admin);
+
+    $this->post('/settings/api-tokens', ['name' => 'CI', 'abilities' => ['*']])->assertRedirect('/confirm-password');
+    $this->postJson('/settings/api-tokens', ['name' => 'CI', 'abilities' => ['*']])->assertStatus(423);
+    // An old confirmation does not count.
+    $this->withSession(['identity.reauthenticated_at' => time() - 3600])->post('/settings/api-tokens', ['name' => 'CI', 'abilities' => ['*']])->assertRedirect('/confirm-password');
+    expect(PersonalAccessToken::query()->count())->toBe(0);
+
+    app(EnableTwoFactor::class)($user);
+    $key = Fortify::currentEncrypter()->decrypt($user->two_factor_secret);
+    app(ConfirmTwoFactor::class)($user, $code = app(Google2FA::class)->getCurrentOtp($key));
+    Cache::forget('fortify.2fa_codes.'.md5($code));
+
+    // With 2FA on, Laravel's plain password confirmation is not enough, nor is the password alone.
+    $this->withSession(['auth.password_confirmed_at' => time()])->post('/settings/api-tokens', ['name' => 'CI', 'abilities' => ['*']])->assertRedirect('/confirm-password');
+    $this->get('/confirm-password')->assertInertia(fn (Assert $page) => $page->where('requiresCode', true));
+    $this->post('/confirm-password', ['password' => 'password'])->assertSessionHasErrors('code');
+    $this->post('/confirm-password', ['password' => 'password', 'code' => $code])->assertSessionHasNoErrors()->assertRedirect();
+
+    $this->post('/settings/api-tokens', ['name' => 'CI', 'abilities' => ['*']])->assertSessionHas('plainTextToken');
 });
 
 it('revokes only the users own tokens', function () {

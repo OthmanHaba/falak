@@ -26,6 +26,7 @@ const SECTIONS: InfrastructureSection[] = [
         permissions: ['terminal.open', 'terminal.attach', 'terminal.control', 'terminal.recordings.view'],
     },
     { id: 'runs', label: 'Recipe runs', href: '/recipes/runs', permissions: ['recipes.view'] },
+    { id: 'security', label: 'Security', href: '/security', permissions: ['security.view'] },
 ];
 
 interface InfrastructureLayoutProps {

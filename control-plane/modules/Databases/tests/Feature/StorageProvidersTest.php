@@ -3,8 +3,8 @@
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
-use Falak\Databases\Infrastructure\ObjectStorage\SigV4Signer;
 use Falak\Identity\Contracts\Role;
+use Falak\Kernel\Support\Aws\SigV4Signer;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -142,9 +142,9 @@ it('restricts provider management to admins', function () {
 
 it('refuses to delete providers used by schedules', function () {
     $provider = databases_provider($this->organization);
-    $engine = databases_engine($this->organization);
+    $engine = databases_instance($this->organization);
     $db = databases_active_db($engine);
-    $this->post("/databases/servers/{$engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $provider->id, 'database_ids' => [$db->id], 'cron' => '0 3 * * *'])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $provider->id, 'database_ids' => [$db->id], 'cron' => '0 3 * * *'])->assertSessionHasNoErrors();
 
     $this->delete("/databases/storage/{$provider->id}")->assertSessionHasErrors('provider');
     expect(StorageProvider::query()->count())->toBe(1)->and(StorageDriver::S3->label())->toBe('Amazon S3');
@@ -164,5 +164,30 @@ it('refuses storage endpoints on private addresses unless allowed', function () 
 
     config(['databases.allow_private_endpoints' => false]);
     $this->post("/databases/storage/{$provider->id}/verify")->assertSessionHasErrors('provider');
+    Http::assertNothingSent();
+});
+
+it('refuses storage endpoints whose IPv6 addresses embed metadata or private IPv4 ones', function () {
+    Http::fake(['*' => Http::response('', 200)]);
+    $base = ['name' => 'Lan', 'driver' => 'minio', 'bucket' => 'falak-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
+
+    // Metadata in an IPv4-mapped or NAT64 address, or site-local IPv6: refused even where private endpoints are allowed.
+    config(['databases.allow_private_endpoints' => true]);
+    foreach (['::ffff:a9fe:a9fe', '64:ff9b::a9fe:a9fe', 'fec0::1'] as $address) {
+        databases_fake_dns($address);
+        $this->post('/databases/storage', [...$base, 'endpoint' => 'https://minio.example.com'])->assertSessionHasErrors('endpoint');
+        expect(session('errors')->first('endpoint'))->toContain('never allowed');
+    }
+
+    // A private IPv4 address behind 6to4: only where private endpoints are allowed.
+    databases_fake_dns('2002:c0a8:0101::1');
+    config(['databases.allow_private_endpoints' => false]);
+    $this->post('/databases/storage', [...$base, 'endpoint' => 'https://minio.example.com'])->assertSessionHasErrors('endpoint');
+    config(['databases.allow_private_endpoints' => true]);
+    $this->post('/databases/storage', [...$base, 'endpoint' => 'https://minio.example.com'])->assertSessionHasNoErrors();
+
+    // Rebound to metadata before the request: refused at send time.
+    databases_fake_dns('::ffff:169.254.169.254');
+    $this->post('/databases/storage/'.StorageProvider::query()->firstOrFail()->id.'/verify')->assertSessionHasErrors('provider');
     Http::assertNothingSent();
 });

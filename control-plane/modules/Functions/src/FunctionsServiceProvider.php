@@ -4,11 +4,13 @@ namespace Falak\Functions;
 
 use Falak\Deployments\Contracts\FunctionSources;
 use Falak\Functions\Application\Listeners\ForgetDeletedFunction;
+use Falak\Functions\Infrastructure\FunctionsCapacity;
 use Falak\Functions\Infrastructure\FunctionScheduleSources;
 use Falak\Functions\Infrastructure\StoredFunctionSources;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Limits\Contracts\CapacitySources;
 use Falak\Processes\Contracts\ScheduleSources;
 use Falak\Sites\Events\SiteDeleted;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
@@ -52,6 +54,7 @@ class FunctionsServiceProvider extends ModuleServiceProvider
         $registry->register(self::DEPLOY, [Role::Admin, Role::Developer], 'Deploy function versions, roll back and change scaling', 'functions');
 
         Event::listen(SiteDeleted::class, ForgetDeletedFunction::class);
+        $this->app->make(CapacitySources::class)->register(FunctionsCapacity::class);
 
         // Code is stored exactly as written: no trimmed lines or emptied files.
         $code = fn (Request $request) => $request->is('sites/*/function/draft', 'sites/*/function/deploy', 'api/v1/functions/*/deploy');

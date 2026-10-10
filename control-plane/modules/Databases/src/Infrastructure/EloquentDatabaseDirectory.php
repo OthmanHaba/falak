@@ -2,7 +2,6 @@
 
 namespace Falak\Databases\Infrastructure;
 
-use Falak\Databases\Application\KeyValue\KeyValueSettings;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Domain\Models\Database;
@@ -11,7 +10,7 @@ final class EloquentDatabaseDirectory implements DatabaseDirectory
 {
     public function find(string $databaseId): ?DatabaseData
     {
-        $database = Database::query()->with('databaseServer')->find($databaseId);
+        $database = Database::query()->with('instance')->find($databaseId);
 
         return $database ? $this->toData($database) : null;
     }
@@ -22,41 +21,47 @@ final class EloquentDatabaseDirectory implements DatabaseDirectory
             return [];
         }
 
-        return Database::query()->with('databaseServer')->whereIn('id', array_values(array_unique($databaseIds)))->get()
+        return Database::query()->with('instance')->whereIn('id', array_values(array_unique($databaseIds)))->get()
             ->mapWithKeys(fn (Database $database) => [$database->id => $this->toData($database)])->all();
     }
 
     public function forOrganization(string $organizationId): array
     {
-        return Database::query()->with('databaseServer')->where('organization_id', $organizationId)->orderBy('name')->get()
+        return Database::query()->with('instance')->where('organization_id', $organizationId)->orderBy('name')->get()
             ->map(fn (Database $database) => $this->toData($database))->values()->all();
     }
 
     public function forServer(string $serverId): array
     {
-        return Database::query()->with('databaseServer')->where('server_id', $serverId)->orderBy('name')->get()
+        return Database::query()->with('instance')->where('server_id', $serverId)->orderBy('name')->get()
             ->map(fn (Database $database) => $this->toData($database))->values()->all();
     }
 
     public function forSite(string $organizationId, string $siteId): array
     {
-        return Database::query()->with('databaseServer')->where('organization_id', $organizationId)->where('site_id', $siteId)->orderBy('name')->get()
+        return Database::query()->with('instance')->where('organization_id', $organizationId)->where('site_id', $siteId)->orderBy('name')->get()
             ->map(fn (Database $database) => $this->toData($database))->values()->all();
     }
 
     private function toData(Database $database): DatabaseData
     {
+        $instance = $database->instance;
+
         return new DatabaseData(
             id: $database->id,
             organizationId: $database->organization_id,
             serverId: $database->server_id,
             name: $database->name,
-            engine: $database->databaseServer->engine->value,
-            engineVersion: $database->databaseServer->version,
-            port: $database->port ?? $database->databaseServer->port,
+            engine: $instance->engine->value,
+            engineVersion: $instance->version,
+            port: $instance->port,
             status: $database->status->value,
             siteId: $database->site_id,
-            maxMemoryMb: $database->databaseServer->engine->isKeyValue() ? KeyValueSettings::of($database)['maxmemory_mb'] : null,
+            memoryMb: intdiv($instance->memory_bytes, 1024 ** 2),
+            instanceId: $instance->id,
+            health: $instance->health,
+            volumeId: $instance->volume_id,
+            cpus: $instance->cpus,
         );
     }
 }

@@ -2,7 +2,7 @@
 #   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
 #        ghcr.io/<owner>/falak-control-plane, falak-builder, falak-edge, falak-fn-bun, falak-fn-node,
 #        falak-fn-deno, falak-fn-python, falak-fn-go  :<tag> and :latest
-#   2. falak-agent / falak / falak-builder binaries (make build), falak-deploy.tar.gz, install.sh, falak-ctl,
+#   2. falak-agent / falak / falak-builder / falak-restore binaries (make build), falak-deploy.tar.gz, install.sh, falak-ctl,
 #      SHA256SUMS -> GitHub release assets.
 # Only GITHUB_TOKEN is used. After the first release, make the GHCR packages public
 # (Package settings -> Change visibility) so servers can pull without logging in.
@@ -20,8 +20,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The database images the control plane ships (docs/DB_IMAGES.md, "Trust"): the db-images run of this same tag
+  # publishes <version>-<tag> for every engine/version; this job waits for all of them (up to 2 h: it builds, tests and
+  # scans first) and pins their index digests into the control-plane image. A missing image fails the release.
+  db-digests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve the database image digests of this tag
+        run: tools/db-image-digests.sh "-${GITHUB_REF_NAME}" --wait 7200 --owner "${GITHUB_REPOSITORY_OWNER}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-image-digests
+          path: control-plane/modules/Databases/config/db-image-digests.json
+          if-no-files-found: error
+          retention-days: 1
+
   images:
     name: image ${{ matrix.image }} (${{ matrix.arch }})
+    needs: db-digests
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -64,6 +91,17 @@ jobs:
             context: runtimes/functions
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pinned database images
+        if: matrix.image == 'control-plane'
+        uses: actions/download-artifact@v4
+        with:
+          name: db-image-digests
+          path: control-plane/modules/Databases/config
+
+      - name: Check the pinned database images
+        if: matrix.image == 'control-plane'
+        run: jq -e '[.[] | .[]] | length > 0 and all(test("^sha256:[0-9a-f]{64}$"))' control-plane/modules/Databases/config/db-image-digests.json
 
       - name: Image name
         id: name

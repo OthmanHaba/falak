@@ -145,6 +145,9 @@ export default function Notifications({ notifications, filters, unreadCount }: P
                                                     <span className="text-fg-faint flex flex-wrap items-center gap-2 text-xs">
                                                         <RelativeTime value={notification.created_at} />
                                                         <span className="font-mono">{notification.type}</span>
+                                                        {notification.action && notification.url && (
+                                                            <span className="text-primary font-medium">Suggested fix: {notification.action} →</span>
+                                                        )}
                                                     </span>
                                                 </span>
                                             </button>

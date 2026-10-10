@@ -19,6 +19,9 @@
 #   --http-port N / --https-port N   non-standard ports (testing; ACME needs 80/443)        [FALAK_HTTP_PORT/FALAK_HTTPS_PORT]
 #   --dir PATH               install directory (default: /opt/falak)                          [FALAK_DIR]
 #   --skip-dns-check         don't require DNS to point at this host                        [FALAK_SKIP_DNS_CHECK=1]
+#   --restore-from s3://latest|s3://NAME   a lost control plane: restore its backup from the DR bucket instead of
+#                            starting empty (same CA and KEK: agents reconnect). Bucket settings and the DR
+#                            passphrase from FALAK_BACKUP_S3_* / FALAK_BACKUP_PASSPHRASE, or asked  [FALAK_RESTORE_FROM]
 #   --force                  continue on unsupported OS / low resources
 #
 # Re-running is safe: secrets in /opt/falak/.env are kept, settings given on the command line are updated,
@@ -41,6 +44,7 @@ SOURCE_DIR="${FALAK_DEPLOY_SOURCE:-}"
 HTTP_PORT="${FALAK_HTTP_PORT:-}"
 HTTPS_PORT="${FALAK_HTTPS_PORT:-}"
 SKIP_DNS="${FALAK_SKIP_DNS_CHECK:-0}"
+RESTORE_FROM="${FALAK_RESTORE_FROM:-}"
 FORCE=0
 DEFAULT_REPO="OthmanHaba/falak"
 
@@ -119,6 +123,8 @@ while [ $# -gt 0 ]; do
     --https-port) HTTPS_PORT="$2"; shift ;;
     --dir) FALAK_DIR="$2"; shift ;;
     --skip-dns-check) SKIP_DNS=1 ;;
+    --restore-from) RESTORE_FROM="${2:-}"; shift ;;
+    --restore-from=*) RESTORE_FROM="${1#--restore-from=}" ;;
     --force) FORCE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
@@ -187,6 +193,17 @@ if [ "$TLS" = acme ]; then
 fi
 [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="admin@$DOMAIN"
 printf '%s' "$ADMIN_EMAIL" | grep -Eq '^[^@ ]+@[^@ ]+\.[^@ ]+$' || die "invalid e-mail: $ADMIN_EMAIL"
+# restore_from_valid REF : s3://latest or s3://<backup name> (falak-backup-…, no path).
+restore_from_valid() {
+  case "$1" in
+    s3://latest) return 0 ;;
+    s3://falak-backup-*) case "${1#s3://}" in */* | *..* | *[!A-Za-z0-9._-]*) return 1 ;; esac; return 0 ;;
+    *) return 1 ;;
+  esac
+}
+if [ -n "$RESTORE_FROM" ]; then
+  restore_from_valid "$RESTORE_FROM" || die "--restore-from must be s3://latest or s3://falak-backup-<…> (got '$RESTORE_FROM')"
+fi
 AGENTS_HOST="agents.$DOMAIN"
 REGISTRY_HOST="registry.$DOMAIN"
 GRAFANA_HOST=""; [ "$OBSERVABILITY" = 1 ] && GRAFANA_HOST="grafana.$DOMAIN"
@@ -441,6 +458,13 @@ write_env() {
   if [ "$fresh" = 1 ]; then ok "generated new secrets"; else ok "kept existing secrets, updated settings"; fi
 }
 
+# The key-encryption key (/opt/falak/secrets/kek, 32 bytes from /dev/urandom, 0400, owned by the containers'
+# www-data): every secret in the database is sealed under it. Created once; a re-run keeps it.
+write_kek() {
+  info "Key-encryption key ($FALAK_DIR/secrets/kek)"
+  kctl kek init || die "could not create the key-encryption key"
+}
+
 check_subnet() {
   local subnet prefix
   subnet="$(env_get FALAK_EDGE_SUBNET)"; prefix="${subnet%.*}."
@@ -503,6 +527,79 @@ create_admin() {
     ADMIN_PASSWORD=""
     ok "$ADMIN_EMAIL already exists (password unchanged; reset: falak-ctl admin reset-password $ADMIN_EMAIL)"
   fi
+  record_operator_organization "$out"
+}
+
+# The first admin's organization operates the install: it alone sees the control plane's disaster recovery (the
+# banner, Settings → Disaster recovery, dr.* alerts). Recorded once; a re-run never moves it.
+record_operator_organization() { # record_operator_organization FALAK_ADMIN_JSON
+  local id
+  [ -z "$(env_get FALAK_DR_ORGANIZATION)" ] || return 0
+  id="$(printf '%s' "$1" | sed -n 's/.*"organization_id":"\([0-9a-zA-Z]\{26\}\)".*/\1/p')"
+  [ -n "$id" ] || { warn "could not read the first admin's organization: set FALAK_DR_ORGANIZATION in $ENV_FILE"; return 0; }
+  env_set FALAK_DR_ORGANIZATION "$id"
+  dc up -d --wait --wait-timeout 300 >/dev/null 2>&1 || warn "restarting with FALAK_DR_ORGANIZATION failed: falak-ctl up"
+}
+
+# --- restore a lost control plane (--restore-from) --------------------------------------------------------
+# The DR settings falak-ctl needs, from the environment or asked on the terminal (stdin is the script under curl |
+# bash, so /dev/tty). Secrets are read without echo, kept in unexported shell variables and handed to falak-ctl
+# only in its environment (prefix assignments, never a command line) or 0600 files removed on exit.
+restore_prompt() { # restore_prompt KEY LABEL SECRET DEFAULT
+  local value="${!1:-}"
+  if [ -z "$value" ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    printf '  %s%s: ' "$2" "${4:+ [$4]}" > /dev/tty
+    if [ "$3" = 1 ]; then IFS= read -rs value < /dev/tty || true; printf '\n' > /dev/tty
+    else IFS= read -r value < /dev/tty || true; fi
+  fi
+  value="${value:-$4}"
+  [ -n "$value" ] || die "--restore-from needs $1 (set it in the environment)"
+  printf -v "R_$1" '%s' "$value"
+}
+
+collect_restore_settings() {
+  restore_prompt FALAK_BACKUP_S3_ENDPOINT "S3 endpoint of the DR bucket (https://…)" 0 ""
+  restore_prompt FALAK_BACKUP_S3_BUCKET "Bucket" 0 ""
+  restore_prompt FALAK_BACKUP_S3_REGION "Region" 0 "us-east-1"
+  restore_prompt FALAK_BACKUP_S3_PREFIX "Key prefix" 0 "falak"
+  restore_prompt FALAK_BACKUP_S3_ACCESS_KEY "Access key id" 0 ""
+  restore_prompt FALAK_BACKUP_S3_SECRET_KEY "Secret access key" 1 ""
+  restore_prompt FALAK_BACKUP_PASSPHRASE "DR passphrase" 1 ""
+}
+
+restore_control_plane() {
+  info "Restoring the control plane from $RESTORE_FROM"
+  collect_restore_settings
+  if [ "$(env_get FALAK_PULL 1)" != 0 ]; then
+    pull_retry dc pull --quiet || die "pulling images from $IMAGE_PREFIX failed"
+    ok "images pulled"
+  fi
+  # The backup's .env, KEK, Fleet CA and edge PKI replace this fresh install's; this host's version and image source
+  # are kept (falak-ctl restore pins them).
+  FALAK_BACKUP_S3_ENDPOINT="$R_FALAK_BACKUP_S3_ENDPOINT" FALAK_BACKUP_S3_BUCKET="$R_FALAK_BACKUP_S3_BUCKET" \
+    FALAK_BACKUP_S3_REGION="$R_FALAK_BACKUP_S3_REGION" FALAK_BACKUP_S3_PREFIX="$R_FALAK_BACKUP_S3_PREFIX" \
+    FALAK_BACKUP_S3_ACCESS_KEY="$R_FALAK_BACKUP_S3_ACCESS_KEY" FALAK_BACKUP_S3_SECRET_KEY="$R_FALAK_BACKUP_S3_SECRET_KEY" \
+    FALAK_BACKUP_PASSPHRASE="$R_FALAK_BACKUP_PASSPHRASE" \
+    kctl restore "$RESTORE_FROM" --yes || die "the restore failed (see above). Fix it and re-run with the same --restore-from"
+  # Only now the schedule: a timer that ran before a failed restore would upload an empty install as the latest.
+  local secret pass
+  RESTORE_TMP="$(mktemp -d)"; chmod 700 "$RESTORE_TMP"
+  trap 'rm -rf "$RESTORE_TMP"' EXIT
+  secret="$RESTORE_TMP/secret"; pass="$RESTORE_TMP/pass"
+  ( umask 077; printf '%s\n' "$R_FALAK_BACKUP_S3_SECRET_KEY" > "$secret"; printf '%s\n' "$R_FALAK_BACKUP_PASSPHRASE" > "$pass" )
+  if ! kctl dr setup --yes --endpoint "$R_FALAK_BACKUP_S3_ENDPOINT" --bucket "$R_FALAK_BACKUP_S3_BUCKET" \
+      --region "$R_FALAK_BACKUP_S3_REGION" --prefix "$R_FALAK_BACKUP_S3_PREFIX" --access-key "$R_FALAK_BACKUP_S3_ACCESS_KEY" \
+      --secret-key-file "$secret" --passphrase-file "$pass"; then
+    warn "restored, but scheduling backups failed: run falak-ctl dr setup"
+  fi
+  rm -rf "$RESTORE_TMP"
+  local restored
+  restored="$(env_get FALAK_DOMAIN)"
+  if [ "$restored" != "$DOMAIN" ]; then
+    warn "the backup is of $restored (not --domain $DOMAIN): the panel answers on $restored; point its DNS here"
+  fi
+  DOMAIN="$restored"; AGENTS_HOST="$(env_get FALAK_AGENT_API_HOST)"; REGISTRY_HOST="$(env_get FALAK_REGISTRY_HOST)"
+  ok "control plane restored: agents reconnect with their certificates once $AGENTS_HOST points here"
 }
 
 summary() {
@@ -516,6 +613,8 @@ summary() {
     printf '  (shown once — store it in a password manager)\n'
   fi
   printf '\n  Next: falak-ctl status | falak-ctl doctor | falak-ctl backup\n'
+  printf '  %sSave the emergency kit now:%s falak-ctl kek export /root/falak-emergency-kit.txt — the key that\n' "$Y" "$N"
+  printf '  decrypts every secret Falak stores. Keep it offline, apart from the backups, then delete it from this host.\n'
   printf '  %sBack up regularly and copy backups off this host:%s they contain the Fleet CA — losing it\n' "$Y" "$N"
   printf '  means re-enrolling every server. Docs: https://github.com/%s/blob/main/docs/INSTALL.md\n\n' "$REPO"
 }
@@ -526,8 +625,15 @@ main() {
   resolve_version
   fetch_files
   write_env
+  write_kek
   check_subnet
   if [ "$FROM_SOURCE" = 1 ]; then build_images; fi
+  if [ -n "$RESTORE_FROM" ]; then
+    restore_control_plane
+    ADMIN_PASSWORD=""
+    summary
+    return 0
+  fi
   start_stack
   setup_grafana_token
   create_admin

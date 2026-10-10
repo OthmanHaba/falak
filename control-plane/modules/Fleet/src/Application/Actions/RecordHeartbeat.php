@@ -8,7 +8,10 @@ use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Events\AgentCameOnline;
+use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Fleet\Events\AgentFactsReported;
+use Falak\Fleet\Events\AgentSecretsMissing;
+use Falak\Fleet\Events\AgentServiceEventsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Illuminate\Support\Carbon;
 
@@ -31,6 +34,7 @@ final class RecordHeartbeat
         $at = Carbon::parse((string) $heartbeat['at']);
         $load = array_map('floatval', (array) $heartbeat['load']);
         $running = array_values(array_map('strval', (array) ($heartbeat['running_commands'] ?? [])));
+        $disks = self::disks($heartbeat['disks'] ?? null);
 
         $attributes = [
             'status' => AgentStatus::Online,
@@ -43,6 +47,7 @@ final class RecordHeartbeat
                 'cpu_percent' => isset($heartbeat['cpu_percent']) ? (float) $heartbeat['cpu_percent'] : null,
                 'memory_used_bytes' => (int) $heartbeat['memory_used_bytes'],
                 'disk_used_bytes' => (int) $heartbeat['disk_used_bytes'],
+                'disks' => $disks,
                 'running_commands' => $running,
             ],
         ];
@@ -72,6 +77,7 @@ final class RecordHeartbeat
             'cpu_percent' => isset($heartbeat['cpu_percent']) ? (float) $heartbeat['cpu_percent'] : null,
             'memory_used_bytes' => (int) $heartbeat['memory_used_bytes'],
             'disk_used_bytes' => (int) $heartbeat['disk_used_bytes'],
+            'disks' => $disks === [] ? null : $disks,
         ]);
 
         // Commands the agent reports as running were evidently delivered (to this process).
@@ -85,6 +91,42 @@ final class RecordHeartbeat
             AgentCameOnline::dispatch($agent->id, $agent->organization_id, $agent->server_id, $previousHeartbeat?->toDateTimeImmutable());
         }
 
+        $missing = array_values(array_unique(array_map('strval', (array) ($heartbeat['missing_secrets'] ?? []))));
+
+        if ($missing !== [] && $agent->server_id !== null) {
+            AgentSecretsMissing::dispatch($agent->id, $agent->organization_id, $agent->server_id, $missing);
+        }
+
+        // Database containers (state, health, lost password files): only when the agent sent the key.
+        if (array_key_exists('databases', $heartbeat) && $agent->server_id !== null) {
+            $instances = array_values(array_map(fn (array $instance) => [
+                'id' => strtolower((string) $instance['id']),
+                'state' => (string) $instance['state'],
+                'health' => (string) ($instance['health'] ?? 'none'),
+                'secrets_missing' => (bool) ($instance['secrets_missing'] ?? false),
+                'pitr' => is_array($instance['pitr'] ?? null) ? $instance['pitr'] : null,
+            ], array_filter((array) $heartbeat['databases'], 'is_array')));
+
+            AgentDatabasesReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $instances);
+        }
+
+        // OOM kills and restarts (each delivered once): Limits maps them to services and raises alerts.
+        if (is_array($heartbeat['service_events'] ?? null) && $heartbeat['service_events'] !== [] && $agent->server_id !== null) {
+            $events = array_values(array_map(fn (array $event) => [
+                'kind' => (string) $event['kind'],
+                'source' => (string) $event['source'],
+                'name' => (string) $event['name'],
+                'site' => isset($event['site']) ? (string) $event['site'] : null,
+                'project' => isset($event['project']) ? (string) $event['project'] : null,
+                'service' => isset($event['service']) ? (string) $event['service'] : null,
+                'instance' => isset($event['instance']) ? strtolower((string) $event['instance']) : null,
+                'count' => max(1, (int) $event['count']),
+                'at' => (string) $event['at'],
+            ], array_filter($heartbeat['service_events'], 'is_array')));
+
+            AgentServiceEventsReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $events);
+        }
+
         if ($facts !== null) {
             AgentFactsReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $facts);
 
@@ -92,5 +134,23 @@ final class RecordHeartbeat
                 AgentVersionChanged::dispatch($agent->id, $agent->organization_id, $agent->server_id, $previousVersion, $facts['agent_version'], $agent->features());
             }
         }
+    }
+
+    /**
+     * The heartbeat's data filesystems, compact: mount => [used, available, total] bytes.
+     *
+     * @return array<string, array{0: int, 1: int, 2: int}>
+     */
+    private static function disks(mixed $disks): array
+    {
+        $out = [];
+
+        foreach (is_array($disks) ? $disks : [] as $disk) {
+            if (is_array($disk) && is_string($disk['mount'] ?? null) && count($out) < 20) {
+                $out[$disk['mount']] = [max(0, (int) ($disk['used_bytes'] ?? 0)), max(0, (int) ($disk['available_bytes'] ?? 0)), max(0, (int) ($disk['total_bytes'] ?? 0))];
+            }
+        }
+
+        return $out;
     }
 }

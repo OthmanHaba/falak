@@ -1,18 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.drop.schema.json",
-  "title": "db.drop — drop database if present",
+  "title": "db.drop — drop a database of an instance if present (falak-db database drop)",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "instance",
     "engine",
     "name"
   ],
   "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
     "engine": {
       "enum": [
+        "postgres",
         "mysql",
-        "postgres"
+        "mariadb"
       ]
     },
     "name": {
@@ -30,7 +36,7 @@
       "properties": {
         "changed": {
           "type": "boolean",
-          "description": "true when the host state was modified"
+          "description": "true when the instance's state was modified"
         }
       }
     }

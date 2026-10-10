@@ -1,10 +1,7 @@
 <?php
 
-use Falak\Databases\Application\Actions\EnableContainerAccess;
-use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Contracts\DatabaseProvisioner;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Fleet\Domain\Models\Agent;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Application\Compose\FalakAdjustments;
@@ -18,9 +15,9 @@ use Tests\Support\FakeAgentGateway;
 require_once __DIR__.'/../Support/helpers.php';
 
 /*
- * Compose apps' Redis / Valkey services as Falak instances (v0.7.1, phase 4 of docs/plans/REDIS.md): the official
- * images only, an instance on the stack's server, the stack's references rewritten, the containers reaching it through
- * the Docker bridge.
+ * Compose apps' Redis / Valkey services as Falak database containers: the official images only, a container on the
+ * stack's server sized from the service's flags, the stack's references rewritten, the stack's containers reaching it
+ * by name on the environment's network.
  */
 
 const CACHE_STACK = <<<'YAML'
@@ -46,15 +43,9 @@ services:
     image: bitnami/redis:7.2
 YAML;
 
-/** An app server running PostgreSQL, $cache and Docker, with an agent that has Redis network access. */
-function compose_redis_server(object $test, ?string $cache = 'redis', array $attributes = []): Server
+function compose_redis_server(object $test): Server
 {
-    $server = databases_server($test->organization, 'postgresql', attributes: ['stack' => array_filter(['database' => 'postgresql', 'cache' => $cache, 'docker' => true]), ...$attributes]);
-    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $test->organization->id, 'facts' => ['features' => ['db.redis', 'db.containers', 'db.redis.network'], 'memory_bytes' => 4 * 1024 ** 3]]);
-    app(EngineInventory::class)->syncOrganization($test->organization->id);
-    app(EnableContainerAccess::class)($server->id);
-
-    return $server;
+    return databases_server($test->organization);
 }
 
 function compose_redis_stack(object $test, Server $server, string $name = 'Shop'): Site
@@ -84,26 +75,29 @@ beforeEach(function () {
     $this->extraction = app(ComposeServiceExtraction::class);
 });
 
-it('replaces an official redis service with a Falak Redis on the stack server, its flags kept and its references rewritten', function () {
+it('replaces an official redis service with a Falak Redis container on the stack server, its flags kept and its references rewritten', function () {
     $server = compose_redis_server($this);
     $stack = compose_redis_stack($this, $server);
 
-    $instance = $this->extraction->toDatabase($stack->id, 'cache', null, 'redis', CACHE_STACK);
+    $database = $this->extraction->toDatabase($stack->id, 'cache', null, 'redis', CACHE_STACK);
 
-    $apply = $this->agents->last('db.redis.apply');
-    expect($instance->engine)->toBe('redis')
-        ->and($instance->name)->toBe("{$stack->slug}-cache")
-        ->and($instance->serverId)->toBe($server->id)
-        ->and($apply['payload'])->toMatchArray(['name' => "{$stack->slug}-cache", 'maxmemory_mb' => 256, 'eviction' => 'allkeys-lru', 'persistence' => 'aof', 'containers' => true])
-        ->and($stack->refresh()->compose_services['cache'])->toMatchArray(['mode' => 'database', 'database_id' => $instance->id])
-        ->and(projects_service('database', $instance->id)?->environment_id)->toBe($this->environment->id);
+    $create = $this->agents->last('db.instance.create');
+    expect($database->engine)->toBe('redis')
+        ->and($database->name)->toBe("{$stack->slug}-cache")
+        ->and($database->serverId)->toBe($server->id)
+        // --maxmemory 256mb: the engine gets 80% of the container's limit.
+        ->and($create['payload']['instance'])->toMatchArray(['engine' => 'redis', 'version' => '7.4', 'memory_bytes' => 320 * 1024 ** 2, 'network' => 'falak-env-'.strtolower($this->environment->id)])
+        ->and((array) $create['payload']['instance']['settings'])->toBe(['eviction' => 'allkeys-lru', 'persistence' => 'aof'])
+        ->and(databases_schema_errors($create))->toBe([])
+        ->and($stack->refresh()->compose_services['cache'])->toMatchArray(['mode' => 'database', 'database_id' => $database->id])
+        ->and(projects_service('database', $database->id)?->environment_id)->toBe($this->environment->id);
 
     $groups = $this->extraction->rewrites($stack->id)->groups;
     expect($groups)->toBe([
         'app' => [
             'CACHE_URL' => '${{ Shop cache.REDIS_URL }}/1',
             'REDIS_HOST' => '${{ Shop cache.REDIS_HOST }}',
-            // The instance listens on 6380+ and always has a password: both join REDIS_HOST.
+            // A Falak Redis always has a password: it joins REDIS_HOST, with the port.
             'REDIS_PASSWORD' => '${{ Shop cache.REDIS_PASSWORD }}',
             'REDIS_PORT' => '${{ Shop cache.REDIS_PORT }}',
         ],
@@ -113,21 +107,17 @@ it('replaces an official redis service with a Falak Redis on the stack server, i
         ],
     ]);
 
-    // The stack's containers reach the instance through the Docker bridge, once the agent listens there.
+    // The stack's containers reach it by name on the environment network.
     $dotenv = $this->extraction->rewrites($stack->id)->dotenv();
     $resolved = app(VariableReferences::class)->resolve($this->environment->id, $stack->id, $dotenv);
-    expect(implode(' ', $resolved->errors))->toContain('does not listen on the Docker bridge (docker0) yet');
-
-    $this->agents->succeed($apply['handle'], ['changed' => true, 'restarted' => true, 'port' => $apply['payload']['port'], 'bind' => ['127.0.0.1', '172.17.0.1'], 'container_host' => '172.17.0.1']);
-    $resolved = app(VariableReferences::class)->resolve($this->environment->id, $stack->id, $dotenv);
-    $port = Database::query()->findOrFail($instance->id)->port;
+    $host = "falak-db-{$create['payload']['instance']['id']}";
     $password = $resolved->variables['FALAK_SVC_APP_REDIS_PASSWORD'];
     expect($resolved->errors)->toBe([])
-        ->and($resolved->variables['FALAK_SVC_APP_REDIS_HOST'])->toBe('172.17.0.1')
-        ->and($resolved->variables['FALAK_SVC_APP_REDIS_PORT'])->toBe((string) $port)
+        ->and($resolved->variables['FALAK_SVC_APP_REDIS_HOST'])->toBe($host)
+        ->and($resolved->variables['FALAK_SVC_APP_REDIS_PORT'])->toBe('6379')
         ->and($password)->toMatch('/^[A-Za-z0-9]{32}$/')
-        ->and($resolved->variables['FALAK_SVC_APP_CACHE_URL'])->toBe("redis://default:{$password}@172.17.0.1:{$port}/1")
-        ->and($resolved->variables['FALAK_SVC_WORKER_QUEUE_ADDR'])->toBe("172.17.0.1:{$port}");
+        ->and($resolved->variables['FALAK_SVC_APP_CACHE_URL'])->toBe("redis://default:{$password}@{$host}:6379/1")
+        ->and($resolved->variables['FALAK_SVC_WORKER_QUEUE_ADDR'])->toBe("{$host}:6379");
 
     // Rendering: the service is gone, the remaining services read the rewritten variables (REDIS_PASSWORD added).
     $doc = FalakAdjustments::apply(Yaml::parse(CACHE_STACK), $stack->refresh()->composeConfig(), null, $this->extraction->rewrites($stack->id))['doc'];
@@ -136,14 +126,14 @@ it('replaces an official redis service with a Falak Redis on the stack server, i
         ->and($doc['services']['worker']['environment'])->toBe(['BROKER=${FALAK_SVC_WORKER_BROKER}', 'QUEUE_ADDR=${FALAK_SVC_WORKER_QUEUE_ADDR}', 'OTHER=mycache:6379']);
 });
 
-it('creates a Falak Valkey from valkey/valkey where the server runs Valkey', function () {
-    $server = compose_redis_server($this, 'valkey', ['os' => 'ubuntu 26.04']);
+it('creates a Falak Valkey container from valkey/valkey on any server', function () {
+    $server = compose_redis_server($this);
     $stack = compose_redis_stack($this, $server);
 
-    $instance = $this->extraction->toDatabase($stack->id, 'sessions', null, 'valkey', CACHE_STACK);
+    $database = $this->extraction->toDatabase($stack->id, 'sessions', null, 'valkey', CACHE_STACK);
 
-    expect($instance->engine)->toBe('valkey')
-        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['engine' => 'valkey', 'maxmemory_mb' => 1024, 'persistence' => 'rdb', 'eviction' => 'noeviction']);
+    expect($database->engine)->toBe('valkey')
+        ->and($this->agents->last('db.instance.create')['payload']['instance'])->toMatchArray(['engine' => 'valkey', 'version' => '8.1', 'memory_bytes' => 1280 * 1024 ** 2]);
 });
 
 it('keeps redis-stack, bitnami/redis and engine mismatches in the stack with a reason', function () {
@@ -153,30 +143,24 @@ it('keeps redis-stack, bitnami/redis and engine mismatches in the stack with a r
     expect(compose_redis_fails(fn () => $this->extraction->toDatabase($stack->id, 'stack', null, 'redis', CACHE_STACK)))->toBe('Service stack runs redis/redis-stack:latest, not the official Redis image.')
         ->and(compose_redis_fails(fn () => $this->extraction->toDatabase($stack->id, 'bitnami', null, 'redis', CACHE_STACK)))->toContain('not the official Redis image')
         ->and(compose_redis_fails(fn () => $this->extraction->toDatabase($stack->id, 'cache', null, 'valkey', CACHE_STACK)))->toContain('not the official Valkey image')
-        ->and(compose_redis_fails(fn () => $this->extraction->toDatabase($stack->id, 'app', null, 'redis', CACHE_STACK)))->toContain('has no image')
-        // The server runs Redis: a valkey service can't become an instance there (one cache engine per server).
-        ->and(compose_redis_fails(fn () => $this->extraction->toDatabase($stack->id, 'sessions', null, 'valkey', CACHE_STACK)))->toContain("runs Valkey, but {$server->name} runs Redis (one cache engine per server)");
+        ->and(compose_redis_fails(fn () => $this->extraction->toDatabase($stack->id, 'app', null, 'redis', CACHE_STACK)))->toContain('has no image');
 
-    $this->agents->assertNothingDispatched('db.redis.apply');
+    $this->agents->assertNothingDispatched('db.instance.create');
     expect($stack->refresh()->compose_services)->toBeNull();
-
-    // No cache engine yet: install it first; Valkey where the OS has none: say so.
-    $bare = compose_redis_server($this, null, ['os' => 'ubuntu 22.04']);
-    $other = compose_redis_stack($this, $bare, 'Blog');
-    expect(compose_redis_fails(fn () => $this->extraction->toDatabase($other->id, 'cache', null, 'redis', CACHE_STACK)))->toContain("{$bare->name} doesn't run Redis yet: install it first")
-        ->and(compose_redis_fails(fn () => $this->extraction->toDatabase($other->id, 'sessions', null, 'valkey', CACHE_STACK)))->toContain("Valkey isn't available for {$bare->name}'s operating system");
 });
 
-it('names the instance apart from one the server has, and keeps defaults when the command sets nothing it understands', function () {
+it('names the container apart from one the server has, and keeps defaults when the command sets nothing it understands', function () {
     $server = compose_redis_server($this);
     $stack = compose_redis_stack($this, $server);
     $taken = app(DatabaseProvisioner::class)->create($this->organization->id, $server->id, 'redis', "{$stack->slug}-cache");
 
     $yaml = str_replace('command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru', 'command: ["sh", "-c", "redis-server --maxmemory $$MEM"]', CACHE_STACK);
-    $instance = $this->extraction->toDatabase($stack->id, 'cache', null, 'redis', $yaml);
+    $database = $this->extraction->toDatabase($stack->id, 'cache', null, 'redis', $yaml);
+    $create = $this->agents->last('db.instance.create');
 
-    expect($instance->name)->toBe("{$stack->slug}-cache-2")->and($instance->port)->not->toBe($taken->port)
-        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['maxmemory_mb' => 128, 'eviction' => 'noeviction', 'persistence' => 'rdb']);
+    expect($database->name)->toBe("{$stack->slug}-cache-2")->and($database->instanceId)->not->toBe($taken->instanceId)
+        ->and($create['payload']['instance']['memory_bytes'])->toBe(128 * 1024 ** 2)
+        ->and($create['payload']['instance'])->not->toHaveKey('settings');
 });
 
 it('takes the redis service of an inline stack out at creation (API users, plain git servers)', function () {
@@ -197,9 +181,9 @@ YAML;
     ]);
 
     $decision = $created->site->compose?->mode('cache');
-    $instance = Database::query()->where('server_id', $server->id)->where('name', "{$created->site->slug}-cache")->first();
-    expect($created->warnings)->toBe([])->and($decision)->toBe('database')->and($instance)->not->toBeNull()
-        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['maxmemory_mb' => 64, 'containers' => true])
+    $database = Database::query()->where('server_id', $server->id)->where('name', "{$created->site->slug}-cache")->first();
+    expect($created->warnings)->toBe([])->and($decision)->toBe('database')->and($database)->not->toBeNull()
+        ->and($this->agents->last('db.instance.create')['payload']['instance'])->toMatchArray(['version' => '7.4', 'memory_bytes' => 80 * 1024 ** 2])
         ->and($this->extraction->rewrites($created->site->id)->forService('probe'))->toHaveKeys(['REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD']);
 });
 

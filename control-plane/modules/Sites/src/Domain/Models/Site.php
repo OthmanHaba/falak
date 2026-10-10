@@ -2,12 +2,12 @@
 
 namespace Falak\Sites\Domain\Models;
 
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Data\ComposeConfig;
 use Falak\Sites\Contracts\Data\LaravelSettings;
 use Falak\Sites\Contracts\Data\PublicService;
-use Falak\Sites\Contracts\Data\SharedPath;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\Framework;
 use Falak\Sites\Contracts\SiteRuntime;
@@ -52,9 +52,10 @@ use Illuminate\Support\Carbon;
  * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int, health_check_path?: ?string}> $public_services
  * @property ?array{slug: string, version: string, source: string} $template
  * @property ?string $health_check_path
+ * @property ?array<string, mixed> $limits resource limits (Limits' ResourceLimits JSON)
+ * @property ?array<string, array<string, mixed>> $compose_limits resource limits per compose service
  * @property string $deploy_script
  * @property LaravelSettings $laravel
- * @property list<SharedPath> $shared_paths
  * @property bool $test_domain_enabled
  * @property ?string $created_by
  * @property Carbon $created_at
@@ -90,6 +91,8 @@ class Site extends Model
             'compose_adjustments' => 'array',
             'public_services' => 'array',
             'template' => 'array',
+            'limits' => 'array',
+            'compose_limits' => 'array',
         ];
     }
 
@@ -101,23 +104,6 @@ class Site extends Model
         return Attribute::make(
             get: fn (?string $value) => LaravelSettings::fromArray($value ? (array) json_decode($value, true) : []),
             set: fn (LaravelSettings|array $value) => json_encode($value instanceof LaravelSettings ? $value->toArray() : LaravelSettings::fromArray($value)->toArray(), JSON_THROW_ON_ERROR),
-        );
-    }
-
-    /**
-     * @return Attribute<list<SharedPath>, list<SharedPath|array{path: string, type?: string}>>
-     */
-    protected function sharedPaths(): Attribute
-    {
-        return Attribute::make(
-            get: fn (?string $value) => array_map(
-                fn (array $path) => new SharedPath((string) $path['path'], (string) ($path['type'] ?? 'directory')),
-                array_values(array_filter((array) json_decode($value ?? '[]', true), 'is_array')),
-            ),
-            set: fn (array $value) => json_encode(array_map(
-                fn (SharedPath|array $path) => $path instanceof SharedPath ? $path->toArray() : (new SharedPath((string) $path['path'], (string) ($path['type'] ?? 'directory')))->toArray(),
-                array_values($value),
-            ), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
         );
     }
 
@@ -312,11 +298,12 @@ class Site extends Model
             deployScript: $this->deploy_script,
             laravel: $this->laravel,
             testDomain: $this->testDomain(),
-            sharedPaths: $this->shared_paths,
             targets: $this->targets->map(fn (SiteTarget $target) => $target->toData())->values()->all(),
             compose: $this->composeConfig(),
             containerPort: $this->container_port,
             rootDirectory: $this->root_directory,
+            limits: ResourceLimits::fromArray($this->limits),
+            composeLimits: array_map(fn ($limits) => ResourceLimits::fromArray((array) $limits), $this->compose_limits ?? []),
         );
     }
 }

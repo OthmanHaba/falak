@@ -5,13 +5,14 @@ namespace Falak\Alerting\Application\Jobs;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Alerting\Domain\Models\DedupState;
 use Falak\Alerting\Domain\Models\Notification;
+use Falak\Alerting\Infrastructure\DatabaseAlertConditions;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Deletes alert history, deliveries, rule hits and notifications older than alerting.retention_days,
- * in chunks, plus resolved dedup states past retention.
+ * in chunks, plus resolved dedup states past retention and conditions nobody observes any more.
  */
 final class PruneAlerting implements ShouldQueue
 {
@@ -37,5 +38,7 @@ final class PruneAlerting implements ShouldQueue
         } while ($ids->count() === self::CHUNK);
 
         DedupState::query()->whereNotNull('resolved_at')->where('resolved_at', '<', $cutoff)->delete();
+
+        DatabaseAlertConditions::prune();
     }
 }

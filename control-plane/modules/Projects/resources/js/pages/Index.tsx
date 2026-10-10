@@ -343,9 +343,26 @@ export default function Index({ projects: initial, setup, can }: Props) {
     const search = useRef<HTMLInputElement>(null);
     const first = projects.find((project) => project.is_default) ?? projects[0];
     const firstEnv = first ? productionOf(first) : null;
-    const steps = defaultSetupSteps(setup, firstEnv && first ? { deploy: canvasUrl(first.id, firstEnv.slug) } : {}).map((step) =>
-        step.id === 'project' && can.create ? { ...step, href: undefined, onAction: () => setCreating(true) } : step,
-    );
+    const { props: shared } = usePage<SharedData>();
+    // The install's operators also get the control plane's disaster recovery (Recovery's `disasterRecovery` prop).
+    const dr = shared.disasterRecovery as { needs_setup: boolean; settings_url: string } | null | undefined;
+    const steps = [
+        ...defaultSetupSteps(setup, firstEnv && first ? { deploy: canvasUrl(first.id, firstEnv.slug) } : {}).map((step) =>
+            step.id === 'project' && can.create ? { ...step, href: undefined, onAction: () => setCreating(true) } : step,
+        ),
+        ...(dr
+            ? [
+                  {
+                      id: 'disaster-recovery',
+                      title: 'Set up disaster recovery',
+                      description: 'Encrypted backups of the control plane to a bucket, on a schedule: if this host is lost, everything comes back.',
+                      done: !dr.needs_setup,
+                      href: dr.settings_url,
+                      actionLabel: 'Set up',
+                  },
+              ]
+            : []),
+    ];
 
     useEffect(() => setProjects(initial), [initial]);
 

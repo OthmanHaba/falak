@@ -13,8 +13,6 @@ use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Falak\Servers\Domain\Models\MachineInspection;
 use Falak\Servers\Domain\Models\PhpVersion;
 use Falak\Servers\Domain\Models\Server;
-use Falak\Servers\Events\DatabaseEngineInstalled;
-use Falak\Servers\Events\DatabaseEngineInstallFailed;
 use Falak\Servers\Events\PhpVersionChanged;
 use Falak\Servers\Events\ServerAttentionCleared;
 use Falak\Servers\Events\ServerProvisioned;
@@ -49,7 +47,6 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         $this->settlePhpVersions($server, $event->commandId, succeeded: true, error: null);
-        $this->settleEngine($server, $event->commandId, error: null);
     }
 
     public function handleFailed(CommandFailed $event): void
@@ -72,7 +69,6 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         $this->settlePhpVersions($server, $event->commandId, succeeded: false, error: $reason);
-        $this->settleEngine($server, $event->commandId, error: $reason);
     }
 
     /**
@@ -81,36 +77,6 @@ final class HandleCommandOutcome implements ShouldQueue
     private function inspection(Server $server, string $commandId): ?MachineInspection
     {
         return MachineInspection::query()->where('server_id', $server->id)->where('command_id', $commandId)->where('status', MachineInspection::RUNNING)->first();
-    }
-
-    /**
-     * A database engine added after creation: registered once installed, taken back out of the stack when the plan
-     * failed (the next plan would otherwise retry it on every converge).
-     */
-    private function settleEngine(Server $server, string $commandId, ?string $error): void
-    {
-        if ($server->engine_command_id === null || $server->engine_command_id !== $commandId) {
-            return;
-        }
-
-        $cache = $server->installing('cache');
-        $engine = (string) ($cache ? $server->stack->cache : $server->stack->database);
-
-        if ($error !== null) {
-            $server->forceFill([
-                'engine_command_id' => null,
-                'engine_install_kind' => null,
-                'stack' => $cache ? $server->stack->withCache(null) : $server->stack->withDatabase(null),
-            ])->save();
-            $this->audit->record('server.database_engine_install_failed', 'server', $server->id, ['engine' => $engine, 'error' => $error], $server->organization_id);
-            DatabaseEngineInstallFailed::dispatch($server->id, $server->organization_id, $engine);
-
-            return;
-        }
-
-        $server->forceFill(['engine_command_id' => null, 'engine_install_kind' => null])->save();
-        $this->audit->record('server.database_engine_installed', 'server', $server->id, ['engine' => $engine], $server->organization_id);
-        DatabaseEngineInstalled::dispatch($server->id, $server->organization_id, $engine);
     }
 
     private function provisioned(Server $server): void

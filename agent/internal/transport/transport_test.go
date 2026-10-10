@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -308,6 +309,38 @@ func TestHeartbeatSendsFactsOnlyWhenChanged(t *testing.T) {
 	}
 }
 
+// Service events are dropped only after a heartbeat carrying them was delivered.
+func TestHeartbeatServiceEventsDroppedOnlyWhenDelivered(t *testing.T) {
+	plane := newFakePlane()
+	srv := httptest.NewServer(plane)
+	pending := []string{"oom"}
+	h := &Heartbeater{
+		Client:  NewWithHTTPClient(srv.URL+"/agent/v1", srv.Client()),
+		Summary: func() Heartbeat { return Heartbeat{UptimeS: 10} },
+		ServiceEvents: func() (any, func()) {
+			if len(pending) == 0 {
+				return nil, nil
+			}
+			return append([]string(nil), pending...), func() { pending = nil }
+		},
+	}
+	h.Beat(context.Background())
+	h.Beat(context.Background())
+	plane.mu.Lock()
+	_, first := plane.heartbeats[0]["service_events"]
+	_, second := plane.heartbeats[1]["service_events"]
+	plane.mu.Unlock()
+	if !first || second || len(pending) != 0 {
+		t.Fatalf("first=%v second=%v pending=%v", first, second, pending)
+	}
+	pending = []string{"restart"}
+	srv.Close()
+	h.Beat(context.Background())
+	if len(pending) != 1 {
+		t.Fatal("events dropped although the heartbeat failed")
+	}
+}
+
 // --- mTLS ---
 
 func mkCert(t *testing.T, tpl *x509.Certificate, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
@@ -359,6 +392,40 @@ func TestMutualTLSPinnedToCA(t *testing.T) {
 	bad := New(srv.URL+"/agent/v1", &tls.Config{RootCAs: op, GetClientCertificate: clientTLS.GetClientCertificate})
 	if _, err := bad.Poll(context.Background(), 0); err == nil {
 		t.Fatal("expected TLS verification failure with a foreign CA pin")
+	}
+}
+
+func TestRequestPostsJSONAndDecodesTheReply(t *testing.T) {
+	var path, ctype string
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, ctype = r.URL.Path, r.Header.Get("Content-Type")
+		got = nil
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		if got["instance"] == "bad" {
+			w.WriteHeader(http.StatusConflict)
+			io.WriteString(w, `{"message":"no","error":"pitr_disabled"}`)
+			return
+		}
+		io.WriteString(w, `{"segments":[{"name":"a"}]}`)
+	}))
+	defer srv.Close()
+	c := NewWithHTTPClient(srv.URL+"/agent/v1", srv.Client())
+	var out struct {
+		Segments []struct {
+			Name string `json:"name"`
+		} `json:"segments"`
+	}
+	if err := c.Request(context.Background(), "pitr.upload_urls", map[string]string{"instance": "x"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/agent/v1/requests/pitr.upload_urls" || ctype != "application/json" || got["instance"] != "x" || len(out.Segments) != 1 || out.Segments[0].Name != "a" {
+		t.Fatalf("path %q ctype %q body %v reply %+v", path, ctype, got, out)
+	}
+	err := c.Request(context.Background(), "pitr.upload_urls", map[string]string{"instance": "bad"}, &out)
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusConflict || se.Reason != "pitr_disabled" || Retryable(err) {
+		t.Fatalf("err = %v", err)
 	}
 }
 

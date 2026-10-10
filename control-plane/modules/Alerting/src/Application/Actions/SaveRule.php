@@ -32,6 +32,7 @@ final class SaveRule
                 'allow_critical' => (bool) ($quiet['allow_critical'] ?? true),
             ] : null,
             'rate_limit_per_hour' => $data['rate_limit_per_hour'] ?? null,
+            'user_modified' => $rule->pack_key !== null,
         ])->save();
 
         $rule->channels()->sync(array_values((array) ($data['channel_ids'] ?? [])));

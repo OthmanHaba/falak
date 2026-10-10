@@ -60,8 +60,11 @@ final class ServiceController extends Controller
                 'engine' => ['required', 'string', Rule::in(['postgresql', 'mysql', 'mariadb', 'redis', 'valkey'])],
                 'server_id' => ['required', 'string', 'size:26'],
                 'name' => ['required', 'string', 'max:63'],
-                // Redis / Valkey (the picker's Advanced section)
-                'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
+                // The container (the picker's Advanced section): major version, memory limit, data volume size.
+                'version' => ['nullable', 'string', 'max:16'],
+                'memory_mb' => ['nullable', 'integer', 'min:16', 'max:262144'],
+                'disk_gb' => ['nullable', 'integer', 'min:1', 'max:16384'],
+                // Redis / Valkey
                 'eviction' => ['nullable', 'string', 'max:32'],
                 'persistence' => ['nullable', 'string', 'max:8'],
             ]);
@@ -93,8 +96,8 @@ final class ServiceController extends Controller
     }
 
     /**
-     * DELETE /projects/{project}/{environment}/services/{service} {confirm: service name} — delete the site /
-     * database behind a card (§1.9: typed confirmation).
+     * DELETE /projects/{project}/{environment}/services/{service} {confirm: service name, delete_volumes?: volume ids}
+     * — delete the site / database behind a card (§1.9: typed confirmation). Volumes are kept unless picked.
      */
     public function destroy(Request $request, Project $project, string $environment, string $service, DeleteService $delete): JsonResponse
     {
@@ -105,10 +108,11 @@ final class ServiceController extends Controller
         $this->access->authorize($request->user(), $project->organization_id, $record->kind === ServiceKind::Site ? 'sites.delete' : 'databases.manage');
         $data = $request->validate([
             'confirm' => ['required', 'string', Rule::in([$record->name])],
-            'delete_volumes' => ['sometimes', 'boolean'],
+            'delete_volumes' => ['sometimes', 'array', 'max:100'],
+            'delete_volumes.*' => ['string', 'size:26'],
         ], ['confirm.in' => 'Type the service name to confirm.']);
 
-        $delete($record, (bool) ($data['delete_volumes'] ?? false));
+        $delete($record, array_values($data['delete_volumes'] ?? []), $request->user()?->getAuthIdentifier());
 
         return response()->json(null, 204);
     }

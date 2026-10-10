@@ -12,7 +12,7 @@ namespace Falak\Servers\Domain\MachineCheck;
 final class DecisionEngine
 {
     /** Components in display order (also the provision.apply `components` names). */
-    public const COMPONENTS = ['base', 'docker', 'database', 'cache', 'edge', 'php', 'node', 'ssh', 'firewall', 'swap', 'hostname', 'unattended_upgrades', 'fail2ban'];
+    public const COMPONENTS = ['base', 'docker', 'edge', 'php', 'node', 'ssh', 'firewall', 'swap', 'hostname', 'unattended_upgrades', 'fail2ban'];
 
     /** Falak's edge (FrankenPHP or Caddy) runs as this unit. */
     private const EDGE_UNIT = 'falak-edge.service';
@@ -38,9 +38,7 @@ final class DecisionEngine
     {
         return new MachineCheck(array_values(array_filter([
             $this->base($report, $wanted),
-            $this->docker($report, $wanted),
-            $this->engine($report, 'database', 'Database', $wanted->stack->database, (array) ($this->config['databases'] ?? [])),
-            $this->engine($report, 'cache', 'Cache', $wanted->stack->cache, (array) ($this->config['caches'] ?? [])),
+            $this->docker($report),
             $this->edge($report, $wanted),
             $this->php($report, $wanted),
             $this->node($report, $wanted),
@@ -83,16 +81,14 @@ final class DecisionEngine
         return new ComponentDecision('base', 'Base packages', Decision::Complete, 'Installs the missing '.implode(', ', $missing).'.', $found, install: $missing);
     }
 
-    private function docker(MachineReport $report, Wanted $wanted): ?ComponentDecision
+    private function docker(MachineReport $report): ComponentDecision
     {
         $docker = $report->docker();
         $packages = (array) ($this->config['docker']['packages'] ?? []);
         $service = (string) ($this->config['docker']['service'] ?? 'docker');
 
         if ($docker === null) {
-            return $wanted->stack->docker
-                ? new ComponentDecision('docker', 'Docker', Decision::Install, "Installs Docker from Ubuntu's archive (".implode(', ', $packages).').', install: $packages, service: $service)
-                : null;
+            return new ComponentDecision('docker', 'Docker', Decision::Install, "Installs Docker Engine from Docker's apt repository (".implode(', ', $packages).').', install: $packages, service: $service);
         }
 
         $engine = (string) ($docker['engine_package'] ?? '');
@@ -104,10 +100,6 @@ final class DecisionEngine
             if (is_array($docker[$plugin] ?? null)) {
                 $found[] = ['name' => $docker[$plugin]['package'] ?? "docker {$plugin}", 'version' => $docker[$plugin]['version'] ?? null, 'source' => isset($docker[$plugin]['package']) ? MachineReport::sourceOf($report->package($docker[$plugin]['package']) ?? []) : 'plugin file'];
             }
-        }
-
-        if (! $wanted->stack->docker) {
-            return new ComponentDecision('docker', 'Docker', Decision::Skip, 'Docker is installed; this server does not use it.', $found);
         }
 
         $notes = $this->daemonNotes((array) ($docker['daemon'] ?? []));
@@ -146,7 +138,8 @@ final class DecisionEngine
         $minimum = (string) ($this->rules['minimum_versions']['docker'] ?? '0');
 
         if ($version !== null && $version !== '' && version_compare($version, $minimum, '<')) {
-            return $block("Docker {$version} is older than {$minimum}, the oldest Falak supports.", "Upgrade Docker to {$minimum} or newer from the same source, then re-check.");
+            // Replaced, not blocked: images, containers and volumes stay in /var/lib/docker.
+            return new ComponentDecision('docker', 'Docker', Decision::Install, "Replaces Docker {$version} (older than {$minimum}) with Docker Engine from Docker's apt repository (".implode(', ', $packages).'); containers, images and volumes stay.', $found, install: $packages, service: $service, notes: $notes);
         }
 
         if (($docker['server_version'] ?? '') === '' && ($docker['server_error'] ?? '') !== '') {
@@ -205,107 +198,6 @@ final class DecisionEngine
     }
 
     /**
-     * Database or cache engines: adopt the wanted one when present (any source), block another one of the same kind
-     * or a port held by something else.
-     *
-     * @param  array<string, array<string, mixed>>  $installable  the `databases` / `caches` config
-     */
-    private function engine(MachineReport $report, string $component, string $label, ?string $wanted, array $installable): ?ComponentDecision
-    {
-        $engines = array_filter((array) ($this->rules['engines'] ?? []), fn (array $e) => ($e['kind'] ?? null) === $component);
-        $present = [];
-
-        foreach ($engines as $key => $engine) {
-            $packages = $report->packagesMatching((array) $engine['packages']);
-
-            if ($packages !== []) {
-                $present[$key] = ['packages' => $packages, 'version' => $this->engineVersion($packages), 'source' => MachineReport::sourceOf($packages[0])];
-            }
-        }
-
-        $found = [];
-
-        foreach ($present as $key => $p) {
-            $found[] = ['name' => $engines[$key]['label'], 'version' => $p['version'], 'source' => $p['source']];
-        }
-
-        if ($wanted === null) {
-            return $present === [] ? null : new ComponentDecision($component, $label, Decision::Skip,
-                implode(', ', array_map(fn ($f) => trim("{$f['name']} {$f['version']}"), $found)).' installed; this server does not use '.($component === 'database' ? 'a database engine.' : 'a cache.'), $found);
-        }
-
-        $definition = (array) ($installable[$wanted] ?? []);
-        $wantedLabel = (string) ($engines[$wanted]['label'] ?? $definition['label'] ?? $wanted);
-        $service = (string) ($definition['service'] ?? $wanted);
-        $notes = [];
-        // Processes that may hold the engine's port: its own once adopted, and those of another engine already blocked
-        // above (one conflict, reported once).
-        $holders = [];
-
-        foreach ($present as $key => $p) {
-            if ($key === $wanted) {
-                continue;
-            }
-
-            $holders = [...$holders, ...(array) $engines[$key]['processes']];
-
-            $other = trim("{$engines[$key]['label']} {$p['version']}");
-            $notes[] = Note::block("{$other} is installed, but this server is set up for {$wantedLabel}.",
-                "Falak won't run two {$component} engines on one machine. Remove {$engines[$key]['label']} (apt purge ".($p['packages'][0]['name'] ?? $key).") or use a server set up for {$engines[$key]['label']}, then re-check.");
-        }
-
-        $mine = $present[$wanted] ?? null;
-
-        if ($mine !== null) {
-            $minimum = (string) ($this->rules['minimum_versions'][$wanted] ?? '0');
-
-            if ($mine['version'] !== null && version_compare($mine['version'], $minimum, '<')) {
-                $notes[] = Note::block("{$wantedLabel} {$mine['version']} is older than {$minimum}, the oldest Falak supports.", "Upgrade {$wantedLabel} to {$minimum} or newer, then re-check.");
-            }
-        }
-
-        foreach ((array) ($engines[$wanted]['ports'] ?? []) as $port) {
-            $notes = [...$notes, ...$this->portNotes($report, (int) $port, $wantedLabel, [...$holders, ...($mine !== null ? (array) $engines[$wanted]['processes'] : [])])];
-        }
-
-        if ($this->hasBlock($notes)) {
-            return new ComponentDecision($component, $label, Decision::Block, $notes[0]->message, $found, notes: $notes);
-        }
-
-        if ($mine !== null) {
-            $names = array_map(fn (array $p) => (string) ($p['name'] ?? ''), $mine['packages']);
-            $what = trim("{$wantedLabel} {$mine['version']}");
-            $reason = $wanted === 'postgresql'
-                ? "Uses {$what} from {$mine['source']}; the cluster and its major version stay, Ubuntu's postgresql package is not installed."
-                : "Uses {$what} from {$mine['source']}; no {$wantedLabel} packages are installed.";
-
-            return new ComponentDecision($component, $label, Decision::Adopt, $reason, $found, keep: $names, service: $service, notes: $notes);
-        }
-
-        $packages = array_values(array_map('strval', (array) ($definition['packages'] ?? [])));
-
-        return new ComponentDecision($component, $label, Decision::Install, "Installs {$wantedLabel} from Ubuntu's archive (".implode(', ', $packages).').', $found, install: $packages, service: $service, notes: $notes);
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $packages
-     */
-    private function engineVersion(array $packages): ?string
-    {
-        $best = null;
-
-        foreach ($packages as $package) {
-            $version = preg_match('/^postgresql-(\d+)$/', (string) $package['name'], $m) === 1 ? $m[1] : MachineReport::upstream((string) ($package['version'] ?? ''));
-
-            if ($version !== null && ($best === null || version_compare($version, $best, '>'))) {
-                $best = $version;
-            }
-        }
-
-        return $best;
-    }
-
-    /**
      * Blocks for a port the component needs that a container or another process holds.
      *
      * @param  list<string>  $allowed  process names that may hold the port (the adopted engine itself)
@@ -318,7 +210,7 @@ final class DecisionEngine
 
         foreach ($containers as $container) {
             $notes[] = Note::block('A container ('.($container['name'] ?? '?').', '.($container['image'] ?? 'unknown image').") publishes port {$port}, which {$for} needs.",
-                'Stop the container (docker stop '.($container['name'] ?? '<name>').') or publish it on another port, then re-check. To keep a database in Docker, add it to Falak as a compose service instead.');
+                'Stop the container (docker stop '.($container['name'] ?? '<name>').') or publish it on another port, then re-check. To keep a database in Docker, create it as a Falak database instead (it runs in a container).');
         }
 
         foreach ($report->listenersOn($port) as $listener) {

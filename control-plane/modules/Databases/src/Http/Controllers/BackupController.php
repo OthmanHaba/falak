@@ -6,13 +6,14 @@ use Falak\Databases\Application\Actions\DeleteBackup;
 use Falak\Databases\Application\Actions\RestoreBackup;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Models\Backup;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Policies\DatabasesPolicy;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Falak\Kernel\Security\BackupKeys;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -64,16 +65,50 @@ final class BackupController extends Controller
         $this->authorize('restore', $backup);
 
         $data = $request->validate([
-            'database_server_id' => ['required', 'string'],
+            'database_instance_id' => ['required', 'string'],
             'database' => ['required', 'string', 'max:63'],
             'confirm' => ['required', 'string', 'same:database'],
+            // Customer-held keys only: used for this restore, never stored.
+            'identity' => ['nullable', 'string', 'max:200'],
         ], ['confirm.same' => 'Type the target database name to confirm.']);
 
-        $target = DatabaseServer::query()->where('organization_id', $backup->organization_id)->findOrFail($data['database_server_id']);
+        $target = DatabaseInstance::query()->where('organization_id', $backup->organization_id)->findOrFail($data['database_instance_id']);
 
-        $restore($backup, $target, $data['database'], $request->user()?->getAuthIdentifier());
+        $restore($backup, $target, $data['database'], $request->user()?->getAuthIdentifier(), $data['identity'] ?? null);
 
         return back();
+    }
+
+    /**
+     * POST /databases/backups/{backup}/key: the backup's data key as a falak-restore key file, for restoring it without
+     * Falak. Holding it opens the backup, so it takes the restore permission and a recent re-authentication, and is
+     * audited. Customer-held keys were never here.
+     */
+    public function exportKey(Backup $backup, BackupKeys $keys, AuditLog $audit): JsonResponse
+    {
+        $this->authorize('restore', $backup);
+
+        if ($backup->isCustomerHeld() || $backup->wrapped_key === null || $backup->encryption_mode !== BackupKeys::CP) {
+            throw ValidationException::withMessages(['backup' => $backup->isCustomerHeld()
+                ? 'This backup\'s key is customer-held: Falak never had it. Use your age identity with falak-restore.'
+                : 'This backup has no key to export.']);
+        }
+
+        $key = $keys->unwrap($backup->wrapped_key, $backup->organization_id, $backup->id);
+
+        try {
+            $file = BackupKeys::keyFile($backup->id, $key);
+        } finally {
+            sodium_memzero($key);
+        }
+
+        $audit->record('databases.backup_key_exported', 'backup', $backup->id, [
+            'database' => $backup->database_name,
+            'server_id' => $backup->server_id,
+        ], $backup->organization_id);
+
+        return response()->json(['key_id' => $backup->id, 'filename' => "falak-backup-{$backup->id}.key", 'content' => $file])
+            ->header('Cache-Control', 'no-store');
     }
 
     /**

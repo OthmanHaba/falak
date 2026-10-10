@@ -8,7 +8,7 @@
 # Build context: the REPOSITORY ROOT. Proven in sim/builder. Docker-mode builds need a `builder`
 # server (this container has no Docker daemon/BuildKit).
 
-ARG GO_IMAGE=golang:1.25-trixie
+ARG GO_IMAGE=golang:1.27-trixie
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS binary
 ARG FALAK_VERSION=dev

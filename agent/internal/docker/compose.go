@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -59,7 +62,16 @@ type ComposeUpPayload struct {
 	// Services starts only these (and what they depend on; feature compose.up.services): a stack's bootstrap pass
 	// for the services its split-out sites use, before those sites and then the full stack deploy.
 	Services []string `json:"services,omitempty"`
+	// Mask names the secret variables of env.
+	Mask []string `json:"mask,omitempty"`
+	// JoinNetworks are environment networks (falak-env-<id>), where the environment's databases answer by name: created
+	// before `up` (the control plane's override file declares them for every service), joined after it by any container
+	// still missing them.
+	JoinNetworks []string `json:"join_networks,omitempty"`
 }
+
+// Secrets are the masked env values.
+func (p ComposeUpPayload) Secrets() []string { return secretValues(p.Env, p.Mask, nil) }
 
 type ComposePullPayload struct {
 	Project        string            `json:"project"`
@@ -70,7 +82,11 @@ type ComposePullPayload struct {
 	ProjectEnvFile string            `json:"project_env_file,omitempty"`
 	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
 	Services       []string          `json:"services,omitempty"`
+	Mask           []string          `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values.
+func (p ComposePullPayload) Secrets() []string { return secretValues(p.Env, p.Mask, nil) }
 
 type ComposeDownPayload struct {
 	Project   string `json:"project"`
@@ -206,23 +222,64 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 		}
 	}
 	args := []string{"compose", "-p", project}
-	if envFile != "" {
-		args = append(args, "--env-file", envFile)
-	}
+	envArg := envFile
 	for _, f := range files {
-		// .env files hold secrets: owner-only.
-		mode := os.FileMode(0o640)
-		if strings.HasPrefix(f.Name, ".env") || f.Name == envFile {
-			mode = 0o600
+		if !strings.HasPrefix(f.Name, ".env") && f.Name != envFile {
+			if err := replaceFile(release, f.Name, []byte(f.Content), 0o640); err != nil {
+				return nil, err
+			}
+			args = append(args, "-f", f.Name)
+			continue
 		}
-		if err := replaceFile(release, f.Name, []byte(f.Content), mode); err != nil {
+		// Env files hold secrets: on the tmpfs only (root, 0400); the release links to them, so `--env-file .env`
+		// in leader commands keeps working, and after a reboot site.env.write restores them.
+		target, err := s.writeComposeEnv(project, f.Name, f.Content)
+		if err != nil {
 			return nil, err
 		}
-		if f.Name != envFile && !strings.HasPrefix(f.Name, ".env") {
-			args = append(args, "-f", f.Name)
+		if err := replaceLink(release, f.Name, target); err != nil {
+			return nil, err
+		}
+		if s.opts.Links != nil {
+			if err := s.opts.Links.Record(project, filepath.Join(s.opts.FS.P(dir), f.Name), target); err != nil {
+				s.log.Warn("record env link", "err", err)
+			}
+		}
+		if f.Name == envFile {
+			envArg = target
 		}
 	}
+	if envArg != "" {
+		args = append(args[:3], append([]string{"--env-file", envArg}, args[3:]...)...)
+	}
 	return args, nil
+}
+
+// writeComposeEnv writes a compose env file to the tmpfs and returns its real path.
+func (s *Service) writeComposeEnv(project, name, content string) (string, error) {
+	if err := envlinks.EnsureDir(s.opts.FS.P(s.opts.EnvDir)); err != nil {
+		return "", err
+	}
+	host := envlinks.ComposeEnvFile(s.opts.EnvDir, project, name)
+	if _, err := s.opts.FS.WriteFile(host, []byte(content), 0o400); err != nil {
+		return "", err
+	}
+	return s.opts.FS.P(host), nil
+}
+
+// replaceLink makes name a symlink to target, replacing whatever is there (never writing through it).
+func replaceLink(root *os.Root, name, target string) error {
+	if cur, err := root.Readlink(name); err == nil && cur == target {
+		return nil
+	}
+	tmp := "." + name + ".falak-link"
+	if err := root.RemoveAll(tmp); err != nil {
+		return err
+	}
+	if err := root.Symlink(target, tmp); err != nil {
+		return err
+	}
+	return root.Rename(tmp, name)
 }
 
 // writeAssets builds repo/ afresh: repo.tmp is removed (RemoveAll never follows symlinks), filled through a root
@@ -309,6 +366,11 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
 		}
 	}
+	for _, n := range p.JoinNetworks {
+		if !EnvironmentNetworkRe.MatchString(n) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid join network %q", n)}
+		}
+	}
 	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
@@ -326,7 +388,18 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 	if len(p.Services) > 0 {
 		args = append(append(args, "--"), p.Services...)
 	}
+	// The control plane's compose override declares them as external networks of every service, so containers start
+	// on them (healthchecks reaching the environment's databases pass during --wait): they must exist first.
+	for _, n := range p.JoinNetworks {
+		if err := s.ensureEnvironmentNetwork(ctx, n); err != nil {
+			return nil, err
+		}
+	}
 	res, runErr := s.compose(ctx, p.Directory, p.Env, p.RegistryAuth, args, st)
+	// Containers a stack's own file keeps off them (an older override, a service recreated by hand) join after `up`.
+	if err := s.joinEnvironmentNetworks(ctx, p.Project, p.JoinNetworks, st); err != nil && runErr == nil {
+		runErr = err
+	}
 	out := ComposeUpResult{ExitCode: res.ExitCode}
 	// Report the project state even when up failed (unhealthy services explain the failure).
 	if services, err := s.projectStatus(ctx, p.Project, false); err == nil {
@@ -342,6 +415,30 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 		s.log.Debug("compose up: project status failed", "project", p.Project, "err", err)
 	}
 	return out, runErr
+}
+
+// joinEnvironmentNetworks connects every container of the project to the environment networks (compose recreates
+// containers on its own networks only, so this runs after every `up`).
+func (s *Service) joinEnvironmentNetworks(ctx context.Context, project string, networks []string, st commands.Stream) error {
+	if len(networks) == 0 {
+		return nil
+	}
+	list, err := s.c.ContainerList(ctx, true, []string{LabelComposeProject + "=" + project})
+	if err != nil {
+		return err
+	}
+	for _, n := range networks {
+		if err := s.ensureEnvironmentNetwork(ctx, n); err != nil {
+			return err
+		}
+		for _, c := range list {
+			if err := s.c.NetworkConnect(ctx, n, c.ID, nil); err != nil {
+				return fmt.Errorf("joining %s to %s: %w", containerName(c), n, err)
+			}
+		}
+		fmt.Fprintf(st.Stdout(), "%d container(s) of %s joined %s\n", len(list), project, n)
+	}
+	return nil
 }
 
 func (s *Service) composePull(ctx context.Context, p ComposePullPayload, st commands.Stream) (any, error) {
@@ -373,7 +470,30 @@ func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st comm
 	}
 	s.releaseStackNetworks(ctx, p.Project, st)
 	res, err := s.compose(ctx, dir, nil, nil, args, st)
+	if err == nil && res.ExitCode == 0 {
+		// The project is gone from this server (the site was deleted or moved away): its env files on the tmpfs hold
+		// its secrets and must not outlive it until the next reboot.
+		s.forgetComposeEnv(p.Project, st)
+	}
 	return ExitResult{ExitCode: res.ExitCode}, err
+}
+
+// forgetComposeEnv removes a compose project's env files from the env directory (compose-<project>.env,
+// compose-<project>.<name>.env).
+func (s *Service) forgetComposeEnv(project string, st commands.Stream) {
+	dir := s.opts.FS.P(s.opts.EnvDir)
+	for _, pattern := range []string{"compose-" + project + ".env", "compose-" + project + ".*.env"} {
+		matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, m := range matches {
+			if err := os.Remove(m); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				s.log.Warn("removing compose env file", "file", m, "err", err)
+				continue
+			}
+			if st != nil {
+				fmt.Fprintf(st.Stdout(), "removed %s\n", filepath.Base(m))
+			}
+		}
+	}
 }
 
 // releaseStackNetworks detaches Falak's own containers (a split-out service run as its own site) from the project's

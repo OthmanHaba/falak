@@ -3,6 +3,7 @@
 namespace Falak\Alerting\Domain\Models;
 
 use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Kernel\Security\Casts\SealedArray;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -15,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property array<string, mixed> $config secrets: webhook URLs, bot tokens, signing secrets
  * @property bool $enabled
+ * @property bool $is_default the organization's default channel: the default rule pack routes to it
  * @property ?Carbon $last_sent_at
  * @property ?string $last_error
  * @property Carbon $created_at
@@ -38,8 +40,9 @@ class Channel extends Model
     {
         return [
             'type' => ChannelType::class,
-            'config' => 'encrypted:array',
+            'config' => SealedArray::class,
             'enabled' => 'boolean',
+            'is_default' => 'boolean',
             'last_sent_at' => 'datetime',
         ];
     }

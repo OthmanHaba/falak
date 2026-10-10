@@ -39,7 +39,7 @@ return [
 
     'guards' => [
         'web' => [
-            'driver' => 'session',
+            'driver' => 'falak-session',
             'provider' => 'users',
         ],
     ],

@@ -4,6 +4,7 @@ namespace Falak\Sites\Application;
 
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
@@ -71,10 +72,9 @@ final class TargetProvisioner
 
     /**
      * Stop what a container site runs on a server: its blue and green containers (docker), its compose project, or a
-     * function's instances and releases.
-     * Named volumes are kept unless $volumes (compose only; docker sites mount host paths under the site root).
+     * function's instances and releases. Volumes are always kept: Volumes deletes the ones the user picked.
      */
-    public function removeContainers(Site $site, string $serverId, bool $volumes = false): void
+    public function removeContainers(Site $site, string $serverId): void
     {
         $commands = match ($site->runtime) {
             SiteRuntime::Docker => [
@@ -82,7 +82,7 @@ final class TargetProvisioner
                 ['docker.stop', ['name' => "falak-{$site->slug}-green", 'remove' => true]],
             ],
             SiteRuntime::Compose => [
-                ['docker.compose.down', ['project' => $site->slug, 'directory' => $site->rootPath(), 'volumes' => $volumes]],
+                ['docker.compose.down', ['project' => $site->slug, 'directory' => $site->rootPath()]],
             ],
             SiteRuntime::Function => [
                 ['fn.release.remove', ['site' => $site->slug]],
@@ -104,7 +104,7 @@ final class TargetProvisioner
         $site = $target->site;
 
         if ($site->runtime === SiteRuntime::PhpFpm && $site->php_version) {
-            $payload = CommandPayloads::fpmPool($site, $site->php_version, $this->servers->phpSettings($target->server_id, $site->php_version));
+            $payload = CommandPayloads::fpmPool($site, $site->php_version, $this->servers->phpSettings($target->server_id, $site->php_version), limits: ResourceLimits::fromArray($site->limits));
             $this->dispatch($target, SiteTarget::STEP_POOL, 'runtime.fpm.pool', $payload, 300);
 
             return;

@@ -2,6 +2,7 @@
 
 namespace Falak\Sites\Infrastructure;
 
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Servers\Contracts\Data\PhpSettings;
 use Falak\Sites\Domain\Models\Site;
 
@@ -24,9 +25,12 @@ final class CommandPayloads
     }
 
     /**
+     * @param  ?ResourceLimits  $limits  the site's effective limits: with memory, CPU or process limits the pool runs in
+     *                                   its own PHP-FPM master inside the site's slice (a shared master's pools share
+     *                                   its cgroup)
      * @return array<string, mixed> runtime.fpm.pool
      */
-    public static function fpmPool(Site $site, string $phpVersion, ?PhpSettings $settings, string $state = 'present'): array
+    public static function fpmPool(Site $site, string $phpVersion, ?PhpSettings $settings, string $state = 'present', ?ResourceLimits $limits = null): array
     {
         if ($state === 'absent') {
             return ['php_version' => $phpVersion, 'pool' => $site->slug, 'user' => $site->unix_user, 'state' => 'absent'];
@@ -50,8 +54,18 @@ final class CommandPayloads
         ];
 
         if ($site->isolated) {
-            // Keep PHP inside the site's own tree.
-            $payload['php_admin_values'] = ['open_basedir' => $site->rootPath().'/:/tmp/:/usr/share/php/'];
+            // Keep PHP inside the site's own tree. Its .env and Laravel's config cache link to the agent's tmpfs, and PHP
+            // checks the resolved path.
+            $tmpfs = rtrim((string) config('sites.env_dir', '/run/falak/env'), '/')."/{$site->slug}";
+            $payload['php_admin_values'] = ['open_basedir' => $site->rootPath()."/:/tmp/:/usr/share/php/:{$tmpfs}.env:{$tmpfs}.d/"];
+        }
+
+        if ($limits?->hasCgroupLimits()) {
+            $payload['slice'] = ResourceLimits::sliceName('site', $site->slug);
+
+            if ($limits->oomScoreAdj() !== 0) {
+                $payload['oom_score_adj'] = $limits->oomScoreAdj();
+            }
         }
 
         return $payload;
@@ -59,9 +73,10 @@ final class CommandPayloads
 
     /**
      * @param  array<string, string>  $env
+     * @param  list<string>  $mask  the site's secret variable names (masked in the output; the command reads .env)
      * @return array<string, mixed> system.exec
      */
-    public static function exec(Site $site, string $command, array $env = []): array
+    public static function exec(Site $site, string $command, array $env = [], array $mask = []): array
     {
         $current = escapeshellarg($site->currentPath());
 
@@ -73,6 +88,11 @@ final class CommandPayloads
 
         if ($env !== []) {
             $payload['env'] = $env;
+        }
+
+        if ($mask !== []) {
+            $payload['site'] = $site->slug;
+            $payload['mask'] = $mask;
         }
 
         return $payload;

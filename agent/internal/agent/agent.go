@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/config"
 	"github.com/OthmanHaba/falak/agent/internal/cron"
@@ -22,20 +24,25 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/edge"
 	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/facts"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/metrics"
 	"github.com/OthmanHaba/falak/agent/internal/netcfg"
 	"github.com/OthmanHaba/falak/agent/internal/provision"
 	"github.com/OthmanHaba/falak/agent/internal/pty"
+	"github.com/OthmanHaba/falak/agent/internal/resources"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/runtime"
+	"github.com/OthmanHaba/falak/agent/internal/security"
 	"github.com/OthmanHaba/falak/agent/internal/supervisor"
 	"github.com/OthmanHaba/falak/agent/internal/system"
 	"github.com/OthmanHaba/falak/agent/internal/telemetry"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
 	"github.com/OthmanHaba/falak/agent/internal/version"
+	"github.com/OthmanHaba/falak/agent/internal/volumes"
 )
 
 // InsightsPoster posts NDJSON to /agent/v1/insights.
@@ -67,6 +74,9 @@ type Components struct {
 	Deployer   *deploy.Deployer
 	Functions  *functions.Functions
 	DB         *db.DB
+	Volumes    *volumes.Service
+	// Events queues OOM kills and restarts for the heartbeat.
+	Events *resources.Queue
 }
 
 // Build constructs every executor and registers the full v1 catalogue.
@@ -81,14 +91,19 @@ func Build(d Deps) *Components {
 	reg := commands.NewRegistry()
 	sink := d.Telemetry.Sink()
 
-	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor")})
+	// Programs' and cron jobs' secret env variables live on the tmpfs, never in their state files.
+	// Programs with limits run in their slices (falak-<key>.slice), converged by proc.apply.
+	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "proc-secrets.json")),
+		LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor"),
+		Slices: &cgroup.Manager{Runner: d.Runner, FS: d.FS}, Systemd: d.Runner})
 	var insights cron.InsightsPoster
 	if d.Insights != nil {
 		insights = d.Insights
 	}
 	tel := d.Telemetry
 	sched := cron.New(cron.Options{
-		StateDir: d.FS.P(cfg.StateDir), Runner: d.Runner, Insights: insights, Sink: sink, Logger: log.With("component", "cron"),
+		StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "cron-secrets.json")), Runner: d.Runner, Insights: insights, Sink: sink,
+		Logger: log.With("component", "cron"),
 		SiteID: func(slug string) string {
 			for _, s := range tel.Relay().Config().Sites {
 				if s.Slug == slug {
@@ -98,14 +113,23 @@ func Build(d Deps) *Components {
 			return slug
 		},
 	})
-	edgeClient := &edge.Client{Base: cfg.CaddyAdmin}
-	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge")})
-	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, Logger: log.With("component", "docker")})
-	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
+	edgeClient := &edge.Client{Base: cfg.CaddyAdmin, Fallback: "http://127.0.0.1:2019"}
+	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge"),
+		RestartEdge: func(ctx context.Context) error {
+			_, err := runner.Check(ctx, d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"restart", "falak-edge.service"}})
+			return err
+		}})
+	// Secrets on servers live on the tmpfs only: sites' env files and containers' secret files.
+	envDir := filepath.Join(cfg.RunDir, "env")
+	links := envlinks.New(filepath.Join(d.FS.P(cfg.StateDir), "env-links.json"))
+	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, SecretsDir: filepath.Join(cfg.RunDir, "secrets"),
+		EnvDir: envDir, Links: links, Logger: log.With("component", "docker")})
+	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, EnvDir: envDir, Containers: dock, Links: links,
+		Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
 	terms := pty.New(pty.Options{Logger: log.With("component", "pty")})
 
 	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent,
-		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256}).Register(reg)
+		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256, SiteSecrets: dep.SiteSecrets}).Register(reg)
 	provision.New(provision.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	edgeMgr.Register(reg)
@@ -113,16 +137,23 @@ func Build(d Deps) *Components {
 	dock.Register(reg) // docker.* + deploy.container.swap
 	sup.Register(reg)
 	sched.Register(reg)
-	dbs := db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir})
+	dbs := db.New(db.Deps{Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), FS: d.FS, Logger: log.With("component", "db"), HTTP: d.HTTP,
+		VolumesRoot: filepath.Join(cfg.StateDir, "volumes"), SecretsDir: filepath.Join(cfg.RunDir, "secrets"), EtcDir: cfg.EtcDir})
 	dbs.Register(reg)
 	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	fns := functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
 		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version})
 	fns.Register(reg)
+	vols := volumes.New(volumes.Deps{Runner: d.Runner, FS: d.FS, HTTP: d.HTTP, Docker: docker.NewClient(cfg.DockerSock), Logger: log.With("component", "volumes"),
+		Root: filepath.Join(cfg.StateDir, "volumes"), SitesRoot: cfg.SitesRoot, BindAllow: cfg.BindAllow()})
+	vols.Register(reg)
+	security.New(security.Deps{Runner: d.Runner, FS: d.FS, Logger: log.With("component", "security"), SitesRoot: cfg.SitesRoot, RunDir: cfg.RunDir,
+		StateDir: cfg.StateDir}).Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 
-	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs}
+	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs, Volumes: vols,
+		Events: &resources.Queue{}}
 }
 
 // ensureEnrolled enrolls only when there is no identity yet: `falak-agent run` never replaces one because
@@ -135,6 +166,9 @@ func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger, re
 			return nil, errors.New("agent is not enrolled: set FALAK_PANEL_URL and FALAK_TOKEN (or --panel/--token)")
 		}
 		if err := os.MkdirAll(cfg.EtcDir, 0o711); err != nil {
+			return nil, err
+		}
+		if _, err := hostfs.EnsureTraversable(hostfs.FS{}, cfg.EtcDir); err != nil {
 			return nil, err
 		}
 		if _, err := enrollInto(ctx, cfg, log, paths); err != nil {
@@ -232,9 +266,22 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	poller := &transport.Poller{Client: client, Submit: disp.Submit, Wait: cfg.PollWait, Log: log.With("component", "poller")}
 	hb := &transport.Heartbeater{
 		Client: client, Interval: cfg.Heartbeat, Running: disp.Running, Log: log.With("component", "heartbeat"),
+		ServiceEvents: func() (any, func()) {
+			if ev, delivered := comps.Events.Pending(); len(ev) > 0 {
+				return ev, delivered
+			}
+			return nil, nil
+		},
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
-			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes}
+			hb := transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
+				Disks: disksOrNil(s.Disks), MissingSecrets: missingSecrets(comps.Deployer.MissingSecrets(runCtx), comps.Supervisor.WaitingSites(), comps.Cron.WaitingSites())}
+			dctx, cancel := context.WithTimeout(runCtx, 5*time.Second)
+			defer cancel()
+			if dbs := comps.DB.Report(dctx); len(dbs) > 0 {
+				hb.Databases = dbs
+			}
+			return hb
 		},
 		Facts: func(ctx context.Context) (any, error) {
 			f, err := facts.Collect(ctx, r, fs, version.Version)
@@ -252,12 +299,28 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	var polling, loops sync.WaitGroup
 	polling.Add(1)
 	go func() { defer polling.Done(); poller.Run(pollCtx) }()
-	// RedisWatch: Redis / Valkey instances listen on docker0 / WireGuard addresses that may appear after they started.
-	for _, fn := range []func(context.Context){hb.Run, renewer.Run, comps.DB.RedisWatch} {
+	for _, fn := range []func(context.Context){hb.Run, renewer.Run} {
 		loops.Add(1)
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}
 	log.Info("falak-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
+	loops.Add(1)
+	go func() { defer loops.Done(); sweepDrills(runCtx, comps, log, time.Hour) }()
+	// OOM kills and restarts of containers, slices and programs, delivered with the heartbeats.
+	for _, fn := range []func(context.Context){
+		func(ctx context.Context) { comps.Docker.Watch(ctx, comps.Events.Add) },
+		func(ctx context.Context) { comps.Supervisor.WatchRestarts(ctx, comps.Events.Add) },
+		func(ctx context.Context) {
+			watchSliceOOM(ctx, &cgroup.WatchOOM{Root: fs.P(cgroup.CgroupRoot)}, comps.Events.Add, time.Minute)
+		},
+	} {
+		loops.Add(1)
+		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
+	}
+	// Point-in-time recovery: the spools of instances with PITR on go to storage through presigned URLs.
+	shipper := comps.DB.NewShipper(client)
+	loops.Add(1)
+	go func() { defer loops.Done(); shipper.Run(runCtx) }()
 	loops.Add(1)
 	go func() {
 		defer loops.Done()
@@ -315,4 +378,58 @@ func installedBinary(fs hostfs.FS) string {
 		return fs.P(BinaryPath)
 	}
 	return ""
+}
+
+// missingSecrets merges the sites whose secrets are gone (env files, container files, waiting programs and jobs).
+// disksOrNil keeps `disks` out of the heartbeat when no mount was readable (an interface holding a nil slice is not nil).
+func disksOrNil(d []metrics.DiskUsage) any {
+	if len(d) == 0 {
+		return nil
+	}
+	return d
+}
+
+func missingSecrets(lists ...[]string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, l := range lists {
+		for _, s := range l {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sweepDrills removes what interrupted restore drills left behind (containers, scratch data, secret files), at start
+// and then every interval.
+func sweepDrills(ctx context.Context, comps *Components, log *slog.Logger, every time.Duration) {
+	for {
+		n := comps.DB.SweepDrills(ctx, db.DrillMaxAge) + comps.Volumes.SweepDrills(db.DrillMaxAge)
+		if n > 0 {
+			log.Info("removed leftovers of interrupted restore drills", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+	}
+}
+
+// watchSliceOOM reads the slices' OOM-kill counters every interval until ctx ends.
+func watchSliceOOM(ctx context.Context, w *cgroup.WatchOOM, add func(resources.Event), every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		w.Once(add)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }

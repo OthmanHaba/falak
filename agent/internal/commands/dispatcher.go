@@ -10,6 +10,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 )
 
 // EventSink receives events (implemented by the transport, which batches and retries).
@@ -131,6 +133,10 @@ func (d *Dispatcher) run(ctx context.Context, env Envelope) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// Secrets the executor learns from its payload (see Typed) are masked in its output, error and result.
+	secrets := redact.NewSet()
+	cctx = redact.WithSet(cctx, secrets)
+	ms := newMaskedStream(st, secrets)
 
 	var (
 		result any
@@ -140,11 +146,12 @@ func (d *Dispatcher) run(ctx context.Context, env Envelope) {
 	if !ok {
 		err = &PayloadError{fmt.Errorf("unknown command type %q", env.Type)}
 	} else {
-		result, err = safeExecute(cctx, ex, env, st)
+		result, err = safeExecute(cctx, ex, env, ms)
 	}
+	ms.flush()
 	st.flush()
 
-	fin := Event{Kind: KindFinished, At: d.now(), Result: result}
+	fin := Event{Kind: KindFinished, At: d.now(), Result: secrets.Value(result)}
 	code := 0
 	if err != nil {
 		code = 1
@@ -158,8 +165,8 @@ func (d *Dispatcher) run(ctx context.Context, env Envelope) {
 		case IsPayloadError(err):
 			code = 2
 		}
-		fin.Error = err.Error()
-		d.log.Warn("command failed", "id", env.ID, "type", env.Type, "err", err)
+		fin.Error = secrets.String(err.Error())
+		d.log.Warn("command failed", "id", env.ID, "type", env.Type, "err", fin.Error)
 	} else {
 		d.log.Info("command finished", "id", env.ID, "type", env.Type, "ms", d.now().Sub(startedAt).Milliseconds())
 	}

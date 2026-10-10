@@ -31,5 +31,9 @@
     "commit": "3f2c1a9",
     "branch": "main",
     "trigger": "push"
-  }
+  },
+  "mask": [
+    "APP_KEY"
+  ],
+  "config_cache": true
 }

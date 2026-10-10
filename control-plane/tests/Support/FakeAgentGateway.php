@@ -16,6 +16,7 @@ use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Assert;
 
@@ -37,6 +38,9 @@ final class FakeAgentGateway implements AgentGateway
     /** @var array<string, string> server id => organization id (for emitted events) */
     private array $organizations = [];
 
+    /** @var array<string, \Closure(array<string, mixed>): array<string, mixed>> command type => result, for await() callers */
+    private array $answers = [];
+
     public function __construct(private readonly ProtocolSchemas $schemas) {}
 
     public static function install(): self
@@ -57,6 +61,18 @@ final class FakeAgentGateway implements AgentGateway
     public function available(string $serverId): self
     {
         unset($this->unavailable[$serverId]);
+
+        return $this;
+    }
+
+    /**
+     * Commands of $type finish at once with $result($payload) (what await() returns), for code that waits for an answer.
+     *
+     * @param  \Closure(array<string, mixed>): array<string, mixed>  $result
+     */
+    public function answer(string $type, \Closure $result): self
+    {
+        $this->answers[$type] = $result;
 
         return $this;
     }
@@ -107,6 +123,12 @@ final class FakeAgentGateway implements AgentGateway
             'output' => [],
         ];
 
+        if (isset($this->answers[$type])) {
+            $this->commands[$id]['status'] = CommandStatus::Succeeded;
+            $this->commands[$id]['result'] = ($this->answers[$type])($this->commands[$id]['payload']);
+            $this->commands[$id]['exit_code'] = 0;
+        }
+
         return $handle;
     }
 
@@ -156,6 +178,29 @@ final class FakeAgentGateway implements AgentGateway
     public function supports(string $type): bool
     {
         return $this->schemas->hasCommand($type);
+    }
+
+    public function forgetSecrets(CommandHandle|string $command, array $paths): bool
+    {
+        $id = $this->id($command);
+
+        if (! isset($this->commands[$id]) || ! $this->commands[$id]['status']->isTerminal()) {
+            return false;
+        }
+
+        foreach ($paths as $path) {
+            // `*` stands for every element of a list (segments.*.encryption.key), like the real gateway.
+            [$head, $tail] = str_contains($path, '.*.') ? explode('.*.', $path, 2) : [$path, null];
+            $concrete = $tail === null ? [$path] : array_map(fn ($key) => "{$head}.{$key}.{$tail}", array_keys((array) Arr::get($this->commands[$id]['payload'], $head, [])));
+
+            foreach ($concrete as $one) {
+                if (Arr::has($this->commands[$id]['payload'], $one)) {
+                    Arr::set($this->commands[$id]['payload'], $one, '[forgotten]');
+                }
+            }
+        }
+
+        return true;
     }
 
     // ---- simulation helpers -------------------------------------------------------------------

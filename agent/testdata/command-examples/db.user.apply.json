@@ -1,1 +1,1 @@
-{"engine": "mysql", "username": "shop", "password": "correct-horse-battery-staple", "host": "%", "grants": [{"database": "shop", "privileges": ["ALL PRIVILEGES"]}], "state": "present"}
+{"instance": "01hzyinst00000000000000001", "engine": "mysql", "username": "shop", "password": "u-s3cret", "host": "%", "grants": [{"database": "shop", "privileges": ["SELECT", "INSERT"]}], "state": "present"}

@@ -1,0 +1,1 @@
+{"volumes":[{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},{"id":"01j9z8y7x6w5v4t3s2r1q0p9nb","kind":"docker","name":"shop_pgdata"},{"id":"01j9z8y7x6w5v4t3s2r1q0p9nc","kind":"shared_path","path":"/srv/falak/sites/shop/shared/storage"}],"docker":true}

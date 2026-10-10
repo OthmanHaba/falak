@@ -2,10 +2,10 @@ name: agent
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**"]
     paths: ['agent/**', 'contracts/**', 'runtimes/**', '.github/workflows/agent.yml']
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
     paths: ['agent/**', 'contracts/**', 'runtimes/**', '.github/workflows/agent.yml']
 
 defaults:

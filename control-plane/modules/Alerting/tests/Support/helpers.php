@@ -46,6 +46,12 @@ function alerting_rule(string $organizationId, array $types = ['*'], array $chan
     return $rule;
 }
 
+/** Deletes the organization's default rule pack (tests of routing through explicit rules only). */
+function alerting_without_default_pack(string $organizationId): void
+{
+    Rule::query()->where('organization_id', $organizationId)->whereNotNull('pack_key')->delete();
+}
+
 function alerting_issue_opened(string $organizationId, string $issueId = '01JISSUE000000000000000001', string $priority = 'none'): IssueOpened
 {
     return new IssueOpened($issueId, $organizationId, '01JSITE0000000000000000001', null, 'exception', 'RuntimeException: boom', 'App\\Http\\Controllers\\Foo@bar', $priority, "/insights/issues/{$issueId}");

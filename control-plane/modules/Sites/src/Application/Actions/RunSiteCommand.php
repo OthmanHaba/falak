@@ -6,6 +6,7 @@ use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteCommand;
 use Falak\Sites\Infrastructure\CommandPayloads;
@@ -21,6 +22,7 @@ final class RunSiteCommand
     public function __construct(
         private readonly AgentGateway $agents,
         private readonly AuditLog $audit,
+        private readonly SecretVariables $secrets,
     ) {}
 
     public function __invoke(Site $site, ?string $serverId, string $command, ?string $userId, string $auditAction = 'site.command_run'): SiteCommand
@@ -38,12 +40,15 @@ final class RunSiteCommand
         }
 
         $env = SiteVariables::for($site, $serverId);
+        $stored = $site->environmentVersions()->first()->variables ?? [];
+        $mask = array_values(array_unique([...$this->secrets->names($stored), ...$this->secrets->names($env)]));
+        sort($mask);
 
         try {
             $handle = $this->agents->dispatch(
                 $serverId,
                 'system.exec',
-                CommandPayloads::exec($site, $command, $env),
+                CommandPayloads::exec($site, $command, $env, $mask),
                 (int) config('sites.command_timeout', 600),
                 "sites.command:{$site->id}:".Str::ulid(),
             );

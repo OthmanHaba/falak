@@ -92,7 +92,7 @@ it('serves the database panel as JSON with users, backups and connection info bu
     $response = $this->getJson("/databases/databases/{$database->id}")->assertOk()
         ->assertJsonPath('data.database.name', 'shop-db')
         ->assertJsonPath('data.users.0.id', $user->id)
-        ->assertJsonPath('data.server.engine', 'postgresql')
+        ->assertJsonPath('data.instance.engine', 'postgresql')
         ->assertJsonPath('data.can.reveal', true)
         ->assertJsonStructure(['data' => ['connection' => ['driver', 'port', 'hosts'], 'schedules', 'backups', 'restores', 'storage_providers', 'restore_targets', 'options']]);
 
@@ -110,12 +110,12 @@ it('serves the create picker options as JSON', function () {
         ->assertJsonStructure(['data' => ['options' => ['frameworks', 'runtimes', 'connections'], 'can_manage_source_control']]);
 });
 
-it('lists engine servers as JSON for the create picker', function () {
+it('lists database containers and the create options as JSON for the create picker', function () {
     projects_database($this->organization, 'shop-db');
 
     $this->getJson('/databases')->assertOk()
         ->assertJsonPath('data.0.engine', 'postgresql')
-        ->assertJsonStructure(['data' => [['id', 'server_id', 'server_name', 'engine', 'engine_label', 'version']]]);
+        ->assertJsonStructure(['data' => [['id', 'name', 'server_id', 'server_name', 'engine', 'engine_label', 'version', 'memory_mb', 'status']], 'options' => ['engines', 'servers']]);
 });
 
 it('deletes the site behind a service after typing its name', function () {

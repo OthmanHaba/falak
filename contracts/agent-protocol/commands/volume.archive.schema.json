@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/volume.archive.schema.json",
+  "title": "volume.archive — a consistent tar snapshot of a volume, compressed and encrypted (FKB1: zstd, AES-256-GCM), PUT to a presigned URL (servers never hold storage credentials)",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "volume",
+    "encryption",
+    "destination"
+  ],
+  "properties": {
+    "volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$",
+          "description": "The volume's id (lower-case ULID)"
+        },
+        "kind": {
+          "enum": [
+            "docker",
+            "sized",
+            "bind",
+            "shared_path"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+          "description": "docker: the Docker volume's name"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[^\\x00]*$",
+          "maxLength": 4096,
+          "description": "bind: the host path (within the agent's FALAK_VOLUME_BIND_ALLOW); shared_path: the site's shared path (under the sites root). sized volumes live at /var/lib/falak/volumes/<id>"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "docker"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "bind",
+                  "shared_path"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    "consistency": {
+      "enum": [
+        "none",
+        "pause",
+        "stop"
+      ],
+      "default": "none",
+      "description": "What happens to running containers that mount the volume while it is read: nothing, docker pause (seconds), or stop and start again"
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "const": "presigned_url"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "keep_stopped": {
+      "type": "boolean",
+      "default": false,
+      "description": "consistency stop only: the stopped containers stay stopped after a successful upload (a move redeploys them on the target); a failed upload starts them again"
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "keep_stopped": {
+            "const": true
+          }
+        },
+        "required": [
+          "keep_stopped"
+        ]
+      },
+      "then": {
+        "required": [
+          "consistency"
+        ],
+        "properties": {
+          "consistency": {
+            "const": "stop"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size_bytes",
+        "sha256",
+        "location",
+        "plaintext_sha256",
+        "encryption",
+        "key_id"
+      ],
+      "properties": {
+        "size_bytes": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "location": {
+          "type": "string"
+        },
+        "uncompressed_bytes": {
+          "type": "integer"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Containers paused or stopped while the volume was read"
+        },
+        "plaintext_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "the plaintext's SHA-256 (authenticated in the file's trailer)"
+        },
+        "encryption": {
+          "enum": [
+            "cp",
+            "age"
+          ]
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "cipher": {
+          "const": "aes-256-gcm"
+        },
+        "compression": {
+          "const": "zstd"
+        }
+      }
+    },
+    "encryption": {
+      "description": "FKB1 (docs/BACKUPS.md): zstd, then AES-256-GCM in 64 KiB segments with a random 32-byte data key per backup. cp: the control plane generated the key (wrapped under the organization's key on its side) and sends it here; age: the agent generates it and stores it in the file's header, encrypted to the customer's X25519 recipient (the control plane never sees it)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "recipient"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "recipient": {
+              "type": "string",
+              "pattern": "^age1[02-9ac-hj-np-z]{58}$",
+              "description": "the customer's age X25519 recipient (public key)"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

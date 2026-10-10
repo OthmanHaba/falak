@@ -36,6 +36,10 @@ final class UpdateDeploySettings
             'health_retry_delay_s' => (int) $data['health_retry_delay_s'],
         ]);
 
+        if (isset($data['secrets_mode'])) {
+            $settings->secrets_mode = $data['secrets_mode'] === SiteSettings::SECRETS_FILES ? SiteSettings::SECRETS_FILES : SiteSettings::SECRETS_ENV;
+        }
+
         $changed = array_keys($settings->getDirty());
         $settings->save();
 

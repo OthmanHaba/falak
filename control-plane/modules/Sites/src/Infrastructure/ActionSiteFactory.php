@@ -8,9 +8,12 @@ use Falak\Sites\Application\Actions\DuplicateSite;
 use Falak\Sites\Application\OctanePorts;
 use Falak\Sites\Contracts\Data\CreatedSite;
 use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
+use Falak\Volumes\Contracts\ServiceVolumes;
+use Falak\Volumes\Contracts\VolumeMounts;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -36,15 +39,15 @@ final class ActionSiteFactory implements SiteFactory
         }
 
         $create = app(CreateSite::class);
-        $site = (new DuplicateSite($create, app(OctanePorts::class)))($source, $overrides, $placement, $userId);
+        $site = (new DuplicateSite($create, app(OctanePorts::class), app(ServiceVolumes::class), app(VolumeMounts::class), app(SecretVariables::class)))($source, $overrides, $placement, $userId);
 
         return new CreatedSite($site->toData(), array_values($create->warnings));
     }
 
-    public function delete(string $siteId, bool $deleteVolumes = false): void
+    public function delete(string $siteId, array $deleteVolumeIds = [], ?string $actorId = null): void
     {
         if ($site = Site::query()->find(strtolower($siteId))) {
-            app(DeleteSite::class)($site, deleteVolumes: $deleteVolumes);
+            app(DeleteSite::class)($site, deleteVolumeIds: $deleteVolumeIds, actorId: $actorId);
         }
     }
 }

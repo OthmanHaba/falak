@@ -2,6 +2,7 @@
 
 namespace Falak\SourceControl\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -44,9 +45,9 @@ class GitHubApp extends Model
     protected function casts(): array
     {
         return [
-            'client_secret' => 'encrypted',
-            'webhook_secret' => 'encrypted',
-            'private_key' => 'encrypted',
+            'client_secret' => Sealed::class,
+            'webhook_secret' => Sealed::class,
+            'private_key' => Sealed::class,
             'last_delivery_at' => 'datetime',
         ];
     }

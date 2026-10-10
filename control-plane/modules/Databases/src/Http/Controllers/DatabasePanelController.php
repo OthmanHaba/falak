@@ -2,14 +2,12 @@
 
 namespace Falak\Databases\Http\Controllers;
 
+use Falak\Databases\Application\Actions\UpdateInstance;
 use Falak\Databases\Application\ConnectionInfo;
-use Falak\Databases\Application\KeyValue\KeyValueSettings;
-use Falak\Databases\Application\KeyValue\UpdateKeyValueSettings;
-use Falak\Databases\Domain\Enums\Compression;
+use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Domain\Models\StorageProvider;
@@ -23,8 +21,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * One database as a canvas service (UI_DESIGN §5.4): JSON for the database panel's tabs; a browser visit opens
- * the panel (or the engine page while the database is not placed in a project).
+ * One database as a canvas service (UI_DESIGN §5.4): JSON for the database panel's tabs, with its container
+ * (instance); a browser visit opens the panel (or the container's page while the database is not placed in a project).
  */
 final class DatabasePanelController extends Controller
 {
@@ -32,25 +30,25 @@ final class DatabasePanelController extends Controller
 
     public function __construct(private readonly OrganizationAccess $access) {}
 
-    public function show(Request $request, Database $database, ConnectionInfo $connection, ProjectDirectory $projects, KeyValueSettings $settings): JsonResponse|RedirectResponse
+    public function show(Request $request, Database $database, ConnectionInfo $connection, ProjectDirectory $projects): JsonResponse|RedirectResponse
     {
         $this->authorize('view', $database);
 
         if (! $request->wantsJson() || $request->header('X-Inertia') !== null) {
-            return redirect($projects->serviceUrl(ServiceKind::Database, $database->id) ?? "/databases/servers/{$database->database_server_id}");
+            return redirect($projects->serviceUrl(ServiceKind::Database, $database->id) ?? "/databases/instances/{$database->database_instance_id}");
         }
 
-        $server = DatabaseServer::query()->findOrFail($database->database_server_id);
+        $instance = $database->instance;
         $user = $request->user();
         $organizationId = $database->organization_id;
 
         $users = DatabaseUser::query()->with('grants.database')
-            ->where('database_server_id', $server->id)
+            ->where('database_instance_id', $instance->id)
             ->whereHas('grants', fn ($q) => $q->where('database_id', $database->id))
             ->orderBy('created_at')->orderBy('id')->get();
 
         $schedules = BackupSchedule::query()->with(['databases', 'storageProvider'])
-            ->where('database_server_id', $server->id)
+            ->where('database_instance_id', $instance->id)
             ->whereHas('databases', fn ($q) => $q->whereKey($database->id))
             ->orderBy('name')->get();
 
@@ -60,28 +58,29 @@ final class DatabasePanelController extends Controller
 
         $restores = Restore::query()->with('backup')
             ->where(fn ($q) => $q
-                ->where(fn ($q) => $q->where('database_server_id', $server->id)->where('database_name', $database->name))
+                ->where(fn ($q) => $q->where('database_instance_id', $instance->id)->where('database_name', $database->name))
                 ->orWhereIn('backup_id', $backups->pluck('id')))
             ->latest()->orderByDesc('id')->limit(20)->get();
 
         return response()->json(['data' => [
             'database' => $this->presentDatabase($database),
-            'server' => $this->presentServer($server),
-            'connection' => $connection->for($server, $database),
+            'instance' => $this->presentInstance($instance),
+            'connection' => $connection->for($instance),
             'users' => $users->map(fn (DatabaseUser $dbUser) => $this->presentUser($dbUser))->values(),
             'schedules' => $schedules->map(fn (BackupSchedule $schedule) => $this->presentSchedule($schedule))->values(),
             'backups' => $backups->map(fn (Backup $backup) => $this->presentBackup($backup))->values(),
             'restores' => $restores->map(fn (Restore $restore) => $this->presentRestore($restore))->values(),
             'storage_providers' => StorageProvider::query()->where('organization_id', $organizationId)->orderBy('name')->get(['id', 'name', 'driver', 'bucket'])
                 ->map(fn (StorageProvider $provider) => ['id' => $provider->id, 'name' => $provider->name, 'driver' => $provider->driver->value, 'bucket' => $provider->bucket])->values(),
-            'restore_targets' => $this->restoreTargets($server),
+            'restore_targets' => $this->restoreTargets($instance),
             'options' => [
-                'privileges' => $server->engine->privileges(),
-                'versions' => array_values((array) config("databases.versions.{$server->engine->value}", [])),
-                'compressions' => array_map(fn (Compression $c) => $c->value, Compression::cases()),
-                'evictions' => $server->engine->isKeyValue() ? array_values((array) config('databases.key_value.evictions', [])) : [],
-                'persistences' => $server->engine->isKeyValue() ? array_values((array) config('databases.key_value.persistences', [])) : [],
-                'max_memory_mb' => $server->engine->isKeyValue() ? $settings->maxMemoryMb($server->server_id) : null,
+                'privileges' => $instance->engine->privileges(),
+                'versions' => array_values(array_filter($instance->engine->versions(), fn (string $version) => version_compare($version, $instance->version, '>='))),
+                'drill_servers' => $this->drillServers($instance),
+                'evictions' => $instance->engine->isKeyValue() ? UpdateInstance::EVICTIONS : [],
+                'persistences' => $instance->engine->isKeyValue() ? UpdateInstance::PERSISTENCES : [],
+                'min_memory_mb' => intdiv($instance->engine->minMemory(), 1024 ** 2),
+                'upgradable' => $instance->status === InstanceStatus::Active,
             ],
             'can' => [
                 'manage' => $this->access->can($user, $organizationId, DatabasesPolicy::MANAGE),
@@ -90,25 +89,5 @@ final class DatabasePanelController extends Controller
                 'manage_storage' => $this->access->can($user, $organizationId, DatabasesPolicy::STORAGE),
             ],
         ]]);
-    }
-
-    /**
-     * PUT /databases/databases/{database}/settings {maxmemory_mb?, eviction?, persistence?} — Redis / Valkey instances.
-     */
-    public function settings(Request $request, Database $database, UpdateKeyValueSettings $update): RedirectResponse|JsonResponse
-    {
-        $this->authorize('manage', $database);
-
-        $data = $request->validate([
-            'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
-            'eviction' => ['nullable', 'string', 'max:32'],
-            'persistence' => ['nullable', 'string', 'max:8'],
-        ]);
-
-        $database = $update($database, $data);
-
-        return $request->wantsJson() && $request->header('X-Inertia') === null
-            ? response()->json(['data' => $this->presentDatabase($database)])
-            : back();
     }
 }

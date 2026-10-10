@@ -128,6 +128,13 @@
               "otlp": {
                 "type": "boolean",
                 "default": true
+              },
+              "max_files": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 1,
+                "description": "Rotated files kept (<log>.1 … <log>.N)"
               }
             }
           },
@@ -135,6 +142,77 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
             "description": "Site slug (directory name under /srv/falak/sites)"
+          },
+          "mask": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "uniqueItems": true,
+            "description": "Names of the secret variables of env: their values are masked (••••) in the program's log files and OTLP log records, and kept on the tmpfs, never in the agent's proc.json; after a reboot the program waits (heartbeat missing_secrets) until proc.apply sends it again."
+          },
+          "slice": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,80}$",
+            "description": "Runs every instance in this slice of `slices` (a transient scope falak-proc-<name>-<i>.scope via systemd-run; setpriv drops to `user`); omitted = the agent's own cgroup"
+          },
+          "oom_score_adj": {
+            "type": "integer",
+            "minimum": -1000,
+            "maximum": 1000,
+            "default": 0,
+            "description": "OOM preference of the instances (negative = killed last)"
+          },
+          "max_restarts": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "After this many restarts in a row that never reached start_seconds, the instance stops in state fatal (0 = keep restarting)"
+          }
+        }
+      }
+    },
+    "slices": {
+      "type": "array",
+      "maxItems": 1000,
+      "description": "The full desired set of Falak slices (resource limits of programs and of sites' own PHP-FPM masters). Written to /etc/systemd/system/falak-<name>.slice and applied live (systemctl set-property --runtime) before the programs converge; managed slices not listed are removed afterwards (an active one only loses its limits). An invalid slice is skipped and reported in the result's slice_errors, never the whole set.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,80}$",
+            "description": "Slice key: the unit is falak-<name>.slice under falak.slice (no dashes: a dash nests a slice under another)"
+          },
+          "memory_max_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "MemoryMax= (hard limit; swap off on top of it)"
+          },
+          "memory_high_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "MemoryHigh= (throttled and reclaimed above it)"
+          },
+          "memory_low_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "MemoryLow= (protected from reclaim: the reservation)"
+          },
+          "cpu_quota_percent": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "CPUQuota= (100 = one CPU)"
+          },
+          "tasks_max": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "TasksMax="
           }
         }
       }
@@ -175,6 +253,20 @@
           "items": {
             "type": "string"
           }
+        },
+        "slices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Slices whose limits changed (applied live) or that were removed"
+        },
+        "slice_errors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Slices skipped (invalid limits, a duplicate, set-property failed, or not declared), by name: their programs run without them and a failed slice keeps its previous unit. The other slices and every program are applied."
         }
       }
     }

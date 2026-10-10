@@ -36,7 +36,7 @@ function fn_world(Role $role = Role::Owner): array
     $world = deploy_world(site: [
         'name' => 'Hooks', 'runtime' => 'function', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null,
         'repository' => null, 'source_connection_id' => null, 'branch' => null, 'deploy_script' => '', 'health_check_path' => null,
-        'laravel' => [], 'shared_paths' => [],
+        'laravel' => [],
     ], role: $role);
     fn_agent($world->servers[0]->id, $world->organization->id);
     $function = app(FunctionStore::class)->ensure(app(SiteDirectory::class)->find($world->site->id));
@@ -496,4 +496,13 @@ it('sends test requests to the function’s own URL only', function () {
 
     // Absolute URLs or other hosts cannot be requested.
     $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'GET', 'path' => 'https://internal.example/'])->assertUnprocessable();
+});
+
+it('names the function secrets in fn.release.apply so the agent masks them', function () {
+    [$world, $function] = fn_world();
+    $this->postJson(fn_url($world->site, '/deploy'), ['files' => ['index.ts' => FN_V2], 'base_version_id' => $function->head()->id])->assertCreated();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect($apply['env']['APP_KEY'])->toBe('base64:secret')
+        ->and($apply['mask'])->toBe(['APP_KEY']);
 });

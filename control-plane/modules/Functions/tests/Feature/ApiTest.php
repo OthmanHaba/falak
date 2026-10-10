@@ -25,7 +25,7 @@ function fn_api_world(array $abilities = ['*']): array
     $world = deploy_world(site: [
         'name' => 'Hooks', 'runtime' => 'function', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null,
         'repository' => null, 'source_connection_id' => null, 'branch' => null, 'deploy_script' => '', 'health_check_path' => null,
-        'laravel' => [], 'shared_paths' => [],
+        'laravel' => [],
     ], actingAs: false);
     Agent::factory()->create(['server_id' => $world->servers[0]->id, 'organization_id' => $world->organization->id, 'facts' => ['features' => ['fn.v1']]]);
     $function = app(FunctionStore::class)->ensure(app(SiteDirectory::class)->find($world->site->id));

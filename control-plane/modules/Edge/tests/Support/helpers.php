@@ -67,9 +67,7 @@ function edge_server(FakeServerDirectory $servers, string $organizationId, array
         'defaultPhpVersion' => '8.4',
         'phpRuntime' => 'frankenphp',
         'nodeVersion' => null,
-        'databaseEngine' => null,
-        'cacheEngine' => null,
-        'docker' => false,
+        'docker' => true,
         'unixUser' => 'falak',
     ], $overrides);
 
@@ -111,7 +109,6 @@ function edge_site(FakeSiteDirectory $sites, string $organizationId, array $serv
         'deployScript' => '',
         'laravel' => new LaravelSettings,
         'testDomain' => null,
-        'sharedPaths' => [],
         'targets' => array_map(fn (string $serverId, int $i) => new SiteTargetData(
             (string) Str::ulid(), $id, $serverId, $i === 0 ? TargetRole::Leader : TargetRole::Member, TargetStatus::Ready,
         ), $serverIds, array_keys($serverIds)),

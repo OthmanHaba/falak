@@ -1,0 +1,9 @@
+{
+  "site": "shop",
+  "memory_bytes": 536870912,
+  "memory_reservation_bytes": 268435456,
+  "cpus": 1.5,
+  "pids_limit": 512,
+  "restart_policy": "on-failure",
+  "max_restarts": 5
+}
