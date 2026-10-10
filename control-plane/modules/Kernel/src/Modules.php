@@ -35,6 +35,7 @@ final class Modules
         'Alerting',
         'Security',
         'Terminal',
+        'Recovery',
     ];
 
     /** Namespaces that are private to a module. */

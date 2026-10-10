@@ -94,7 +94,21 @@ export interface SettingsNavItem {
     permission?: string;
     /** Only shown when the user has a current organization. */
     requiresOrganization?: boolean;
+    /** Extra condition on the shell context (e.g. a shared prop only some organizations get). */
+    when?: (ctx: ShellContext) => boolean;
     keywords?: string[];
+}
+
+/**
+ * A notice above every page of the app shell (e.g. Recovery's "set up disaster recovery" for the install's admins).
+ * The component decides itself whether it renders (from shared props).
+ */
+export interface ShellBanner {
+    id: string;
+    /** Lower comes first. */
+    order: number;
+    permission?: string;
+    component: ComponentType;
 }
 
 /**
@@ -423,6 +437,16 @@ export function headerItemsFor(ctx: ShellContext): HeaderItem[] {
     return [...headerItems.values()].filter((item) => !item.permission || ctx.can(item.permission)).sort((a, b) => a.order - b.order);
 }
 
+const shellBanners = new Map<string, ShellBanner>();
+
+export function registerShellBanners(...banners: ShellBanner[]): void {
+    banners.forEach((banner) => shellBanners.set(banner.id, banner));
+}
+
+export function shellBannersFor(ctx: ShellContext): ShellBanner[] {
+    return [...shellBanners.values()].filter((banner) => !banner.permission || ctx.can(banner.permission)).sort((a, b) => a.order - b.order);
+}
+
 export function registerSettingsNav(...items: SettingsNavItem[]): void {
     items.forEach((item) => settingsItems.set(item.id, item));
 }
@@ -431,7 +455,10 @@ export function settingsNavFor(ctx: ShellContext): SettingsNavItem[] {
     const hasOrganization = Boolean(ctx.props.organization?.current);
 
     return [...settingsItems.values()]
-        .filter((item) => (!item.permission || ctx.can(item.permission)) && (!item.requiresOrganization || hasOrganization))
+        .filter(
+            (item) =>
+                (!item.permission || ctx.can(item.permission)) && (!item.requiresOrganization || hasOrganization) && (!item.when || item.when(ctx)),
+        )
         .sort((a, b) => a.order - b.order);
 }
 
