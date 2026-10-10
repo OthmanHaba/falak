@@ -45,6 +45,7 @@ final class HistoryController extends Controller
                 'severity' => $alert->severity->value,
                 'title' => $alert->title,
                 'body' => $alert->body,
+                'detail' => $alert->detail,
                 'url' => $alert->url,
                 'action' => $alert->action,
                 'recovery' => $alert->recovery,

@@ -77,6 +77,8 @@ export interface AlertRow {
     url: string | null;
     /** Suggested fix label for url ("Grow volume"). */
     action: string | null;
+    /** In-app only details (never sent to channels). */
+    detail: string | null;
     recovery: boolean;
     outcome: string;
     created_at: string;

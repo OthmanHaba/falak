@@ -125,3 +125,44 @@ it('carries the suggested fix: the alert\'s own, else its type\'s, only with a l
     $slack = Http::recorded(fn (Request $r) => str_contains($r->url(), 'hooks.slack.com'))->first()[0];
     expect(json_encode($slack->data()))->toContain('Suggested fix: Grow volume');
 });
+
+it('changes nothing between the thresholds (hysteresis)', function () {
+    $key = 'servers.disk:s1:warning:abc';
+    $this->conditions->observe($this->organization->id, $key, true, $this->alert);
+    $this->conditions->observe($this->organization->id, $key, null, $this->alert);
+    $this->conditions->observe($this->organization->id, $key, null, $this->alert);
+
+    expect(Alert::query()->count())->toBe(1)->and(Condition::query()->count())->toBe(1);
+
+    // Before it is raised, the band keeps the clock running.
+    $this->conditions->observe($this->organization->id, 'other', true, $this->alert, forSeconds: 300);
+    $this->travel(3)->minutes();
+    $this->conditions->observe($this->organization->id, 'other', null, $this->alert, forSeconds: 300);
+    $this->travel(3)->minutes();
+    $this->conditions->observe($this->organization->id, 'other', true, $this->alert, forSeconds: 300);
+    expect(Alert::query()->count())->toBe(2);
+});
+
+it('matches clearExcept prefixes literally, wildcards included', function () {
+    $this->conditions->observe($this->organization->id, 'a_b:1', true, $this->alert);
+    $this->conditions->observe($this->organization->id, 'axb:1', true, $this->alert);
+    $this->conditions->observe($this->organization->id, 'a%b:1', true, $this->alert);
+
+    $this->conditions->clearExcept($this->organization->id, 'a_b:');
+
+    expect(Condition::query()->orderBy('key')->pluck('key')->all())->toBe(['a%b:1', 'axb:1']);
+});
+
+it('keeps details and credentials away from third-party channels', function () {
+    app(Alerts::class)->raise(new AlertData($this->organization->id, 'databases.storage_unreachable', Severity::Critical, 'Storage Backups is unreachable',
+        'Backups fail until it answers again.', '/settings/storage',
+        detail: 'PUT https://admin:hunter22@minio.local/b/k?X-Amz-Credential=AKIA123&X-Amz-Signature=deadbeef failed: 403'));
+
+    $alert = Alert::query()->sole();
+    $slack = json_encode(Http::recorded(fn (Request $r) => str_contains($r->url(), 'hooks.slack.com'))->first()[0]->data());
+    $notification = Notification::query()->where('user_id', $this->owner->id)->sole();
+
+    expect($slack)->toContain('Backups fail until it answers again.')->not->toContain('minio.local')->not->toContain('403')
+        ->and($alert->detail)->toBe('PUT https://***@minio.local/b/k?X-Amz-Credential=***&X-Amz-Signature=*** failed: 403')
+        ->and($notification->body)->toContain('minio.local')->not->toContain('hunter22')->not->toContain('deadbeef');
+});

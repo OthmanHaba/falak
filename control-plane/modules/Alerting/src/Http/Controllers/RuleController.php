@@ -49,6 +49,8 @@ final class RuleController extends Controller
                 ->map(fn (Channel $channel) => ['id' => $channel->id, 'name' => $channel->name, 'type' => $channel->type->value, 'enabled' => $channel->enabled])->values(),
             // No channel yet: the default pack only notifies in-app (the page prompts to add one).
             'hasChannel' => Channel::query()->where('organization_id', $organizationId)->exists(),
+            // Channels but none is the default (several when alerting coverage arrived): the page asks to pick one.
+            'defaultChannel' => Channel::query()->where('organization_id', $organizationId)->where('is_default', true)->value('name'),
             // The default rule pack's areas (rules with a pack_key), in the registry's group order.
             'packAreas' => collect($pack->areas())->map(fn (array $area, string $key) => ['key' => $key, 'group' => $area['group'], 'patterns' => $area['patterns']])->values(),
             'alertTypes' => collect($types->all())->map(fn (array $type) => [...$type, 'severity' => $type['severity']->value])->values(),

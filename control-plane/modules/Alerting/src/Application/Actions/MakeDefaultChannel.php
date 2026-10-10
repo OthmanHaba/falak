@@ -21,6 +21,7 @@ final class MakeDefaultChannel
     public function __invoke(Channel $channel): void
     {
         DB::transaction(function () use ($channel) {
+            Channel::query()->where('organization_id', $channel->organization_id)->lockForUpdate()->get(['id']);
             Channel::query()->where('organization_id', $channel->organization_id)->whereKeyNot($channel->id)->update(['is_default' => false]);
             $channel->forceFill(['is_default' => true])->save();
         });

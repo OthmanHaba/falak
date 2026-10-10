@@ -39,7 +39,7 @@ final class InAppNotifier
                 'type' => $alert->type,
                 'severity' => $alert->severity,
                 'title' => $alert->recovery ? "Resolved: {$alert->title}" : $alert->title,
-                'body' => $alert->body,
+                'body' => trim(implode("\n\n", array_filter([$alert->body, $alert->detail]))) ?: null,
                 'url' => $alert->url,
                 'action' => $alert->action,
             ]);

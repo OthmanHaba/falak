@@ -22,10 +22,11 @@ interface AlertConditions
      * @param  Closure(): AlertData  $alert  built only when it is raised; its dedup key is replaced by $key
      * @param  (Closure(): AlertData)|null  $recovery  built when a raised condition clears (default: the alert's type and
      *                                                 title at Info, "no longer holds")
+     * @param  bool|null  $holds  null: in the band between raising and resolving (hysteresis), nothing changes
      * @param  bool  $announceRecovery  false: a raised condition clears silently (a stage of a condition another key
      *                                  announces the end of, e.g. "expires in 7 days" after "expires in 14 days")
      */
-    public function observe(string $organizationId, string $key, bool $holds, Closure $alert, ?Closure $recovery = null, int $forSeconds = 0, bool $announceRecovery = true): void;
+    public function observe(string $organizationId, string $key, ?bool $holds, Closure $alert, ?Closure $recovery = null, int $forSeconds = 0, bool $announceRecovery = true): void;
 
     /**
      * Clears the organization's conditions under $prefix that are not in $keep (things that disappeared, e.g. an

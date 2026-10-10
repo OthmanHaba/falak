@@ -37,24 +37,35 @@ final class DefaultRulePack
      */
     public function areas(): array
     {
-        $areas = [];
+        $groups = [];
 
         foreach ($this->types->all() as $type) {
-            if (! $type['severity']->atLeast(self::MIN_SEVERITY)) {
-                continue;
+            if ($type['severity']->atLeast(self::MIN_SEVERITY)) {
+                $groups[$type['group']][] = Str::before($type['type'], '.');
             }
-
-            $key = self::key($type['group']);
-            $areas[$key]['group'] = $type['group'];
-            $areas[$key]['patterns'][] = Str::before($type['type'], '.').'.*';
         }
 
-        return array_map(fn (array $area) => ['group' => $area['group'], 'patterns' => array_values(array_unique($area['patterns']))], $areas);
+        $areas = [];
+
+        foreach ($groups as $group => $prefixes) {
+            $areas[self::key($prefixes)] = ['group' => $group, 'patterns' => array_values(array_unique(array_map(fn (string $prefix) => "{$prefix}.*", $prefixes)))];
+        }
+
+        return $areas;
     }
 
-    public static function key(string $group): string
+    /**
+     * An area's machine key: its main type prefix (the one most of its types share; ties: alphabetical), so renaming a
+     * group's label keeps the area, e.g. "area:databases", "area:dr".
+     *
+     * @param  list<string>  $prefixes  one per type
+     */
+    public static function key(array $prefixes): string
     {
-        return 'area:'.Str::slug($group);
+        $counts = array_count_values($prefixes);
+        uksort($counts, fn (string $a, string $b) => [$counts[$b], $a] <=> [$counts[$a], $b]);
+
+        return 'area:'.array_key_first($counts);
     }
 
     public function applyAll(): void
@@ -84,11 +95,12 @@ final class DefaultRulePack
     }
 
     /**
-     * Routes the pack's rules that have no channel yet (in-app only) to $channel: the organization's first channel.
+     * Routes the pack's rules that have no channel yet (in-app only) and nobody edited to $channel: the organization's
+     * default channel.
      */
     public function attachDefaultChannel(Channel $channel): void
     {
-        Rule::query()->where('organization_id', $channel->organization_id)->whereNotNull('pack_key')->whereDoesntHave('channels')->get()
+        Rule::query()->where('organization_id', $channel->organization_id)->whereNotNull('pack_key')->where('user_modified', false)->whereDoesntHave('channels')->get()
             ->each(fn (Rule $rule) => $rule->channels()->syncWithoutDetaching([$channel->id]));
     }
 

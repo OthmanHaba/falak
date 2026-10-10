@@ -17,6 +17,8 @@ return new class extends Migration
     {
         Schema::table('alerting_alerts', function (Blueprint $table) {
             $table->string('action', 100)->nullable()->after('url');
+            // In-app only (history, notification center): never sent to third-party channels.
+            $table->text('detail')->nullable()->after('body');
         });
 
         Schema::table('alerting_notifications', function (Blueprint $table) {
@@ -29,6 +31,8 @@ return new class extends Migration
 
         Schema::table('alerting_rules', function (Blueprint $table) {
             $table->string('pack_key', 64)->nullable()->after('organization_id');
+            // A pack rule the user edited: the pack no longer routes it to a new default channel.
+            $table->boolean('user_modified')->default(false)->after('pack_key');
         });
 
         Schema::create('alerting_rule_packs', function (Blueprint $table) {
@@ -54,13 +58,10 @@ return new class extends Migration
             $table->unique(['organization_id', 'key']);
         });
 
-        // The oldest channel of each organization becomes its default.
-        $first = DB::table('alerting_channels')->select('organization_id', DB::raw('min(created_at) as created_at'))->groupBy('organization_id')->get();
-
-        foreach ($first as $row) {
-            $id = DB::table('alerting_channels')->where('organization_id', $row->organization_id)->where('created_at', $row->created_at)->orderBy('id')->value('id');
-            DB::table('alerting_channels')->where('id', $id)->update(['is_default' => true]);
-        }
+        // An organization with exactly one channel routes the pack to it; with several, nobody guessed which one is
+        // meant for alerts: the pack stays in-app until someone picks a default (the rules page asks).
+        $single = DB::table('alerting_channels')->select('organization_id')->groupBy('organization_id')->havingRaw('count(*) = 1')->pluck('organization_id');
+        DB::table('alerting_channels')->whereIn('organization_id', $single)->update(['is_default' => true]);
 
         app(DefaultRulePack::class)->applyAll();
     }
@@ -70,9 +71,9 @@ return new class extends Migration
         Schema::dropIfExists('alerting_conditions');
         Schema::dropIfExists('alerting_rule_packs');
 
-        Schema::table('alerting_rules', fn (Blueprint $table) => $table->dropColumn('pack_key'));
+        Schema::table('alerting_rules', fn (Blueprint $table) => $table->dropColumn(['pack_key', 'user_modified']));
         Schema::table('alerting_channels', fn (Blueprint $table) => $table->dropColumn('is_default'));
         Schema::table('alerting_notifications', fn (Blueprint $table) => $table->dropColumn('action'));
-        Schema::table('alerting_alerts', fn (Blueprint $table) => $table->dropColumn('action'));
+        Schema::table('alerting_alerts', fn (Blueprint $table) => $table->dropColumn(['action', 'detail']));
     }
 };

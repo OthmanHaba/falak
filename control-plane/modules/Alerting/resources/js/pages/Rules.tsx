@@ -37,6 +37,8 @@ interface Props {
     channels: ChannelOption[];
     /** The organization has at least one channel (else the default rules only notify in-app). */
     hasChannel: boolean;
+    /** Name of the default channel the default rules route to (null: none chosen). */
+    defaultChannel: string | null;
     /** Areas of the default rule pack (rules with a pack_key), in display order. */
     packAreas: PackArea[];
     alertTypes: AlertTypeOption[];
@@ -127,7 +129,7 @@ function DeliversTo({ rule }: { rule: RuleRow }) {
     );
 }
 
-export default function Rules({ rules: allRules, channels, hasChannel, packAreas, alertTypes, severities, timezones, can }: Props) {
+export default function Rules({ rules: allRules, channels, hasChannel, defaultChannel, packAreas, alertTypes, severities, timezones, can }: Props) {
     // The default pack is shown by area; "rules" below are the organization's own.
     const packRules = useMemo(() => new Map(allRules.filter((rule) => rule.pack_key).map((rule) => [rule.pack_key as string, rule])), [allRules]);
     const rules = useMemo(() => allRules.filter((rule) => !rule.pack_key), [allRules]);
@@ -255,6 +257,23 @@ export default function Rules({ rules: allRules, channels, hasChannel, packAreas
                 >
                     Add a channel (email, Slack, Discord, Telegram or a webhook): the default rules route to it, so a full disk or a failed backup
                     reaches you outside Falak.
+                </Callout>
+            )}
+
+            {hasChannel && defaultChannel === null && (
+                <Callout
+                    tone="warning"
+                    title="Choose a default channel"
+                    action={
+                        can.manage && (
+                            <Button asChild size="sm" variant="primary">
+                                <Link href={route('alerting.channels.index')}>Choose a channel</Link>
+                            </Button>
+                        )
+                    }
+                >
+                    The default rules only notify in-app until one of your channels is the default (Make default on the channels page). Rules you
+                    edited keep their own routing.
                 </Callout>
             )}
 

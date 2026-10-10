@@ -77,6 +77,7 @@ function AlertItem({ alert }: { alert: AlertRow }) {
             {open && (
                 <div className="bg-canvas border-border grid gap-3 border-t px-4 py-3 pl-14">
                     {alert.body && <p className="text-fg-muted text-sm whitespace-pre-wrap">{alert.body}</p>}
+                    {alert.detail && <p className="text-fg-muted font-mono text-xs whitespace-pre-wrap">{alert.detail}</p>}
                     <p className="text-fg-faint text-xs">Raised {format(new Date(alert.created_at), 'PP HH:mm:ss')}</p>
                     {alert.deliveries.length > 0 && (
                         <ul className="border-border divide-border divide-y rounded-md border">

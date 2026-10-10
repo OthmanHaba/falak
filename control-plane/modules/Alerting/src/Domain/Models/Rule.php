@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $organization_id
  * @property ?string $pack_key the default rule pack's area this rule was created for (DefaultRulePack); null: user rule
+ * @property bool $user_modified a pack rule someone edited (DefaultRulePack leaves its channels alone)
  * @property string $name
  * @property list<string> $event_types exact types, "group.*" prefixes or "*"
  * @property Severity $min_severity
@@ -39,6 +40,7 @@ class Rule extends Model
             'event_types' => 'array',
             'min_severity' => Severity::class,
             'enabled' => 'boolean',
+            'user_modified' => 'boolean',
             'quiet_hours' => 'array',
             'rate_limit_per_hour' => 'integer',
         ];

@@ -20,21 +20,35 @@ final class DatabaseAlertConditions implements AlertConditions
 
     public function __construct(private readonly Alerts $alerts) {}
 
-    public function observe(string $organizationId, string $key, bool $holds, Closure $alert, ?Closure $recovery = null, int $forSeconds = 0, bool $announceRecovery = true): void
+    public function observe(string $organizationId, string $key, ?bool $holds, Closure $alert, ?Closure $recovery = null, int $forSeconds = 0, bool $announceRecovery = true): void
     {
-        $holds ? $this->hold($organizationId, $key, $alert, $forSeconds) : $this->clear($organizationId, $key, $recovery, $announceRecovery);
+        match ($holds) {
+            true => $this->hold($organizationId, $key, $alert, $forSeconds),
+            false => $this->clear($organizationId, $key, $recovery, $announceRecovery),
+            null => $this->touch($organizationId, $key),
+        };
     }
 
     public function clearExcept(string $organizationId, string $prefix, array $keep = []): void
     {
-        // Filtered here rather than with LIKE: keys hold "_" and "%" freely (an organization has few conditions).
-        $stale = Condition::query()->where('organization_id', $organizationId)
-            ->pluck('key')
-            ->filter(fn (string $key) => str_starts_with($key, $prefix) && ! in_array($key, $keep, true));
+        // A prefix match on the (organization_id, key) index; "!" escapes LIKE's wildcards, which keys may hold.
+        $query = Condition::query();
+        $column = $query->getQuery()->getGrammar()->wrap('key');
+        $stale = $query->where('organization_id', $organizationId)
+            ->whereRaw("{$column} like ? escape '!'", [str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $prefix).'%'])
+            ->when($keep !== [], fn ($q) => $q->whereNotIn('key', $keep))
+            ->pluck('key');
 
         foreach ($stale as $key) {
             $this->clear($organizationId, (string) $key, null);
         }
+    }
+
+    /** Between the thresholds (hysteresis): no change, but the condition is still observed (pruning). */
+    private function touch(string $organizationId, string $key): void
+    {
+        Condition::query()->where('organization_id', $organizationId)->where('key', $key)
+            ->where('seen_at', '<', now()->subSeconds(self::TOUCH_SECONDS))->update(['seen_at' => now()]);
     }
 
     /**
@@ -75,6 +89,11 @@ final class DatabaseAlertConditions implements AlertConditions
      */
     private function clear(string $organizationId, string $key, ?Closure $recovery, bool $announce = true): void
     {
+        // Most observations clear nothing: a plain indexed lookup before the locking read.
+        if (! Condition::query()->where('organization_id', $organizationId)->where('key', $key)->exists()) {
+            return;
+        }
+
         $condition = DB::transaction(function () use ($organizationId, $key) {
             $condition = Condition::query()->where('organization_id', $organizationId)->where('key', $key)->lockForUpdate()->first();
             $condition?->delete();
@@ -137,6 +156,7 @@ final class DatabaseAlertConditions implements AlertConditions
             $resolves,
             $data->context,
             $data->action,
+            $data->detail,
         );
     }
 }

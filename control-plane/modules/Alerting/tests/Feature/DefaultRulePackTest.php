@@ -148,7 +148,7 @@ it('adds an area registered later (a new module group) to every organization', f
 
     app(DefaultRulePack::class)->apply($organization->id);
 
-    $dr = pack_rules($organization->id)->firstWhere('pack_key', 'area:disaster-recovery');
+    $dr = pack_rules($organization->id)->firstWhere('pack_key', 'area:dr');
     expect(pack_rules($organization->id))->toHaveCount($before + 1)
         ->and($dr->event_types)->toBe(['dr.*'])
         ->and(pack_rules($organization->id)->firstWhere('pack_key', 'area:servers')->event_types)->toContain('servers.*', 'extra.*');
@@ -190,4 +190,69 @@ it('keeps each organization to its own pack', function () {
     expect(Alert::query()->where('organization_id', $other->id)->count())->toBe(0)
         ->and(Delivery::query()->count())->toBe(0)
         ->and(Notification::query()->where('user_id', $otherOwner->id)->count())->toBe(0);
+});
+
+it('keys areas by their main type prefix, so a renamed group keeps its rule', function () {
+    expect(DefaultRulePack::key(['databases', 'pitr', 'databases']))->toBe('area:databases')
+        ->and(DefaultRulePack::key(['pitr', 'databases']))->toBe('area:databases')
+        ->and(DefaultRulePack::key(['dr']))->toBe('area:dr');
+
+    [, $organization] = memberOf();
+    $before = pack_rules($organization->id)->count();
+    app(AlertTypes::class)->register('servers.renamed_check', 'Check', 'Server health', Severity::Warning);
+    foreach (app(AlertTypes::class)->all() as $type) {
+        if ($type['group'] === 'Servers') {
+            app(AlertTypes::class)->register($type['type'], $type['label'], 'Server health', $type['severity'], $type['fix']);
+        }
+    }
+
+    app(DefaultRulePack::class)->apply($organization->id);
+
+    expect(pack_rules($organization->id))->toHaveCount($before)
+        ->and(collect(app(DefaultRulePack::class)->areas())->get('area:servers')['group'])->toBe('Server health');
+});
+
+it('never routes edited pack rules to a new default channel', function () {
+    [, $organization] = actingAsMember(Role::Admin);
+    $servers = pack_rules($organization->id)->firstWhere('pack_key', 'area:servers');
+    $this->put("/alerting/rules/{$servers->id}", [
+        'name' => 'Servers', 'event_types' => ['servers.*'], 'min_severity' => 'critical', 'enabled' => true, 'channel_ids' => [],
+    ])->assertSessionHasNoErrors();
+    expect($servers->refresh()->user_modified)->toBeTrue();
+
+    $this->post('/alerting/channels', ['name' => 'Ops', 'type' => 'slack', 'config' => ['webhook_url' => ALERTING_SLACK_URL]]);
+
+    expect($servers->channels()->count())->toBe(0)
+        ->and(pack_rules($organization->id)->where('user_modified', false)->every(fn (Rule $rule) => $rule->channels()->count() === 1))->toBeTrue();
+});
+
+it('asks to choose a default when several channels exist and none is the default', function () {
+    [, $organization] = actingAsMember(Role::Admin);
+    // As the migration leaves an organization that already had two channels.
+    alerting_channel($organization->id);
+    alerting_channel($organization->id);
+
+    $this->post('/alerting/channels', ['name' => 'Third', 'type' => 'slack', 'config' => ['webhook_url' => ALERTING_SLACK_URL]]);
+
+    expect(Channel::query()->where('organization_id', $organization->id)->where('is_default', true)->count())->toBe(0)
+        ->and(pack_rules($organization->id)->every(fn (Rule $rule) => $rule->channels()->count() === 0))->toBeTrue();
+    $this->get('/settings/alert-rules')->assertInertia(fn ($page) => $page->where('hasChannel', true)->where('defaultChannel', null));
+
+    $third = Channel::query()->where('name', 'Third')->sole();
+    $this->post("/alerting/channels/{$third->id}/default");
+    $this->get('/settings/alert-rules')->assertInertia(fn ($page) => $page->where('defaultChannel', 'Third'));
+});
+
+it('keeps one default when channels are deleted', function () {
+    [, $organization] = actingAsMember(Role::Admin);
+    foreach (['A', 'B', 'C'] as $name) {
+        $this->post('/alerting/channels', ['name' => $name, 'type' => 'slack', 'config' => ['webhook_url' => ALERTING_SLACK_URL]]);
+    }
+    $a = Channel::query()->where('name', 'A')->sole();
+    expect($a->is_default)->toBeTrue();
+
+    $this->delete("/alerting/channels/{$a->id}");
+    $this->delete('/alerting/channels/'.Channel::query()->where('name', 'C')->value('id'));
+
+    expect(Channel::query()->where('organization_id', $organization->id)->where('is_default', true)->pluck('name')->all())->toBe(['B']);
 });

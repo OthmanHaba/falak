@@ -52,7 +52,8 @@ final class SaveChannel
         ])->save();
 
         // The organization's first channel becomes its default: the default rule pack (in-app only so far) routes to it.
-        if ($created && ! Channel::query()->where('organization_id', $organizationId)->where('is_default', true)->exists()) {
+        // With several channels and no default, someone picks one (the rules page asks).
+        if ($created && Channel::query()->where('organization_id', $organizationId)->count() === 1) {
             $channel->forceFill(['is_default' => true])->save();
             $this->pack->attachDefaultChannel($channel);
         }
