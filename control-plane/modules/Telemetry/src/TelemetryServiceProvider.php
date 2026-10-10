@@ -23,6 +23,7 @@ use Falak\Telemetry\Application\Listeners\ProvisionGrafanaForOrganization;
 use Falak\Telemetry\Application\Listeners\ReconfigureAfterAgentUpgrade;
 use Falak\Telemetry\Application\Listeners\ReconfigureOnReleaseActivated;
 use Falak\Telemetry\Application\Listeners\ReconfigureOnSiteChanges;
+use Falak\Telemetry\Contracts\AccessLogCounts;
 use Falak\Telemetry\Contracts\AccessLogs;
 use Falak\Telemetry\Contracts\Annotations;
 use Falak\Telemetry\Contracts\LogsQuery;
@@ -35,6 +36,7 @@ use Falak\Telemetry\Infrastructure\AgentTelemetryConfigurator;
 use Falak\Telemetry\Infrastructure\DefaultTelemetryLinks;
 use Falak\Telemetry\Infrastructure\Grafana\GrafanaAnnotations;
 use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Falak\Telemetry\Infrastructure\LokiAccessLogCounts;
 use Falak\Telemetry\Infrastructure\LokiAccessLogs;
 use Falak\Telemetry\Infrastructure\LokiLogsQuery;
 use Falak\Telemetry\Infrastructure\Metrics\MimirBackend;
@@ -69,6 +71,7 @@ class TelemetryServiceProvider extends ModuleServiceProvider
         $this->app->bind(Annotations::class, GrafanaAnnotations::class);
         $this->app->bind(TelemetryConfigurator::class, AgentTelemetryConfigurator::class);
         $this->app->bind(AccessLogs::class, LokiAccessLogs::class);
+        $this->app->bind(AccessLogCounts::class, LokiAccessLogCounts::class);
 
         // Sites registers before Telemetry and binds its own ServerSites; only fill the gap.
         $this->app->singletonIf(ServerSites::class, NullServerSites::class);
