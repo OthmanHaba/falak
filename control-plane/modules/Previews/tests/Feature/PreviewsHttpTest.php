@@ -109,6 +109,7 @@ it('saves settings, validates them and pins the base repositories\' webhooks', f
 });
 
 it('lets only the operator organization\'s owners and admins set the preview domain', function () {
+    config(['previews.operator_organization' => $this->organization->slug]);
     $this->get('/settings/previews')->assertOk()->assertInertia(fn (Assert $page) => $page->component('Previews/Domain', false)->where('can.manage', true));
     $this->put('/settings/previews', ['domain' => 'prv.falak.sh', 'server_id' => $this->server->id])->assertRedirect()->assertSessionHasNoErrors();
     expect($this->domains->settings->domain)->toBe('prv.falak.sh');
@@ -124,4 +125,8 @@ it('lets only the operator organization\'s owners and admins set the preview dom
     }
 
     expect($this->domains->settings->domain)->toBe('prv.falak.sh');
+
+    // Several organizations and none recorded: nobody operates the preview domain.
+    config(['previews.operator_organization' => '']);
+    $this->actingAs($this->owner)->put('/settings/previews', ['domain' => 'prv.falak.sh', 'server_id' => $this->server->id])->assertForbidden();
 });

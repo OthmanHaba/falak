@@ -1,7 +1,7 @@
 <?php
 
 return [
-    // The organization that operates this Falak and owns the preview domain (Settings → Previews). Empty: the oldest
-    // organization (the one `falak-ctl admin create` made first).
-    'operator_organization' => env('FALAK_PREVIEWS_OPERATOR_ORGANIZATION'),
+    // The organization that operates this Falak and owns the preview domain (Settings → Previews): the one install.sh
+    // records for disaster recovery (id or slug). Empty: the only organization of a single-organization install.
+    'operator_organization' => env('FALAK_DR_ORGANIZATION', ''),
 ];

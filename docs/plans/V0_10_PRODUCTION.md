@@ -524,7 +524,8 @@ Implementation notes (built on `feat/v010-previews`):
   domain through `PreviewDomains`; Databases restores the newest backup into another database and runs scripts in a
   database container through `DatabaseProvisioner`.
 - **Preview domain** (Settings → Previews): one instance row, edited by the owners and admins of the operator
-  organization (`FALAK_PREVIEWS_OPERATOR_ORGANIZATION`, else the oldest organization). Names under it are reserved
+  organization (`FALAK_DR_ORGANIZATION`, recorded by install.sh like disaster recovery; unset, the only organization
+  of a single-organization install). Names under it are reserved
   for previews. **TLS:** with Cloudflare, `*.<domain>` points at the edge server, which holds one DNS-01 wildcard
   certificate (`edge.caddy.apply` `wildcard_certificates`, tls mode `wildcard`: no certificate per host, so Let's
   Encrypt's per-domain limits are untouched); a preview on another server gets a tagged A record and its own

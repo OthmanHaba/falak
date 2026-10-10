@@ -8,9 +8,10 @@ use Falak\Identity\Contracts\Role;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * The organization that operates the instance and owns its preview domain (its DNS credential and edge server):
- * config('previews.operator_organization'), else the oldest organization (the one `falak-ctl admin create` made
- * first). Its owners and admins edit Settings → Previews; everyone else only sees whether previews are available.
+ * The organization that operates the instance and owns its preview domain (its DNS credential and edge server): the
+ * one install.sh records (FALAK_DR_ORGANIZATION, like disaster recovery; an id or slug), else the only organization
+ * of a single-organization install, else none. Its owners and admins edit Settings → Previews; everyone else only
+ * sees whether previews are available.
  */
 final class InstanceOperator
 {
@@ -21,14 +22,21 @@ final class InstanceOperator
 
     public function organizationId(): ?string
     {
-        $configured = config('previews.operator_organization');
+        $configured = trim((string) config('previews.operator_organization'));
+        $all = $this->organizations->all();
 
-        if (is_string($configured) && $configured !== '') {
-            return $this->organizations->find(strtolower($configured))?->id;
+        if ($configured !== '') {
+            foreach ($all as $organization) {
+                if ($organization->id === strtolower($configured) || $organization->slug === $configured) {
+                    return $organization->id;
+                }
+            }
+
+            return null;
         }
 
-        // Oldest first.
-        return $this->organizations->all()[0]->id ?? null;
+        // Not recorded: only a single-organization install has an obvious operator.
+        return count($all) === 1 ? $all[0]->id : null;
     }
 
     public function isAdmin(?Authenticatable $user): bool
