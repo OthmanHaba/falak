@@ -223,6 +223,25 @@ mounted, so containers bound to it while the mount is missing cannot write to th
 ordered `Before=docker.service`. `volume.resize` to the current size still runs `losetup -c` and `resize2fs`, so a
 resize that failed half way can be retried.
 
+## Security baseline (v0.10.0)
+`security.audit` (redeliverable, read-only) runs every check within 55 s, each command with its own short timeout,
+file walks bounded (depth and entries) and never following symlinks, without network calls: `apt-get -s upgrade` reads
+the package lists already on disk. The payload carries what the control plane expects — `managed_keys` (per unix
+user; other authorized keys are reported by fingerprint, never by content), `expected_ports` (what the firewall
+accepts; public listeners outside them are reported), `known_users`, `ssh_port`. Evidence is short and secret-free.
+
+`security.fix {fix_id}` runs only fixes compiled into the agent (`agent/internal/security/fixes.go`); the control
+plane can't send commands or paths. Each fix is idempotent (`changed: false` and no backup when there is nothing to
+do), saves every file it touches under `/var/lib/falak/security-backups/<backup_id>/` (`manifest.json`: path, mode,
+owner, sha256 and a copy; secret files' permission fixes record mode, owner and inode only, never their content),
+validates (`sshd -t` and `sshd -T`, `apt-config dump`, `fail2ban-client -t`, `dockerd --validate`, `sysctl -p`) and
+restores the backup on failure. `ssh.harden` refuses when no login user has a key, writes every hardened setting
+into `50-falak.conf` and comments out conflicting lines elsewhere (an earlier drop-in such as `50-cloud-init.conf`
+wins otherwise). `security.undo {fix_id, backup_id}` restores the backup exactly (a copy whose checksum does not
+match, or a secret file swapped since, is refused) and reloads what the fix changed; backups older than 7 days are
+pruned. `firewall.apply` and `firewall.close_port:<proto>:<port>` are applied by the control plane (Network owns the
+firewall); the agent refuses them.
+
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of
 `[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.

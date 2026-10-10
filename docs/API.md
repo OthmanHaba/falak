@@ -46,6 +46,8 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `secrets.view` | admin, developer, viewer | secret names, metadata, versions (never values) |
 | `secrets.manage` | admin, developer | create secrets, set values, roll back, delete |
 | `secrets.reveal` | admin, developer | read a non-sensitive value; a token needs this ability **by name** (`*` is not enough) |
+| `security.view` | admin, developer, viewer | servers' security baseline reports |
+| `security.fix` | admin | run audits, apply and undo baseline fixes |
 
 ## Identity
 
@@ -144,6 +146,31 @@ A function counts `max_instances` × its memory and CPUs; a database instance re
           "items": [{"kind": "database", "id": "…", "name": "app", "memory_limit_mb": 1024, "memory_reservation_mb": 1024, "cpus": 1.5, "url": "/databases/…"}],
           "warnings": ["Memory limits add up to 2176 MB, more than the server's 2 GB: …"]}}
 ```
+
+### Security baseline
+
+Every active server is audited daily (and after provisioning, and on demand) by the agent's read-only
+`security.audit`: SSH, updates, firewall, fail2ban, Docker, files, kernel settings, accounts, time sync; the
+control plane adds the backup checks. Each check has a `status` (`pass|warn|fail|info`) and a `severity`
+(`critical|high|medium|low|info`). **Score** = 100 minus the cost of every failing check (critical 30, high 15,
+medium 5, low 2) and warning (critical 15, high 7, medium 2, low 1), never below 0. `production_ready` is true when
+no check of high or critical severity fails.
+
+### `GET /api/v1/servers/{server}/security` — `security.view`
+The latest completed report: `{id, score, production_ready, counts, trigger, duration_ms, ran_at, findings: [{id,
+title, area, status, severity, evidence, fix_id}]}`. `404` before the first audit.
+
+### `POST /api/v1/servers/{server}/security/audit` — `security.fix` (10/min)
+`202 {id, status, error}`; one audit runs per server at a time (a running one is returned).
+
+### `POST /api/v1/servers/{server}/security/fixes` `{fix_id, confirm?, reboot_at?}` — `security.fix` (30/min)
+Applies a fix the latest report offers (`422` otherwise). Fixes come from an allowlist compiled into the agent
+(`ssh.harden`, `updates.unattended`, `updates.install`, `updates.reboot`, `fail2ban.sshd`, `docker.tcp_off`,
+`kernel.sysctl`, `files.secret_permissions`, `time.sync`) or are applied by the control plane (`firewall.apply`,
+`firewall.close_port:<tcp|udp>:<port>`, a Network deny rule). Disruptive fixes (`ssh.harden`, `updates.install`,
+`updates.reboot`, `docker.tcp_off`) need `confirm: true`; `reboot_at` (`HH:MM`, server time) sets the reboot window.
+`202 {id, fix_id, status, error}`; the server is audited again once the fix settles. Fixes with a backup can be
+undone from the server's Security tab for 7 days.
 
 ## Sites
 
