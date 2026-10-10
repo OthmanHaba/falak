@@ -2,34 +2,21 @@
 
 namespace Falak\Deployments\Application\Jobs;
 
+use Falak\Deployments\Application\Health\SiteHealthProbe;
 use Falak\Deployments\Application\Orchestration\DeploymentLog;
 use Falak\Deployments\Application\Orchestration\Orchestrator;
 use Falak\Deployments\Domain\Enums\StepStatus;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\DeploymentStep;
-use Falak\Edge\Contracts\Data\DomainData;
-use Falak\Edge\Contracts\EdgeRoutes;
-use Falak\Edge\Contracts\TlsMode;
-use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteDirectory;
-use Falak\Sites\Contracts\SiteRuntime;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Queue\InteractsWithQueue;
-use Throwable;
 
 /**
- * HTTP health check of one server from the control plane: GET https://<primary domain><path>
- * resolved to the server's address (so the edge's certificate and routing are exercised), or
- * http://<ip><path> when the site has no domain. Retries are delayed re-dispatches — a worker never
- * sleeps waiting.
- *
- * When no HTTP answer comes back through the primary domain (TLS handshake or connection error), the
- * site's other domains are tried, then plain HTTP: a server of a multi-server site may only hold a
- * certificate for the name that points at it (per-server DNS), and load-balancer backends serve plain
- * HTTP. The first HTTP answer decides; an application error (e.g. 500) is never skipped over.
+ * A deployment's health check step on one server ({@see SiteHealthProbe}: through the edge, from the control
+ * plane). Retries are delayed re-dispatches — a worker never sleeps waiting.
  */
 final class RunHealthCheck implements ShouldQueue
 {
@@ -39,7 +26,7 @@ final class RunHealthCheck implements ShouldQueue
 
     public function __construct(public string $stepId, public int $attempt) {}
 
-    public function handle(HttpFactory $http, SiteDirectory $sites, ServerDirectory $servers, EdgeRoutes $edge, DeploymentLog $log, Orchestrator $orchestrator): void
+    public function handle(SiteHealthProbe $probe, SiteDirectory $sites, DeploymentLog $log, Orchestrator $orchestrator): void
     {
         $step = DeploymentStep::query()->with('target')->find($this->stepId);
 
@@ -50,22 +37,7 @@ final class RunHealthCheck implements ShouldQueue
         /** @var Deployment $deployment */
         $deployment = Deployment::query()->findOrFail($step->deployment_id);
         $health = (array) $deployment->setting('health', []);
-        $path = (string) ($health['path'] ?? '/');
-        $expect = (int) ($health['status'] ?? 200);
-        $timeout = max(1, (int) ($health['timeout_s'] ?? 10));
         $retries = max(1, (int) ($health['retries'] ?? 3));
-
-        $server = $servers->find((string) $step->server_id);
-        $ip = $server?->ipv4 ?? $server?->privateIpv4;
-
-        if ($ip === null) {
-            $orchestrator->healthChecked($step->id, false, 'The server has no IP address to check.');
-
-            return;
-        }
-
-        $site = $sites->find($deployment->site_id);
-        $checks = [];
 
         // A compose stack's bootstrap pass started only the services its split-out sites use (compose up --wait
         // checked them); its public services come with the full stack.
@@ -78,62 +50,13 @@ final class RunHealthCheck implements ShouldQueue
             return;
         }
 
-        // A Docker site without a domain has no edge route (a compose service split out into its own site that only its
-        // stack reaches): the swap already checked the container on the server.
-        if ($site?->runtime === SiteRuntime::Docker && $site->testDomain === null && $edge->domainsFor($site->id) === []) {
-            $orchestrator->healthChecked($step->id, true, 'No domain to check through the edge; the container passed its health check on the server.');
+        [$healthy, $message] = $probe->probe($deployment->site_id, (string) $step->server_id, $health);
+
+        if ($message === SiteHealthProbe::NO_ADDRESS) {
+            $orchestrator->healthChecked($step->id, false, $message);
 
             return;
         }
-
-        if ($site?->compose !== null) {
-            // Compose: every public service through the edge; the primary answers the configured check.
-            $publicServices = $site->compose->publicServices;
-
-            if ($publicServices === []) {
-                $orchestrator->healthChecked($step->id, true, 'No public services to check; every container passed `docker compose up --wait`.');
-
-                return;
-            }
-
-            foreach ($publicServices as $i => $public) {
-                if ($i === 0) {
-                    $host = $this->candidates($deployment->site_id, $sites, $edge);
-                    // Container health is verified by `up --wait`; through the edge a redirect (e.g. to a login page)
-                    // also proves the route works unless a specific status is configured.
-                    $checks[] = $expect === 200
-                        ? [$host, null, $public->healthCheckPath ?? $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
-                        : [$host, null, $public->healthCheckPath ?? $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
-
-                    continue;
-                }
-
-                // The service's own domains (edge_domains rows for it, primary first), then its test domain.
-                $host = $this->serviceCandidates($deployment->site_id, $public->service, $public->testDomain, $public->domain, $edge);
-
-                if ($host === []) {
-                    continue; // not routed
-                }
-
-                // A configured path must answer 2xx/3xx; without one any answer below 500 proves the route works.
-                $checks[] = $public->healthCheckPath !== null
-                    ? [$host, null, $public->healthCheckPath, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
-                    : [$host, null, '/', fn (int $status) => $status < 500, 'expected < 500', $public->service];
-            }
-        } else {
-            $checks[] = [$this->candidates($deployment->site_id, $sites, $edge), null, $path, fn (int $status) => $status === $expect, "expected {$expect}", null];
-        }
-
-        $healthy = true;
-        $messages = [];
-
-        foreach ($checks as [$candidates, , $checkPath, $accepts, $expectation, $service]) {
-            [$ok, $message] = $this->checkAny($http, $ip, $candidates, $checkPath, $timeout, $accepts, $expectation);
-            $healthy = $healthy && $ok;
-            $messages[] = ($service !== null && count($checks) > 1 ? "[{$service}] " : '').$message;
-        }
-
-        $message = implode('; ', $messages);
 
         $log->note($deployment->id, ($healthy ? '✓ ' : '… ')."{$message} [attempt {$this->attempt}/{$retries}]", $step, $healthy ? 'stdout' : 'stderr');
 
@@ -144,121 +67,5 @@ final class RunHealthCheck implements ShouldQueue
         }
 
         $orchestrator->healthChecked($step->id, $healthy, $message);
-    }
-
-    /**
-     * Tries the candidates in order until one gets an HTTP answer (see the class docblock).
-     *
-     * @param  list<array{0: ?string, 1: TlsMode}>  $candidates  host (null = the server IP) and its TLS mode
-     * @param  callable(int): bool  $accepts
-     * @return array{0: bool, 1: string}
-     */
-    private function checkAny(HttpFactory $http, string $ip, array $candidates, string $path, int $timeout, callable $accepts, string $expectation): array
-    {
-        $failures = [];
-
-        foreach ($candidates as [$host, $tls]) {
-            [$ok, $message, $answered] = $this->check($http, $ip, $host, $tls, $path, $timeout, $accepts, $expectation);
-
-            if ($answered) {
-                return [$ok, $failures === [] ? $message : $message.' — after: '.implode('; ', $failures)];
-            }
-
-            $failures[] = $message;
-        }
-
-        return [false, implode('; ', $failures)];
-    }
-
-    /**
-     * @param  callable(int): bool  $accepts
-     * @return array{0: bool, 1: string, 2: bool} healthy, message, whether an HTTP answer came back
-     */
-    private function check(HttpFactory $http, string $ip, ?string $host, TlsMode $tls, string $path, int $timeout, callable $accepts, string $expectation): array
-    {
-        $https = $host !== null && $tls !== TlsMode::Off;
-        $url = $host === null ? "http://{$ip}{$path}" : ($https ? 'https' : 'http')."://{$host}{$path}";
-        $options = $host === null ? [] : [
-            'curl' => [CURLOPT_RESOLVE => ["{$host}:".($https ? 443 : 80).":{$ip}"]],
-            // Liveness through the edge, not certificate validation: only publicly trusted certificates
-            // (ACME) are verifiable from here; internal-CA and uploaded ones may chain to a private root.
-            'verify' => $tls->publiclyTrusted(),
-        ];
-
-        $started = microtime(true);
-
-        try {
-            $response = $http->timeout($timeout)->connectTimeout(min(5, $timeout))->withoutRedirecting()
-                ->withHeaders(['User-Agent' => 'Falak-HealthCheck/1'])
-                ->withOptions($options)
-                ->get($url);
-            $status = $response->status();
-
-            return [$accepts($status), sprintf('GET %s via %s → %d in %d ms (%s)', $url, $ip, $status, (int) ((microtime(true) - $started) * 1000), $expectation), true];
-        } catch (Throwable $e) {
-            return [false, sprintf('GET %s via %s failed: %s', $url, $ip, $e->getMessage()), false];
-        }
-    }
-
-    /**
-     * What to check a compose site's non-primary public service through: its domains (primary first), then its
-     * test domain. $legacyDomain (kept in `public_services` but not a domain row yet) when it has no rows.
-     *
-     * @return list<array{0: ?string, 1: TlsMode}>
-     */
-    private function serviceCandidates(string $siteId, string $service, ?string $testDomain, ?string $legacyDomain, EdgeRoutes $edge): array
-    {
-        try {
-            $domains = array_values(array_filter($edge->domainsFor($siteId, $service), fn (DomainData $d) => ! $d->isWildcard()));
-        } catch (Throwable) {
-            $domains = [];
-        }
-
-        usort($domains, fn (DomainData $a, DomainData $b) => (int) $b->primary <=> (int) $a->primary);
-        $candidates = array_map(fn (DomainData $d) => [$d->name, $d->tls], $domains);
-
-        if ($candidates === [] && $legacyDomain !== null) {
-            $candidates[] = [$legacyDomain, TlsMode::Auto];
-        }
-
-        if ($testDomain !== null) {
-            $candidates[] = [$testDomain, $edge->testDomainTls()];
-        }
-
-        return $candidates;
-    }
-
-    /**
-     * What to check the site through, in order: its domains (primary first), then the test domain, then plain
-     * HTTP on the primary name when it was tried over HTTPS. `[[null, Off]]` (the server IP) without any name.
-     *
-     * @return list<array{0: ?string, 1: TlsMode}>
-     */
-    private function candidates(string $siteId, SiteDirectory $sites, EdgeRoutes $edge): array
-    {
-        try {
-            $domains = array_values(array_filter($edge->domainsFor($siteId), fn (DomainData $d) => ! $d->isWildcard()));
-        } catch (Throwable) {
-            $domains = [];
-        }
-
-        usort($domains, fn (DomainData $a, DomainData $b) => (int) $b->primary <=> (int) $a->primary);
-
-        $candidates = array_map(fn (DomainData $d) => [$d->name, $d->tls], $domains);
-        $test = $sites->find($siteId)?->testDomain;
-
-        if ($test !== null) {
-            $candidates[] = [$test, $edge->testDomainTls()];
-        }
-
-        if ($candidates === []) {
-            return [[null, TlsMode::Off]];
-        }
-
-        if ($candidates[0][1] !== TlsMode::Off) {
-            $candidates[] = [$candidates[0][0], TlsMode::Off];
-        }
-
-        return $candidates;
     }
 }
