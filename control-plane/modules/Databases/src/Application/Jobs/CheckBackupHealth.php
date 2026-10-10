@@ -3,7 +3,6 @@
 namespace Falak\Databases\Application\Jobs;
 
 use Carbon\CarbonImmutable;
-use Cron\CronExpression;
 use Falak\Alerting\Contracts\AlertConditions;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
@@ -14,6 +13,8 @@ use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
 use Falak\Databases\Infrastructure\ObjectStorage\StorageRequestFailed;
+use Falak\Kernel\Support\MissedRuns;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -23,16 +24,24 @@ use Throwable;
 /**
  * Backups that should exist but don't:
  *
- *  - databases.backup_missed (every 5 minutes): an enabled schedule of an active instance with no successful backup
- *    within twice its interval (the gap between its next two runs), counted from its last success or its creation;
+ *  - databases.backup_missed (every 5 minutes): an enabled schedule of an active instance that missed its last two
+ *    runs (MissedRuns: no success since the second-most-recent scheduled run, counted from its creation at first);
  *  - databases.storage_unreachable (with $probe, every 30 minutes): a storage provider that worked once (verified)
  *    refuses a probe object twice in a row. The probe writes and deletes a small object, like verification does.
  *
  * Both resolve on their own: a backup succeeds, the provider answers again.
  */
-final class CheckBackupHealth implements ShouldQueue
+final class CheckBackupHealth implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
+
+    /** Unique while queued or running (a slow probe is never overlapped). */
+    public int $uniqueFor = 1800;
+
+    public function uniqueId(): string
+    {
+        return $this->probe ? 'probe' : 'schedules';
+    }
 
     /** A failing provider alerts once it failed for this long (two probes 30 minutes apart). */
     public const UNREACHABLE_SECONDS = 25 * 60;
@@ -62,22 +71,11 @@ final class CheckBackupHealth implements ShouldQueue
         }
     }
 
-    /** Seconds between the schedule's next two runs after $now. */
-    public static function interval(string $cron, CarbonImmutable $now): int
-    {
-        $expression = new CronExpression($cron);
-        $next = CarbonImmutable::instance($expression->getNextRunDate($now->utc(), 0, false, 'UTC'));
-        $after = CarbonImmutable::instance($expression->getNextRunDate($now->utc(), 1, false, 'UTC'));
-
-        return max(60, (int) $next->diffInSeconds($after));
-    }
-
     private function missed(BackupSchedule $schedule, CarbonImmutable $now, AlertConditions $conditions): void
     {
-        $interval = self::interval($schedule->cron, $now);
         $lastSuccess = Backup::query()->where('schedule_id', $schedule->id)->whereIn('status', [BackupStatus::Succeeded, BackupStatus::Pruned])->max('finished_at');
         $since = $lastSuccess !== null ? CarbonImmutable::parse($lastSuccess) : CarbonImmutable::instance($schedule->created_at);
-        $missed = $since->diffInSeconds($now) > 2 * $interval;
+        $missed = MissedRuns::twice($schedule->cron, $since, $now);
         $instance = $schedule->instance;
 
         $conditions->observe($schedule->organization_id, "databases.backup_missed:{$schedule->id}", $missed, fn () => new AlertData(
@@ -85,8 +83,8 @@ final class CheckBackupHealth implements ShouldQueue
             'databases.backup_missed',
             Severity::Critical,
             "No backup of {$instance->name} on {$instance->server_name} since ".($lastSuccess !== null ? $since->diffForHumans($now, true) : 'the schedule was created'),
-            sprintf('Schedule "%s" (%s) should have produced a backup at least every %s. Check its last runs: the server may be offline, the storage unreachable, or the backups failing.',
-                $schedule->name, $schedule->cron, CarbonImmutable::now()->subSeconds($interval)->diffForHumans($now, true)),
+            sprintf('Schedule "%s" (%s) missed its last two runs. Check them: the server may be offline, the storage unreachable, or the backups failing.',
+                $schedule->name, $schedule->cron),
             '/databases/backups',
             context: ['schedule_id' => $schedule->id, 'instance_id' => $instance->id, 'last_success_at' => $lastSuccess !== null ? $since->toIso8601String() : null],
         ), fn () => new AlertData($schedule->organization_id, 'databases.backup_missed', Severity::Info, "Backups of {$instance->name} on {$instance->server_name} run again",
@@ -115,9 +113,10 @@ final class CheckBackupHealth implements ShouldQueue
             'databases.storage_unreachable',
             Severity::Critical,
             "Storage {$provider->name} is unreachable",
-            "Backups, PITR shipping and restores using it fail until it answers again. Last error: {$error}",
+            'Backups, PITR shipping and restores using it fail until it answers again.',
             '/settings/storage',
-            context: ['storage_provider_id' => $provider->id, 'bucket' => $provider->bucket],
+            context: ['storage_provider_id' => $provider->id],
+            detail: "Bucket {$provider->bucket}. Last error: {$error}",
         ), fn () => new AlertData($provider->organization_id, 'databases.storage_unreachable', Severity::Info, "Storage {$provider->name} is reachable again", '', '/settings/storage'),
             forSeconds: self::UNREACHABLE_SECONDS);
     }

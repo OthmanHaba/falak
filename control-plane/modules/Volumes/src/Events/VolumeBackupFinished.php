@@ -41,11 +41,13 @@ final class VolumeBackupFinished implements Alertable
             $this->succeeded ? self::ALERT_SUCCEEDED : self::ALERT_FAILED,
             $this->succeeded ? Severity::Info : Severity::Critical,
             $this->succeeded ? "Backups of volume {$this->volumeName} succeed again" : "Backup of volume {$this->volumeName} failed",
-            $this->succeeded ? '' : (string) $this->error,
+            $this->succeeded ? '' : 'Its archive was not stored. Check the backup on the volume page.',
             $this->volumeId !== null ? "/volumes/{$this->volumeId}" : null,
             self::dedupKey($this->scheduleId, $this->volumeId, $this->backupId),
             resolves: $this->succeeded,
             context: array_filter(['volume_id' => $this->volumeId, 'backup_id' => $this->backupId, 'schedule_id' => $this->scheduleId]),
+            // The raw error (paths, storage hosts) stays in-app.
+            detail: $this->succeeded ? '' : (string) $this->error,
         );
     }
 }

@@ -49,14 +49,7 @@ function db_backup(object $test, BackupSchedule $schedule, string $finishedAt, B
     ]);
 }
 
-it('computes the interval between a schedule\'s runs', function () {
-    $now = Carbon::now()->toImmutable();
-    expect(CheckBackupHealth::interval('0 3 * * *', $now))->toBe(86400)
-        ->and(CheckBackupHealth::interval('*/15 * * * *', $now))->toBe(900)
-        ->and(CheckBackupHealth::interval('0 3 * * 0', $now))->toBe(7 * 86400);
-});
-
-it('alerts when no backup succeeded within twice the interval, and resolves on the next success', function () {
+it('alerts when a schedule missed its last two runs, and resolves on the next success', function () {
     $schedule = BackupSchedule::query()->create(['organization_id' => $this->organization->id, 'database_instance_id' => $this->engine->id, 'storage_provider_id' => $this->provider->id,
         'name' => 'Nightly', 'cron' => '0 3 * * *', 'enabled' => true]);
     $schedule->forceFill(['created_at' => now()->subDays(10)])->save();
@@ -64,9 +57,13 @@ it('alerts when no backup succeeded within twice the interval, and resolves on t
     db_backup($this, $schedule, '2026-10-08 03:05:00');
     db_backup($this, $schedule, '2026-10-09 03:05:00', BackupStatus::Failed);
     dispatch_sync(new CheckBackupHealth);
-    expect(db_alerts('databases.backup_missed'))->toHaveCount(0); // 33 hours < 48
+    expect(db_alerts('databases.backup_missed'))->toHaveCount(0); // only today's run failed
 
-    Carbon::setTestNow('2026-10-10 04:00:00'); // 49 hours since the last success
+    Carbon::setTestNow('2026-10-10 03:59:00'); // the second miss is still within its grace hour
+    dispatch_sync(new CheckBackupHealth);
+    expect(db_alerts('databases.backup_missed'))->toHaveCount(0);
+
+    Carbon::setTestNow('2026-10-10 04:00:00');
     dispatch_sync(new CheckBackupHealth);
     dispatch_sync(new CheckBackupHealth);
 
@@ -93,6 +90,7 @@ it('counts a new schedule from its creation and ignores disabled ones', function
     expect(db_alerts('databases.backup_missed'))->toHaveCount(0);
 
     $schedule->forceFill(['enabled' => true])->save();
+    Carbon::setTestNow(now()->addMinutes(10)); // 12:10: the 11:00 and 12:00 runs (grace 6 minutes) produced nothing
     dispatch_sync(new CheckBackupHealth);
     expect(db_alerts('databases.backup_missed')->sole()->title)->toContain('since the schedule was created');
 });

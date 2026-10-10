@@ -19,6 +19,9 @@ final class VolumeAlmostFull implements Alertable
     /** Fraction of the limit in use that alerts. */
     public const THRESHOLD = 0.85;
 
+    /** Fraction it has to drop to (or below) before the alert resolves: no alert/recovery flapping around 85%. */
+    public const RESOLVE_BELOW = 0.80;
+
     public function __construct(
         public string $volumeId,
         public string $organizationId,

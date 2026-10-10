@@ -56,7 +56,7 @@ it('alerts on a failed volume backup once and resolves on the next success', fun
     expect($failed)->toHaveCount(2)
         ->and($failed->pluck('outcome')->map->value->all())->toBe(['delivered', 'deduplicated'])
         ->and($failed[0]->title)->toBe('Backup of volume data failed')
-        ->and($failed[0]->body)->toContain('no space left')
+        ->and($failed[0]->detail)->toContain('no space left')
         ->and($failed[0]->url)->toBe(url("/volumes/{$volume->id}"))
         ->and($failed[0]->action)->toBe('Review backups');
 
@@ -65,23 +65,23 @@ it('alerts on a failed volume backup once and resolves on the next success', fun
     expect(volume_alerts('volumes.backup_succeeded', recovery: true))->toHaveCount(1);
 });
 
-it('alerts when a volume schedule produced no backup within twice its interval', function () {
+it('alerts when a volume schedule missed its last two runs', function () {
     Carbon::setTestNow('2026-10-07 12:00:00');
     $volume = volumes_volume($this->organization->id, $this->server);
     $schedule = BackupSchedule::query()->create(['organization_id' => $this->organization->id, 'volume_id' => $volume->id, 'storage_provider_id' => volumes_provider($this->organization->id)->id,
         'cron' => '0 3 * * *', 'enabled' => true]);
-    $schedule->forceFill(['created_at' => now()->subHours(47)])->save();
+    $schedule->forceFill(['created_at' => now()->subHours(30)])->save(); // before today's 03:00 run only
 
     dispatch_sync(new CheckVolumeBackups);
     expect(volume_alerts('volumes.backup_missed'))->toHaveCount(0);
 
-    Carbon::setTestNow('2026-10-07 13:30:00');
+    Carbon::setTestNow('2026-10-08 04:30:00');
     dispatch_sync(new CheckVolumeBackups);
     dispatch_sync(new CheckVolumeBackups);
     expect(volume_alerts('volumes.backup_missed')->sole()->title)->toBe('No backup of volume data since its schedule was created');
 });
 
-it('resolves "almost full" once the volume is back below 85%, so the next crossing alerts again', function () {
+it('resolves "almost full" once the volume is down to 80%, so the next crossing alerts again', function () {
     $volume = volumes_volume($this->organization->id, $this->server);
     $report = function (int $used) use ($volume) {
         $handle = $this->agents->dispatch($this->server->id, 'volume.inventory', ['volumes' => [$volume->ref()]]);
@@ -89,10 +89,23 @@ it('resolves "almost full" once the volume is back below 85%, so the next crossi
     };
 
     $report(9 * 1024 ** 3);
+    $report((int) (8.2 * 1024 ** 3)); // 82%: below 85% but not down to 80%: still raised
+    expect(volume_alerts('volumes.almost_full', recovery: true))->toHaveCount(0);
     $report(2 * 1024 ** 3);
     $report(9 * 1024 ** 3);
 
     expect(volume_alerts('volumes.almost_full')->pluck('outcome')->map->value->all())->toBe(['delivered', 'delivered'])
         ->and(volume_alerts('volumes.almost_full', recovery: true)->sole()->title)->toBe('Volume data has room again (20% full)')
         ->and(volume_alerts('volumes.almost_full')->first()->action)->toBe('Grow volume');
+});
+
+it('keeps the raw error of a failed volume backup in-app', function () {
+    Carbon::setTestNow('2026-10-07 03:00:30');
+    Http::fake();
+    $volume = volumes_volume($this->organization->id, $this->server);
+    $this->post("/volumes/{$volume->id}/schedules", ['storage_provider_id' => volumes_provider($this->organization->id)->id, 'cron' => '0 3 * * *'])->assertSessionHasNoErrors();
+    volume_backup_run($this, BackupSchedule::query()->sole(), false);
+
+    $alert = volume_alerts('volumes.backup_failed')->sole();
+    expect($alert->body)->not->toContain('no space left')->and($alert->detail)->toContain('no space left');
 });

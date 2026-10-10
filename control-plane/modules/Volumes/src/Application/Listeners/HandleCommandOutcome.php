@@ -281,7 +281,8 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
     /**
      * Usage of the volumes a server reported (only its own volumes, of the organization that owns it). A volume over
-     * {@see VolumeAlmostFull::THRESHOLD} of its limit alerts once per crossing, resolved when it drops back below.
+     * {@see VolumeAlmostFull::THRESHOLD} of its limit alerts once per crossing, resolved once it is down to
+     * {@see VolumeAlmostFull::RESOLVE_BELOW}.
      *
      * @param  array<string, mixed>  $result  volume.inventory $defs/result
      */
@@ -316,7 +317,7 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
                 if ($after !== null && $after > VolumeAlmostFull::THRESHOLD && ($before === null || $before <= VolumeAlmostFull::THRESHOLD)) {
                     VolumeAlmostFull::dispatch($volume->id, $volume->organization_id, $volume->server_id, $volume->name, (int) $volume->used_bytes, (int) $volume->size_limit_bytes);
-                } elseif ($before !== null && $before > VolumeAlmostFull::THRESHOLD && ($after === null || $after <= VolumeAlmostFull::THRESHOLD)) {
+                } elseif ($before !== null && $before > VolumeAlmostFull::RESOLVE_BELOW && ($after === null || $after <= VolumeAlmostFull::RESOLVE_BELOW)) {
                     VolumeSpaceRecovered::dispatch($volume->id, $volume->organization_id, $volume->name, (int) $volume->used_bytes, max(1, (int) $volume->size_limit_bytes));
                 }
             });

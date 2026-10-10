@@ -3,27 +3,30 @@
 namespace Falak\Volumes\Application\Jobs;
 
 use Carbon\CarbonImmutable;
-use Cron\CronExpression;
 use Falak\Alerting\Contracts\AlertConditions;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Falak\Kernel\Support\MissedRuns;
 use Falak\Volumes\Domain\Enums\BackupStatus;
 use Falak\Volumes\Domain\Enums\VolumeStatus;
 use Falak\Volumes\Domain\Models\BackupSchedule;
 use Falak\Volumes\Domain\Models\VolumeBackup;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Every 5 minutes: an enabled schedule of an active volume with no successful backup within twice its interval (the
- * gap between its next two runs), counted from its last success or its creation, alerts (volumes.backup_missed) until
- * a backup succeeds.
+ * Every 5 minutes: an enabled schedule of an active volume that missed its last two runs (MissedRuns: no success since
+ * the second-most-recent scheduled run, counted from its creation at first) alerts (volumes.backup_missed) until a
+ * backup succeeds. Unique while queued or running.
  */
-final class CheckVolumeBackups implements ShouldQueue
+final class CheckVolumeBackups implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
+
+    public int $uniqueFor = 900;
 
     public function handle(AlertConditions $conditions): void
     {
@@ -46,19 +49,16 @@ final class CheckVolumeBackups implements ShouldQueue
 
     private function check(BackupSchedule $schedule, CarbonImmutable $now, AlertConditions $conditions): void
     {
-        $cron = new CronExpression(trim($schedule->cron));
-        $next = CarbonImmutable::instance($cron->getNextRunDate($now->utc(), 0, false, 'UTC'));
-        $interval = max(60, (int) $next->diffInSeconds(CarbonImmutable::instance($cron->getNextRunDate($now->utc(), 1, false, 'UTC'))));
         $lastSuccess = VolumeBackup::query()->where('schedule_id', $schedule->id)->whereIn('status', [BackupStatus::Succeeded, BackupStatus::Pruned])->max('finished_at');
         $since = $lastSuccess !== null ? CarbonImmutable::parse($lastSuccess) : CarbonImmutable::instance($schedule->created_at);
         $volume = $schedule->volume;
 
-        $conditions->observe($schedule->organization_id, "volumes.backup_missed:{$schedule->id}", $since->diffInSeconds($now) > 2 * $interval, fn () => new AlertData(
+        $conditions->observe($schedule->organization_id, "volumes.backup_missed:{$schedule->id}", MissedRuns::twice($schedule->cron, $since, $now), fn () => new AlertData(
             $schedule->organization_id,
             'volumes.backup_missed',
             Severity::Critical,
             "No backup of volume {$volume->name} since ".($lastSuccess !== null ? $since->diffForHumans($now, true) : 'its schedule was created'),
-            "Its schedule ({$schedule->cron}) should have produced one. Check the last runs: the server may be offline, the storage unreachable, or the backups failing.",
+            "Its schedule ({$schedule->cron}) missed its last two runs. Check them: the server may be offline, the storage unreachable, or the backups failing.",
             "/volumes/{$volume->id}",
             context: ['volume_id' => $volume->id, 'schedule_id' => $schedule->id],
         ), fn () => new AlertData($schedule->organization_id, 'volumes.backup_missed', Severity::Info, "Backups of volume {$volume->name} run again", '', "/volumes/{$volume->id}"));
