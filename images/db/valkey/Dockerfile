@@ -5,7 +5,7 @@
 #
 #   images/db/build.sh valkey 8.1
 
-ARG GO_IMAGE=golang:1.25-trixie
+ARG GO_IMAGE=golang:1.27-trixie
 ARG BASE_IMAGE=valkey/valkey:8.1
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS falak-db

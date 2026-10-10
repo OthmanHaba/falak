@@ -4,7 +4,7 @@
 #
 #   images/db/build.sh mariadb 11.4
 
-ARG GO_IMAGE=golang:1.25-trixie
+ARG GO_IMAGE=golang:1.27-trixie
 ARG BASE_IMAGE=mariadb:11.4
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS falak-db

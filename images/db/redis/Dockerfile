@@ -5,7 +5,7 @@
 #
 #   images/db/build.sh redis 8
 
-ARG GO_IMAGE=golang:1.25-trixie
+ARG GO_IMAGE=golang:1.27-trixie
 ARG BASE_IMAGE=redis:8
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS falak-db
