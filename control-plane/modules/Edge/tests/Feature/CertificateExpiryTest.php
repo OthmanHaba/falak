@@ -48,14 +48,15 @@ final class CertExpiryAgents implements AgentDirectory
 
 beforeEach(function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-10 12:00:00 UTC'));
-    ['servers' => $servers] = edge_fakes();
+    ['servers' => $servers, 'sites' => $sites] = edge_fakes();
     [, $organization] = memberOf();
     $this->org = $organization->id;
     $this->server = edge_server($servers, $this->org);
     $this->second = edge_server($servers, $this->org);
+    $this->elsewhere = edge_server($servers, $this->org); // serves another site, not shop.com
     $this->agents = new CertExpiryAgents;
     app()->instance(AgentDirectory::class, $this->agents);
-    $this->siteId = (string) Str::ulid();
+    $this->siteId = edge_site($sites, $this->org, [$this->server->id, $this->second->id])->id;
     $this->domain = Domain::query()->create(['organization_id' => $this->org, 'site_id' => $this->siteId, 'name' => 'shop.com', 'is_primary' => true, 'www_redirect' => WwwRedirect::None, 'tls_mode' => TlsMode::Auto]);
     $this->serve = fn (string $notAfter, ?string $serverId = null) => $this->agents->facts[$serverId ?? $this->server->id] = ['tls_certificates' => [['name' => 'shop.com', 'not_after' => $notAfter]]];
 });
@@ -138,4 +139,27 @@ it('alerts on uploaded certificates in use, with the upload as the suggested fix
     Domain::query()->where('name', 'api.shop.com')->update(['tls_mode' => TlsMode::Auto->value, 'certificate_id' => null]);
     dispatch_sync(new CheckCertificateExpiry);
     expect(expiry_alerts(recovery: true))->toHaveCount(2)->and($unused->exists)->toBeTrue();
+});
+
+it('ignores certificates left on servers that no longer serve the domain', function () {
+    $this->agents->facts[$this->elsewhere->id] = ['tls_certificates' => [['name' => 'shop.com', 'not_after' => '2026-10-11T00:00:00Z']]];
+    ($this->serve)('2027-01-20T00:00:00Z');
+
+    dispatch_sync(new CheckCertificateExpiry);
+
+    expect(expiry_alerts())->toHaveCount(0);
+});
+
+it('matches wildcard certificates as Caddy stores them', function () {
+    Domain::query()->where('id', $this->domain->id)->update(['name' => 'shop.com', 'tls_mode' => TlsMode::Dns->value]);
+    Domain::query()->create(['organization_id' => $this->org, 'site_id' => $this->siteId, 'name' => 'api.shop.com', 'is_primary' => false, 'www_redirect' => WwwRedirect::None, 'tls_mode' => TlsMode::Dns]);
+    $this->agents->facts[$this->server->id] = ['tls_certificates' => [
+        ['name' => 'wildcard_.shop.com', 'not_after' => '2026-10-15T00:00:00Z'],
+        ['name' => 'shop.com', 'not_after' => '2027-01-20T00:00:00Z'],
+    ]];
+
+    dispatch_sync(new CheckCertificateExpiry);
+
+    expect(CheckCertificateExpiry::certificateName('wildcard_.Shop.com'))->toBe('*.shop.com')
+        ->and(expiry_alerts()->pluck('title')->unique()->values()->all())->toBe(['Certificate for api.shop.com expires in 4 days']);
 });

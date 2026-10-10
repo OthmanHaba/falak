@@ -6,11 +6,13 @@ use Carbon\CarbonImmutable;
 use Falak\Alerting\Contracts\AlertConditions;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Models\Certificate;
 use Falak\Edge\Domain\Models\Domain;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Collection;
@@ -18,21 +20,25 @@ use Illuminate\Support\Collection;
 /**
  * Hourly: certificates expiring within 14, 7 and 1 days (edge.certificate_expiring; 14: warning, 7 and 1: critical).
  *
- *  - ACME (tls_mode auto / dns): the expiry the organization's servers report in their facts (tls_certificates) for the
- *    domain's name, the earliest when several servers serve it. The edge renews 30 days ahead, so a certificate this
- *    close to expiry means renewal keeps failing (DNS no longer points at the server, a blocked port 80, rate limits).
+ *  - ACME (tls_mode auto / dns): the expiry the servers serving the domain's site report in their facts
+ *    (tls_certificates) for its name — or a wildcard covering it (Caddy stores "*.x" as "wildcard_.x") — the earliest
+ *    when several do. Servers that no longer serve the site are ignored: their storage keeps old certificates. The
+ *    edge renews 30 days ahead, so a certificate this close to expiry means renewal keeps failing (DNS no longer points
+ *    at the server, a blocked port 80, rate limits).
  *  - Uploaded (custom): the certificate's not_after, while a domain uses it. Nobody renews those but the user.
  *
- * Each stage alerts once; a renewal resolves them (one recovery, from the 14-day stage).
+ * Each stage alerts once; a renewal resolves them (one recovery, from the 14-day stage). Unique while queued or running.
  */
-final class CheckCertificateExpiry implements ShouldQueue
+final class CheckCertificateExpiry implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
+
+    public int $uniqueFor = 3600;
 
     /** days => severity */
     public const STAGES = [14 => Severity::Warning, 7 => Severity::Critical, 1 => Severity::Critical];
 
-    public function handle(AgentDirectory $agents, ServerDirectory $servers, AlertConditions $conditions): void
+    public function handle(AgentDirectory $agents, ServerDirectory $servers, AlertConditions $conditions, EdgeChanges $edge): void
     {
         $now = CarbonImmutable::now();
 
@@ -41,8 +47,11 @@ final class CheckCertificateExpiry implements ShouldQueue
             $expiries = $this->acmeExpiries((string) $organizationId, $agents, $servers);
             $keep = [];
 
+            $serving = [];
+
             foreach ($domains->whereIn('tls_mode', [TlsMode::Auto, TlsMode::Dns]) as $domain) {
-                $notAfter = $expiries[strtolower($domain->name)] ?? null;
+                $serving[$domain->site_id] ??= $edge->serversFor($domain->site_id);
+                $notAfter = self::expiryFor(strtolower($domain->name), array_intersect_key($expiries, array_flip($serving[$domain->site_id])));
 
                 if ($notAfter !== null) {
                     $keep = [...$keep, ...$this->stages((string) $organizationId, "domain:{$domain->id}", $domain->name, $notAfter, $now, $domain->site_id, false, $conditions)];
@@ -98,26 +107,48 @@ final class CheckCertificateExpiry implements ShouldQueue
     }
 
     /**
-     * The earliest expiry per name the organization's servers report (facts tls_certificates).
+     * The earliest expiry among the serving servers' certificates for $host: its own name, else a wildcard covering it.
      *
-     * @return array<string, CarbonImmutable>
+     * @param  array<string, array<string, CarbonImmutable>>  $byServer  server id => name => not_after
+     */
+    public static function expiryFor(string $host, array $byServer): ?CarbonImmutable
+    {
+        $wildcard = str_contains($host, '.') && ! str_starts_with($host, '*.') ? '*.'.substr($host, strpos($host, '.') + 1) : null;
+        $earliest = null;
+
+        foreach ($byServer as $names) {
+            $at = $names[$host] ?? ($wildcard !== null ? ($names[$wildcard] ?? null) : null);
+
+            if ($at !== null && ($earliest === null || $at < $earliest)) {
+                $earliest = $at;
+            }
+        }
+
+        return $earliest;
+    }
+
+    /** Caddy's storage name for a certificate ("wildcard_.example.com" holds "*.example.com"). */
+    public static function certificateName(string $stored): string
+    {
+        $name = strtolower($stored);
+
+        return str_starts_with($name, 'wildcard_.') ? '*.'.substr($name, strlen('wildcard_.')) : $name;
+    }
+
+    /**
+     * The ACME certificates the organization's servers report (facts tls_certificates).
+     *
+     * @return array<string, array<string, CarbonImmutable>> server id => name => not_after
      */
     private function acmeExpiries(string $organizationId, AgentDirectory $agents, ServerDirectory $servers): array
     {
         $ids = array_map(fn ($server) => $server->id, $servers->forOrganization($organizationId, activeOnly: true));
         $out = [];
 
-        foreach ($ids === [] ? [] : $agents->forServers($ids) as $agent) {
+        foreach ($ids === [] ? [] : $agents->forServers($ids) as $serverId => $agent) {
             foreach ((array) ($agent->facts['tls_certificates'] ?? []) as $cert) {
-                if (! is_array($cert) || ! is_string($cert['name'] ?? null) || ! is_string($cert['not_after'] ?? null)) {
-                    continue;
-                }
-
-                $name = strtolower($cert['name']);
-                $at = CarbonImmutable::parse($cert['not_after']);
-
-                if (! isset($out[$name]) || $at < $out[$name]) {
-                    $out[$name] = $at;
+                if (is_array($cert) && is_string($cert['name'] ?? null) && is_string($cert['not_after'] ?? null)) {
+                    $out[$serverId][self::certificateName($cert['name'])] = CarbonImmutable::parse($cert['not_after']);
                 }
             }
         }
