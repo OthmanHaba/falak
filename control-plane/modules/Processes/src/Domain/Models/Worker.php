@@ -3,6 +3,7 @@
 namespace Falak\Processes\Domain\Models;
 
 use Falak\Kernel\Security\Casts\SealedArray;
+use Falak\Limits\Contracts\ResourceLimits;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property ?int $max_time
  * @property int $memory
  * @property array<string, string> $env encrypted
+ * @property ?array<string, mixed> $limits resource limits (Limits' ResourceLimits JSON) of its slice
  * @property ?list<string> $server_ids
  * @property ?string $created_by
  * @property Carbon $created_at
@@ -39,6 +41,12 @@ class Worker extends Model
 
     /** @var list<string> */
     protected $guarded = [];
+
+    /** Its own limits (the site environment's defaults apply on top). */
+    public function resourceLimits(): ResourceLimits
+    {
+        return ResourceLimits::fromArray($this->limits);
+    }
 
     /**
      * @return array<string, string>
@@ -56,6 +64,7 @@ class Worker extends Model
             'memory' => 'integer',
             'env' => SealedArray::class,
             'server_ids' => 'array',
+            'limits' => 'array',
         ];
     }
 

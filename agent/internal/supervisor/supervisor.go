@@ -8,13 +8,19 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 
+	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/resources"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Options configures a Supervisor.
@@ -26,6 +32,17 @@ type Options struct {
 	LogDir      string // default program log directory (default /var/log/falak)
 	Sink        obs.Sink
 	Logger      *slog.Logger
+	// Slices converges proc.apply `slices` (nil: a payload with slices is refused).
+	Slices interface {
+		Apply(ctx context.Context, desired []cgroup.Slice) ([]string, map[string]string, error)
+		Prune(ctx context.Context, keep []cgroup.Slice) ([]string, error)
+	}
+	// Systemd runs systemctl for programs in slices (version, leftover scopes); default runner.Exec.
+	Systemd runner.Runner
+	// LookPath and CanEnter check a scope launch beforehand (tests replace them); default exec.LookPath and
+	// cgroup.UserCanEnter.
+	LookPath func(string) (string, error)
+	CanEnter func(dir string, uid, gid uint32, groups []uint32) error
 }
 
 // Supervisor owns all supervised programs.
@@ -37,6 +54,9 @@ type Supervisor struct {
 	mu       sync.Mutex
 	programs map[string]*program
 	waiting  map[string]waitingProgram // restored programs whose secrets are gone
+
+	systemdOnce sync.Once
+	systemdVer  int
 }
 
 // waitingProgram is a persisted program that cannot start: its secret env variables were on the tmpfs.
@@ -63,13 +83,22 @@ func New(o Options) *Supervisor {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
+	if o.Systemd == nil {
+		o.Systemd = runner.Exec{}
+	}
+	if o.LookPath == nil {
+		o.LookPath = exec.LookPath
+	}
+	if o.CanEnter == nil {
+		o.CanEnter = cgroup.UserCanEnter
+	}
 	return &Supervisor{opts: o, log: o.Logger.With("component", "supervisor"), programs: map[string]*program{}}
 }
 
 // Register adds proc.apply, proc.restart and proc.status.
 func (s *Supervisor) Register(reg *commands.Registry) {
 	reg.Register("proc.apply", commands.Typed(func(ctx context.Context, p ApplyPayload, st commands.Stream) (any, error) {
-		return s.Apply(ctx, p.Programs)
+		return s.ApplyWithSlices(ctx, p.Programs, p.Slices)
 	}))
 	reg.Register("proc.restart", commands.Typed(func(ctx context.Context, p RestartPayload, st commands.Stream) (any, error) {
 		names, err := s.resolve(p.Names, p.Site)
@@ -90,6 +119,8 @@ func (s *Supervisor) Register(reg *commands.Registry) {
 type (
 	ApplyPayload struct {
 		Programs []Program `json:"programs"`
+		// Slices is the full desired set of falak-<name>.slice units (programs' and PHP-FPM masters' limits).
+		Slices []cgroup.Slice `json:"slices,omitempty"`
 	}
 	ApplyResult struct {
 		Changed   bool     `json:"changed"`
@@ -97,6 +128,11 @@ type (
 		Stopped   []string `json:"stopped"`
 		Restarted []string `json:"restarted"`
 		Unchanged []string `json:"unchanged"`
+		// Slices whose limits changed (applied live) or were removed.
+		Slices []string `json:"slices,omitempty"`
+		// SliceErrors are the slices that were skipped (invalid, or set-property failed), by name: their programs run
+		// without them.
+		SliceErrors map[string]string `json:"slice_errors,omitempty"`
 	}
 	RestartPayload struct {
 		Names []string `json:"names,omitempty"`
@@ -150,8 +186,36 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		p.Env = env
 		ready = append(ready, p)
 	}
+	s.stopOrphanScopes(ctx, ready)
 	_, err = s.apply(ctx, ready, waiting)
 	return err
+}
+
+// stopOrphanScopes stops the falak-proc-*.scope units no restored program instance owns: programs of an agent that
+// crashed run on in their scopes (outside the agent's cgroup), and a program removed meanwhile would never be stopped.
+// The scopes of restored programs are stopped by their own launch.
+func (s *Supervisor) stopOrphanScopes(ctx context.Context, restored []Program) {
+	if s.opts.Slices == nil {
+		return
+	}
+	res, err := s.opts.Systemd.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"list-units", "--type=scope", "--all", "--plain", "--no-legend", "--no-pager", "falak-proc-*"}})
+	if err != nil || res.ExitCode != 0 {
+		return
+	}
+	owned := map[string]bool{}
+	for _, p := range restored {
+		for i := 0; i < max(1, p.Numprocs); i++ {
+			owned["falak-proc-"+p.Name+"-"+itoa(i)+".scope"] = true
+		}
+	}
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || !strings.HasSuffix(fields[0], ".scope") || !cgroup.ScopeUnitRe.MatchString(strings.TrimSuffix(fields[0], ".scope")) || owned[fields[0]] {
+			continue
+		}
+		s.log.Warn("stopping orphaned program scope", "unit", fields[0])
+		_, _ = s.opts.Systemd.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"stop", "--quiet", fields[0]}})
+	}
 }
 
 // WaitingSites lists the sites of programs waiting for their secrets.
@@ -186,6 +250,122 @@ func (s *Supervisor) Shutdown() {
 // Apply converges to the desired program set (which replaces any program waiting for its secrets).
 func (s *Supervisor) Apply(ctx context.Context, desired []Program) (ApplyResult, error) {
 	return s.apply(ctx, desired, nil)
+}
+
+// ApplyWithSlices converges the slices first (new limits apply live, programs moving into a slice find it ready),
+// then the programs, then removes the slices nothing uses any more.
+func (s *Supervisor) ApplyWithSlices(ctx context.Context, desired []Program, slices []cgroup.Slice) (ApplyResult, error) {
+	// Invalid slices are skipped and reported, never the whole set: one service's bad limits must not stop the others.
+	valid, errs := cgroup.Partition(slices)
+	if s.opts.Slices == nil && len(valid) > 0 {
+		for _, sl := range valid {
+			errs[sl.Name] = "slices are not supported on this host"
+		}
+		valid = nil
+	}
+	var changed []string
+	if s.opts.Slices != nil && len(valid) > 0 {
+		var applyErrs map[string]string
+		var err error
+		if changed, applyErrs, err = s.opts.Slices.Apply(ctx, valid); err != nil {
+			return ApplyResult{}, fmt.Errorf("slices: %w", err)
+		}
+		for name, e := range applyErrs {
+			errs[name] = e
+		}
+	}
+	usable := map[string]bool{}
+	for _, sl := range valid {
+		if _, failed := errs[sl.Name]; !failed {
+			usable[sl.Name] = true
+		}
+	}
+	// A program whose slice is missing or failed runs without it (its limits are reported as not applied).
+	programs := make([]Program, len(desired))
+	for i, p := range desired {
+		if p.Slice != "" && !usable[p.Slice] {
+			if _, known := errs[p.Slice]; !known {
+				errs[p.Slice] = fmt.Sprintf("slice %q is not in slices", p.Slice)
+			}
+			s.log.Warn("program runs without its slice", "program", p.Name, "slice", p.Slice, "err", errs[p.Slice])
+			p.Slice = ""
+		}
+		programs[i] = p
+	}
+	res, err := s.Apply(ctx, programs)
+	if len(errs) > 0 {
+		res.SliceErrors = errs
+	}
+	if err != nil || s.opts.Slices == nil {
+		return res, err
+	}
+	// Units of slices that failed keep their file (and last good limits) until they are fixed or dropped.
+	keep := append([]cgroup.Slice(nil), valid...)
+	for name := range errs {
+		if cgroup.NameRe.MatchString(name) {
+			keep = append(keep, cgroup.Slice{Name: name})
+		}
+	}
+	removed, err := s.opts.Slices.Prune(ctx, keep)
+	res.Slices = append(changed, removed...)
+	if len(res.Slices) == 0 {
+		res.Slices = nil
+	} else {
+		sort.Strings(res.Slices)
+		res.Changed = true
+	}
+	return res, err
+}
+
+// systemdVersion is the host's systemd version (0 = unknown), read once.
+func (s *Supervisor) systemdVersion() int {
+	s.systemdOnce.Do(func() { s.systemdVer = cgroup.SystemdVersion(context.Background(), s.opts.Systemd) })
+	return s.systemdVer
+}
+
+// RestartPollEvery is how often program restart counters are compared.
+var RestartPollEvery = time.Minute
+
+// WatchRestarts reports program restarts (each instance's counter since the last poll) until ctx ends.
+func (s *Supervisor) WatchRestarts(ctx context.Context, add func(resources.Event)) {
+	var counts resources.Counter
+	t := time.NewTicker(RestartPollEvery)
+	defer t.Stop()
+	for {
+		s.restartsOnce(&counts, add)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (s *Supervisor) restartsOnce(counts *resources.Counter, add func(resources.Event)) {
+	sites := map[string]string{}
+	s.mu.Lock()
+	for name, p := range s.programs {
+		sites[name] = p.spec.Site
+	}
+	s.mu.Unlock()
+	keep := map[string]bool{}
+	byName := map[string]int{}
+	for _, st := range s.Status(nil) {
+		key := st.Name + ":" + itoa(st.Instance)
+		keep[key] = true
+		byName[st.Name] += counts.Delta(key, st.Restarts)
+	}
+	counts.Forget(keep)
+	names := make([]string, 0, len(byName))
+	for n, c := range byName {
+		if c > 0 {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		add(resources.Event{Kind: resources.KindRestart, Source: resources.SourceProgram, Name: n, Site: sites[n], Count: byName[n]})
+	}
 }
 
 func (s *Supervisor) apply(ctx context.Context, desired []Program, waiting map[string]waitingProgram) (ApplyResult, error) {
@@ -264,13 +444,13 @@ func (s *Supervisor) apply(ctx context.Context, desired []Program, waiting map[s
 }
 
 func (s *Supervisor) newProgram(spec Program) (*program, error) {
-	out, err := openRot(spec.Log.Stdout, *spec.Log.MaxBytes)
+	out, err := openRot(spec.Log.Stdout, *spec.Log.MaxBytes, spec.Log.MaxFiles)
 	if err != nil {
 		return nil, fmt.Errorf("program %s: stdout log: %w", spec.Name, err)
 	}
 	errf := out
 	if spec.Log.Stderr != spec.Log.Stdout {
-		if errf, err = openRot(spec.Log.Stderr, *spec.Log.MaxBytes); err != nil {
+		if errf, err = openRot(spec.Log.Stderr, *spec.Log.MaxBytes, spec.Log.MaxFiles); err != nil {
 			out.Close()
 			return nil, fmt.Errorf("program %s: stderr log: %w", spec.Name, err)
 		}

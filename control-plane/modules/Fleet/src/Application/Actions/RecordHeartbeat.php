@@ -11,6 +11,7 @@ use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentSecretsMissing;
+use Falak\Fleet\Events\AgentServiceEventsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Illuminate\Support\Carbon;
 
@@ -103,6 +104,23 @@ final class RecordHeartbeat
             ], array_filter((array) $heartbeat['databases'], 'is_array')));
 
             AgentDatabasesReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $instances);
+        }
+
+        // OOM kills and restarts (each delivered once): Limits maps them to services and raises alerts.
+        if (is_array($heartbeat['service_events'] ?? null) && $heartbeat['service_events'] !== [] && $agent->server_id !== null) {
+            $events = array_values(array_map(fn (array $event) => [
+                'kind' => (string) $event['kind'],
+                'source' => (string) $event['source'],
+                'name' => (string) $event['name'],
+                'site' => isset($event['site']) ? (string) $event['site'] : null,
+                'project' => isset($event['project']) ? (string) $event['project'] : null,
+                'service' => isset($event['service']) ? (string) $event['service'] : null,
+                'instance' => isset($event['instance']) ? strtolower((string) $event['instance']) : null,
+                'count' => max(1, (int) $event['count']),
+                'at' => (string) $event['at'],
+            ], array_filter($heartbeat['service_events'], 'is_array')));
+
+            AgentServiceEventsReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $events);
         }
 
         if ($facts !== null) {

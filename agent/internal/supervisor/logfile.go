@@ -10,22 +10,39 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
-// rotFile is an append-only log file rotated to "<path>.1" when it exceeds max bytes.
+// rotFile is an append-only log file rotated to "<path>.1" (… "<path>.<keep>") when it exceeds max bytes.
 // Shared by all instances of a program.
 type rotFile struct {
 	mu   sync.Mutex
 	path string
 	max  int64
+	keep int // rotated files kept (at least 1)
 	f    *os.File
 	size int64
 }
 
-func openRot(path string, max int64) (*rotFile, error) {
+func openRot(path string, max int64, keep int) (*rotFile, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	r := &rotFile{path: path, max: max}
+	r := &rotFile{path: path, max: max, keep: max1(keep)}
 	return r, r.open()
+}
+
+func max1(n int) int {
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// rotate shifts <path>.N-1 → <path>.N … <path> → <path>.1, dropping the oldest.
+func (r *rotFile) rotate() {
+	_ = os.Remove(r.path + "." + itoa(r.keep))
+	for i := r.keep - 1; i >= 1; i-- {
+		_ = os.Rename(r.path+"."+itoa(i), r.path+"."+itoa(i+1))
+	}
+	_ = os.Rename(r.path, r.path+".1")
 }
 
 func (r *rotFile) open() error {
@@ -50,7 +67,7 @@ func (r *rotFile) Write(p []byte) (int, error) {
 	}
 	if r.max > 0 && r.size+int64(len(p)) > r.max && r.size > 0 {
 		r.f.Close()
-		_ = os.Rename(r.path, r.path+".1")
+		r.rotate()
 		if err := r.open(); err != nil {
 			r.f = nil
 			return len(p), nil

@@ -76,7 +76,9 @@ type Heartbeat struct {
 	MissingSecrets []string `json:"missing_secrets,omitempty"`
 	// Databases are the database containers' states and health (db.Report); nil when there are none.
 	Databases any `json:"databases,omitempty"`
-	Facts     any `json:"facts,omitempty"`
+	// ServiceEvents are OOM kills and restarts seen since the last delivered heartbeat (resources.Queue).
+	ServiceEvents any `json:"service_events,omitempty"`
+	Facts         any `json:"facts,omitempty"`
 }
 
 // Heartbeater posts heartbeats every Interval. Facts are included on the first beat and whenever
@@ -85,15 +87,18 @@ type Heartbeater struct {
 	Client interface {
 		Heartbeat(ctx context.Context, hb any) error
 	}
-	Interval    time.Duration
-	Summary     func() Heartbeat // fills metrics fields
-	Facts       func(ctx context.Context) (any, error)
-	FactsEvery  time.Duration // how often facts are re-collected (default 5m)
-	Running     func() []string
-	Log         *slog.Logger
-	lastFactsID [32]byte
-	facts       any
-	factsAt     time.Time
+	Interval   time.Duration
+	Summary    func() Heartbeat // fills metrics fields
+	Facts      func(ctx context.Context) (any, error)
+	FactsEvery time.Duration // how often facts are re-collected (default 5m)
+	Running    func() []string
+	// ServiceEvents returns what to send in `service_events` (nil: nothing) and the func that drops it once
+	// delivered; a failed beat keeps it for the next one.
+	ServiceEvents func() (any, func())
+	Log           *slog.Logger
+	lastFactsID   [32]byte
+	facts         any
+	factsAt       time.Time
 	// pausedUntil: after an agent_revoked answer, Run skips beats for RevokedRetry.
 	pausedUntil time.Time
 }
@@ -137,6 +142,10 @@ func (h *Heartbeater) Beat(ctx context.Context) {
 	if h.Running != nil {
 		hb.RunningCommands = h.Running()
 	}
+	var delivered func()
+	if h.ServiceEvents != nil {
+		hb.ServiceEvents, delivered = h.ServiceEvents()
+	}
 	var sum [32]byte
 	if h.Facts != nil && (h.facts == nil || time.Since(h.factsAt) > h.FactsEvery) {
 		if f, err := h.Facts(ctx); err == nil {
@@ -162,6 +171,9 @@ func (h *Heartbeater) Beat(ctx context.Context) {
 	}
 	if hb.Facts != nil {
 		h.lastFactsID = sum
+	}
+	if hb.ServiceEvents != nil && delivered != nil {
+		delivered()
 	}
 }
 

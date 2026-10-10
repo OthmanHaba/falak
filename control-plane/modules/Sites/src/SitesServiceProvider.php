@@ -10,7 +10,10 @@ use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Insights\Contracts\SiteNameResolver;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Limits\Contracts\CapacitySources;
+use Falak\Projects\Events\ServiceLinked;
 use Falak\Servers\Events\ServerDeleted;
+use Falak\Sites\Application\Listeners\ApplyLimitDefaults;
 use Falak\Sites\Application\Listeners\DeleteOrganizationSites;
 use Falak\Sites\Application\Listeners\DetachSourceConnection;
 use Falak\Sites\Application\Listeners\HandleCommandOutcome;
@@ -41,6 +44,7 @@ use Falak\Sites\Infrastructure\EloquentSiteHeaders;
 use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
 use Falak\Sites\Infrastructure\NullSiteDomains;
 use Falak\Sites\Infrastructure\PatternSecretVariables;
+use Falak\Sites\Infrastructure\SitesCapacity;
 use Falak\SourceControl\Events\ConnectionDeleted;
 use Falak\Telemetry\Contracts\ServerSites;
 use Illuminate\Support\Facades\Event;
@@ -81,6 +85,10 @@ class SitesServiceProvider extends ModuleServiceProvider
     protected function bootModule(): void
     {
         Gate::policy(Site::class, SitePolicy::class);
+        // New sites placed outside production start with that environment's default limits.
+        Event::listen(ServiceLinked::class, ApplyLimitDefaults::class);
+        // Sites' and compose services' limits in servers' capacity views.
+        $this->app->make(CapacitySources::class)->register(SitesCapacity::class);
 
         $registry = $this->app->make(PermissionRegistry::class);
         $registry->register('sites.view', [Role::Admin, Role::Developer, Role::Viewer], 'View sites, their settings and command history', 'sites');

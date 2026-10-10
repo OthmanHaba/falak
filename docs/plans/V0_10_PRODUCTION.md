@@ -331,6 +331,30 @@ The same flow restores a normal (non-PITR) backup.
 - Disk is limited through `sized` volumes (step 2) and log caps.
 - OOM kills and restart counts are reported as events (they feed steps 7 and 8).
 
+Implementation notes (built on `feat/v010-limits`):
+
+- A `Limits` module owns the `ResourceLimits` value, validation against the agents' facts, defaults per environment
+  (`config/limits.php`), the capacity view (`GET /servers/{server}/capacity`) and `ServiceOomKilled` /
+  `ServiceRestartLoop` (alertable). Sites store `limits` / `compose_limits`, Processes a `limits` column on workers and
+  daemons; database instances and functions keep their own memory / CPU settings and are only counted.
+- Slices are keyed `falak-site_<slug>.slice`, `falak-worker_<id>.slice`, `falak-daemon_<id>.slice` (a dash would nest
+  a slice in another). proc.apply carries the full set; the agent writes the units and applies changes with
+  `systemctl set-property --runtime` (live). A supervised program in a slice starts as `systemd-run --scope
+  --slice=… -- setpriv --reuid --regid --init-groups -- <cmd>` (same pid and process group; `OOMPolicy=continue` on
+  systemd ≥ 253). A site's web process, Octane and Horizon share the site's slice.
+- **PHP-FPM:** one master's pools are its forked children in its cgroup, so a pool can't be limited on its own. A
+  PHP-FPM site with memory, CPU or process limits runs its pool in its own master, `falak-fpm-<slug>.service`
+  (`Slice=` the site's slice, same socket path); without limits it stays in the shared `phpX.Y-fpm`. FrankenPHP sites
+  run inside the shared edge and only take restart / log / OOM settings.
+- Compose limits go into the generated `compose.falak.yaml` (both `mem_limit`/`cpus`/`pids_limit` and their
+  `deploy.resources` twins, which Compose requires to agree), written by the control plane per deploy.
+- Defaults are written on a service when it is created outside production (a site placed in a non-production
+  environment, a new worker or daemon) and validated with it; nothing merges defaults at runtime, so an upgrade or a
+  changed default never caps existing services. An invalid slice is skipped by the agent and reported
+  (`slice_errors`), never the whole proc.apply.
+- Agents report `service_events` in heartbeats: Docker `oom` events, restart-count increases of managed containers,
+  slices' `memory.events` `oom_kill` and supervised programs' restart counters, each delivered once.
+
 ## 7. Rollback after a release goes live (A4)
 
 Rollback when a deploy step *fails* already exists. New: a **watch window** after a successful deploy (default 5

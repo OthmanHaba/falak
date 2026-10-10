@@ -5,6 +5,7 @@ namespace Falak\Sites\Application\Listeners;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Fleet\Events\AgentVersionChanged;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Domain\Models\Site;
@@ -37,7 +38,7 @@ final class ReapplyFpmPools implements ShouldQueue
             ->get();
 
         foreach ($sites as $site) {
-            $payload = CommandPayloads::fpmPool($site, (string) $site->php_version, $this->servers->phpSettings($event->serverId, (string) $site->php_version));
+            $payload = CommandPayloads::fpmPool($site, (string) $site->php_version, $this->servers->phpSettings($event->serverId, (string) $site->php_version), limits: ResourceLimits::fromArray($site->limits));
 
             try {
                 $this->agents->dispatch($event->serverId, 'runtime.fpm.pool', $payload, 300, "sites.pool.reapply:{$site->id}:{$event->serverId}:".Str::ulid());

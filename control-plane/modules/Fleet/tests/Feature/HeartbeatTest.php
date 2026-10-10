@@ -8,6 +8,7 @@ use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentSecretsMissing;
+use Falak\Fleet\Events\AgentServiceEventsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\AgentWentOffline;
 use Illuminate\Support\Facades\Event;
@@ -142,4 +143,26 @@ it('reports the server\'s database containers (databases)', function () {
     // An empty list still reports (the server runs none any more).
     $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(['databases' => []]), $this->headers)->assertNoContent();
     Event::assertDispatched(AgentDatabasesReported::class, fn (AgentDatabasesReported $e) => $e->instances === []);
+});
+
+it('reports OOM kills and restarts (service_events)', function () {
+    Event::fake([AgentServiceEventsReported::class]);
+
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), $this->headers)->assertNoContent();
+    Event::assertNotDispatched(AgentServiceEventsReported::class);
+
+    $heartbeat = fleet_heartbeat(['service_events' => [
+        ['kind' => 'oom_kill', 'source' => 'container', 'name' => 'falak-shop-blue', 'site' => 'shop', 'count' => 1, 'at' => now()->toIso8601ZuluString()],
+        ['kind' => 'restart', 'source' => 'slice', 'name' => 'worker_01j9z8y7x6w5v4t3s2r1q0p9na', 'count' => 3, 'at' => now()->toIso8601ZuluString()],
+        ['kind' => 'oom_kill', 'source' => 'container', 'name' => 'falak-db-x', 'instance' => '01HZYINST00000000000000001', 'count' => 2, 'at' => now()->toIso8601ZuluString()],
+    ]]);
+    expect(fleet_schema_errors('heartbeat.schema.json', $heartbeat))->toBe([])
+        ->and(fleet_schema_errors('heartbeat.schema.json', fleet_heartbeat(['service_events' => [['kind' => 'panic', 'source' => 'container', 'name' => 'x', 'count' => 1, 'at' => now()->toIso8601ZuluString()]]])))->not->toBe([]);
+
+    $this->postJson('/agent/v1/heartbeat', $heartbeat, $this->headers)->assertNoContent();
+    Event::assertDispatched(AgentServiceEventsReported::class, fn (AgentServiceEventsReported $e) => $e->serverId === $this->serverId
+        && count($e->events) === 3
+        && $e->events[0]['site'] === 'shop' && $e->events[0]['project'] === null
+        && $e->events[1]['count'] === 3
+        && $e->events[2]['instance'] === '01hzyinst00000000000000001');
 });

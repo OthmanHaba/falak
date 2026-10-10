@@ -23,13 +23,13 @@ type SwapPayload struct {
 		Blue  int `json:"blue"`
 		Green int `json:"green"`
 	} `json:"ports"`
-	Env         map[string]string `json:"env,omitempty"`
-	Command     []string          `json:"command,omitempty"`
-	Volumes     []VolumeSpec      `json:"volumes,omitempty"`
-	Network     string            `json:"network,omitempty"`
-	Networks    []NetworkJoin     `json:"networks,omitempty"`
-	MemoryBytes int64             `json:"memory_bytes,omitempty"`
-	CPUs        float64           `json:"cpus,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
+	Command  []string          `json:"command,omitempty"`
+	Volumes  []VolumeSpec      `json:"volumes,omitempty"`
+	Network  string            `json:"network,omitempty"`
+	Networks []NetworkJoin     `json:"networks,omitempty"`
+	// Limits apply to both colors (the restart policy defaults to unless-stopped).
+	Limits
 	Health      *HealthSpec       `json:"health,omitempty"`
 	EdgeRouteID string            `json:"edge_route_id"`
 	DrainS      *int              `json:"drain_s,omitempty"`
@@ -86,8 +86,7 @@ func (p SwapPayload) runSpec(color string) RunPayload {
 	return RunPayload{
 		Name: "falak-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
 		Ports:   []PortSpec{{HostIP: "127.0.0.1", HostPort: p.port(color), ContainerPort: p.ContainerPort}},
-		Volumes: p.Volumes, Network: p.Network, Networks: p.Networks, Labels: labels, RestartPolicy: "unless-stopped",
-		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs, SecretFiles: p.SecretFiles,
+		Volumes: p.Volumes, Network: p.Network, Networks: p.Networks, Labels: labels, Limits: p.Limits, SecretFiles: p.SecretFiles,
 	}
 }
 
@@ -106,6 +105,9 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	// The site names containers and their secret directories (removed and rewritten below).
 	if !siteRe.MatchString(p.Site) {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid site %q", p.Site)}
+	}
+	if err := p.Limits.validate(); err != nil {
+		return nil, &commands.PayloadError{Err: err}
 	}
 	if p.Ports.Blue == p.Ports.Green {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("blue and green ports must differ")}

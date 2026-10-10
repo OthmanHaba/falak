@@ -28,6 +28,8 @@ final readonly class DatabaseData
         public ?string $health = null,
         /** The container's data volume (Volumes) */
         public ?string $volumeId = null,
+        /** The container's CPU limit (null = none) */
+        public ?float $cpus = null,
     ) {}
 
     public function isKeyValue(): bool

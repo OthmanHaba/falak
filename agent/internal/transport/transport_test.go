@@ -308,6 +308,38 @@ func TestHeartbeatSendsFactsOnlyWhenChanged(t *testing.T) {
 	}
 }
 
+// Service events are dropped only after a heartbeat carrying them was delivered.
+func TestHeartbeatServiceEventsDroppedOnlyWhenDelivered(t *testing.T) {
+	plane := newFakePlane()
+	srv := httptest.NewServer(plane)
+	pending := []string{"oom"}
+	h := &Heartbeater{
+		Client:  NewWithHTTPClient(srv.URL+"/agent/v1", srv.Client()),
+		Summary: func() Heartbeat { return Heartbeat{UptimeS: 10} },
+		ServiceEvents: func() (any, func()) {
+			if len(pending) == 0 {
+				return nil, nil
+			}
+			return append([]string(nil), pending...), func() { pending = nil }
+		},
+	}
+	h.Beat(context.Background())
+	h.Beat(context.Background())
+	plane.mu.Lock()
+	_, first := plane.heartbeats[0]["service_events"]
+	_, second := plane.heartbeats[1]["service_events"]
+	plane.mu.Unlock()
+	if !first || second || len(pending) != 0 {
+		t.Fatalf("first=%v second=%v pending=%v", first, second, pending)
+	}
+	pending = []string{"restart"}
+	srv.Close()
+	h.Beat(context.Background())
+	if len(pending) != 1 {
+		t.Fatal("events dropped although the heartbeat failed")
+	}
+}
+
 // --- mTLS ---
 
 func mkCert(t *testing.T, tpl *x509.Certificate, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {

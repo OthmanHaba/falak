@@ -52,7 +52,7 @@ final class ServerConverger
         $state = ServerState::query()->find($serverId) ?? new ServerState(['server_id' => $serverId]);
         $state->organization_id = $server->organizationId;
 
-        $proc = $this->apply($state, 'proc', 'proc.apply', $compiled->procPayload(), $compiled->programMeta, $compiled->programs === [], $force);
+        $proc = $this->apply($state, 'proc', 'proc.apply', $compiled->procPayload(), $compiled->programMeta, $compiled->programs === [] && $compiled->slices === [], $force);
         $cron = $this->apply($state, 'cron', 'cron.apply', $compiled->cronPayload(), $compiled->jobMeta, $compiled->jobs === [], $force);
 
         if ($state->isDirty()) {

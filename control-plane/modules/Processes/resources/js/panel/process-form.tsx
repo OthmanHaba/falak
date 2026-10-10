@@ -1,4 +1,5 @@
 import { Button, Checkbox, Field, IconButton, Input, Select, Switch } from '@/components/falak';
+import { LimitsFields, cleanLimits, limitsSummary, type ResourceLimits } from '@/components/limits-fields';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
@@ -21,6 +22,7 @@ function workerDefaults(): WorkerConfig {
         max_jobs: null,
         max_time: 3600,
         memory: 256,
+        limits: {},
         env: [],
         server_ids: [],
     };
@@ -36,6 +38,7 @@ function daemonDefaults(data: ProcessesData): DaemonConfig {
         restart: data.options.restart[0] ?? 'always',
         stop_signal: data.options.stop_signals[0] ?? 'TERM',
         stop_timeout: 10,
+        limits: {},
         env: [],
         server_ids: [],
     };
@@ -118,6 +121,35 @@ function firstError(errors: Record<string, string>, prefix: string): string | un
     return Object.entries(errors).find(([key]) => key === prefix || key.startsWith(`${prefix}.`))?.[1];
 }
 
+/** Resource limits of a worker or daemon (its slice, shared by its processes), folded away until opened. */
+function LimitsDisclosure({
+    value,
+    onChange,
+    errors,
+}: {
+    value: ResourceLimits;
+    onChange: (value: ResourceLimits) => void;
+    errors: Record<string, string>;
+}) {
+    const failed = Object.keys(errors).some((key) => key.startsWith('limits.'));
+    const [open, setOpen] = useState(failed || Object.keys(cleanLimits(value)).length > 0);
+
+    return (
+        <div className="border-border grid gap-3 rounded-md border p-3">
+            <button
+                type="button"
+                className="text-fg flex items-center justify-between text-left text-xs font-medium"
+                onClick={() => setOpen(!open)}
+                aria-expanded={open || failed}
+            >
+                <span>Resource limits</span>
+                <span className="text-fg-faint font-mono font-normal">{limitsSummary(value) ?? (open ? '' : 'none')}</span>
+            </button>
+            {(open || failed) && <LimitsFields value={value} onChange={onChange} errors={errors} />}
+        </div>
+    );
+}
+
 const num = (value: string) => (value === '' ? null : Number(value.replace(/\D/g, '')));
 
 /** Inline create / edit form of a queue worker, daemon or cron job (saved through the Processes endpoints). */
@@ -166,7 +198,8 @@ export function ProcessForm({
         setErrors({});
         const base = endpoints[kind]?.(data.site.id) ?? '';
         try {
-            await requestJson(id ? `${base}/${id}` : base, id ? 'PUT' : 'POST', values);
+            const body = kind === 'cron' ? values : { ...values, limits: cleanLimits((values.limits as ResourceLimits | undefined) ?? {}) };
+            await requestJson(id ? `${base}/${id}` : base, id ? 'PUT' : 'POST', body);
             onDone(id ? 'Saved — the servers are being updated' : 'Created — the servers are being updated');
         } catch (e) {
             setErrors(e instanceof HttpError ? { ...e.errors, form: Object.keys(e.errors).length ? '' : e.message } : { form: errorMessage(e) });
@@ -188,7 +221,7 @@ export function ProcessForm({
                         {text('queue', 'Queues', { mono: true, placeholder: 'default', hint: 'Comma separated, highest priority first.' })}
                         {text('connection', 'Connection', { mono: true, placeholder: 'default connection' })}
                         {number('processes', 'Processes')}
-                        {number('memory', 'Memory limit (MB)')}
+                        {number('memory', 'queue:work memory (MB)', 'The worker restarts itself above it.')}
                         {number('timeout', 'Timeout (s)')}
                         {number('tries', 'Tries')}
                         {number('sleep', 'Sleep (s)')}
@@ -288,6 +321,13 @@ export function ProcessForm({
                     </>
                 )}
             </div>
+            {(kind === 'worker' || kind === 'daemon') && (
+                <LimitsDisclosure
+                    value={(values.limits as ResourceLimits | undefined) ?? {}}
+                    onChange={(limits) => set('limits', limits)}
+                    errors={errors}
+                />
+            )}
             {errors.form && <p className="text-danger text-xs">{errors.form}</p>}
             <div className="flex justify-end gap-2">
                 <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>

@@ -4,6 +4,7 @@ namespace Falak\Processes\Infrastructure;
 
 use Falak\Deployments\Contracts\Data\LiveRelease;
 use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Processes\Application\OctaneRoutes;
 use Falak\Processes\Contracts\ScheduleSources;
 use Falak\Processes\Domain\Models\Daemon;
@@ -30,11 +31,22 @@ use Illuminate\Support\Collection;
  * the program definitions and proc.apply restarts them with the new release's environment.
  *
  * Ids cross the agent boundary upper-case (FALAK_SITE_ID / FALAK_SERVER_ID), like telemetry.configure.
+ *
+ * Resource limits (effective: the environment's defaults under the service's own) put programs in slices: a site's
+ * web process, Octane and Horizon share the site's slice (with its own PHP-FPM master, see Sites), each worker and
+ * daemon has its own, shared by its instances. Slices of PHP-FPM sites are sent from their first ready target on,
+ * before any release: the pool's master runs in it.
  */
 final class StateCompiler
 {
     /** @var array<string, OctaneRoute> draining Octane routes of the server being compiled, by site id */
     private array $draining = [];
+
+    /** @var array<string, array<string, int|string>> proc.apply `slices` of the server being compiled, by name */
+    private array $slices = [];
+
+    /** @var array<string, string> worker / daemon id by program name */
+    private array $refs = [];
 
     public function __construct(
         private readonly SiteDirectory $sites,
@@ -58,6 +70,15 @@ final class StateCompiler
         $workers = Worker::query()->whereIn('site_id', $siteIds)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
         $daemons = Daemon::query()->whereIn('site_id', $siteIds)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
         $schedules = Schedule::query()->whereIn('site_id', $siteIds)->where('enabled', true)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
+        $this->slices = $this->refs = [];
+
+        // PHP-FPM masters of limited sites run in the site's slice from the pool's creation on.
+        foreach ($this->sites->forServer($serverId) as $site) {
+            if ($site->runtime === SiteRuntime::PhpFpm && $site->target($serverId)?->status === TargetStatus::Ready) {
+                $this->siteLimits($site);
+            }
+        }
+
         $this->draining = OctaneRoute::query()->where('server_id', $serverId)->whereIn('site_id', $siteIds)
             ->where('status', 'draining')->get()->keyBy('site_id')->all();
 
@@ -76,7 +97,7 @@ final class StateCompiler
                 $program = $this->withMask($program, $secretNames);
                 $programs[] = $program;
                 // `hash` tells restartForSite() which programs a proc.apply restarts anyway (changed definition).
-                $programMeta[$program['name']] = ['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1, 'hash' => PayloadHash::of($program)];
+                $programMeta[$program['name']] = array_filter(['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1, 'hash' => PayloadHash::of($program), 'ref_id' => $this->refs[$program['name']] ?? null], fn ($v) => $v !== null);
             }
 
             foreach ($this->siteJobs($site, $serverId, $release, $isLeader, $schedules->get($site->id, new Collection)) as [$job, $kind, $label]) {
@@ -112,7 +133,9 @@ final class StateCompiler
         ksort($programMeta);
         ksort($jobMeta);
 
-        return new CompiledState($programs, $jobs, $programMeta, $jobMeta);
+        ksort($this->slices);
+
+        return new CompiledState($programs, $jobs, $programMeta, $jobMeta, array_values($this->slices));
     }
 
     /**
@@ -165,6 +188,10 @@ final class StateCompiler
             $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $draining->octane_server, $draining->port), $octaneStop), 'octane', 'Octane (stopping)'];
         }
 
+        // The web process, Horizon and Octane share the site's slice.
+        $siteLimits = $this->siteLimits($site);
+        $out = array_map(fn (array $entry) => [$this->limited($entry[0], ...$siteLimits), $entry[1], $entry[2]], $out);
+
         foreach ($workers as $worker) {
             if (! $worker->runsOn($serverId)) {
                 continue;
@@ -176,11 +203,13 @@ final class StateCompiler
                 continue;
             }
 
-            $out[] = [$this->program($site, $serverId, $release, ProgramNames::worker($site->slug, $worker->id), $command, [
+            $name = ProgramNames::worker($site->slug, $worker->id);
+            $this->refs[$name] = $worker->id;
+            $out[] = [$this->limited($this->program($site, $serverId, $release, $name, $command, [
                 'numprocs' => max(1, min(64, $worker->processes)),
                 // queue:work finishes the current job on SIGTERM; give it the job timeout plus a margin.
                 'stop_timeout_s' => max(1, $worker->timeout + 15),
-            ], $worker->env ?? []), 'worker', self::workerLabel($worker)];
+            ], $worker->env ?? []), $worker->resourceLimits(), ResourceLimits::sliceName('worker', $worker->id)), 'worker', self::workerLabel($worker)];
         }
 
         foreach ($daemons as $daemon) {
@@ -188,17 +217,55 @@ final class StateCompiler
                 continue;
             }
 
-            $out[] = [$this->program($site, $serverId, $release, ProgramNames::daemon($site->slug, $daemon->id), ['/bin/bash', '-c', $daemon->command], [
+            $name = ProgramNames::daemon($site->slug, $daemon->id);
+            $this->refs[$name] = $daemon->id;
+            $out[] = [$this->limited($this->program($site, $serverId, $release, $name, ['/bin/bash', '-c', $daemon->command], [
                 'numprocs' => max(1, min(64, $daemon->instances)),
                 'restart' => $daemon->restart,
                 'stop_signal' => $daemon->stop_signal,
                 'stop_timeout_s' => max(1, $daemon->stop_timeout),
                 'user' => $daemon->user ?: $site->unixUser,
                 'cwd' => $daemon->directory ?: $site->currentPath(),
-            ], $daemon->env ?? []), 'daemon', $daemon->name];
+            ], $daemon->env ?? []), $daemon->resourceLimits(), ResourceLimits::sliceName('daemon', $daemon->id)), 'daemon', $daemon->name];
         }
 
         return $out;
+    }
+
+    /**
+     * The site's effective limits and its slice name (the slice is declared when it has cgroup limits).
+     *
+     * @return array{0: ResourceLimits, 1: string}
+     */
+    private function siteLimits(SiteData $site): array
+    {
+        $limits = $site->limits;
+        $slice = ResourceLimits::sliceName('site', $site->slug);
+
+        if ($limits->hasCgroupLimits()) {
+            $this->slices[$slice] = $limits->slice($slice);
+        }
+
+        return [$limits, $slice];
+    }
+
+    /**
+     * A program with its limits: restart policy, give-up count, log caps and OOM preference on the program, and the
+     * slice (declared in `slices`) when memory, CPUs or processes are limited.
+     *
+     * @param  array<string, mixed>  $program
+     * @return array<string, mixed>
+     */
+    private function limited(array $program, ResourceLimits $limits, string $slice): array
+    {
+        $program = [...$program, ...$limits->program()];
+
+        if ($limits->hasCgroupLimits()) {
+            $this->slices[$slice] = $limits->slice($slice);
+            $program['slice'] = $slice;
+        }
+
+        return $program;
     }
 
     /**

@@ -492,6 +492,102 @@ func TestFPMPool(t *testing.T) {
 	}
 }
 
+// A pool with a slice moves into its own master in that slice, and back into the shared one without.
+func TestFPMPoolOwnMasterInSlice(t *testing.T) {
+	f := &runnertest.Fake{}
+	rt, root, st := setup(t, f, nil)
+	mk(t, root, "/etc/php/8.4/fpm/pool.d")
+	ctx := context.Background()
+	p := FPMPoolPayload{PHPVersion: "8.4", Pool: "shop", User: "shop"}
+	if _, err := rt.FPMPool(ctx, p, st); err != nil {
+		t.Fatal(err)
+	}
+	f.Reset()
+
+	p.Slice, p.OomScoreAdj = "site_shop", -500
+	r, err := rt.FPMPool(ctx, p, st)
+	if err != nil || !r.(ListenResult).Changed || r.(ListenResult).Listen != "/run/php/falak-shop-8.4.sock" {
+		t.Fatal(r, err)
+	}
+	read := func(rel string) string { b, _ := os.ReadFile(filepath.Join(root, rel)); return string(b) }
+	if read("etc/php/8.4/fpm/pool.d/falak-shop.conf") != "" {
+		t.Fatal("pool still in the shared master")
+	}
+	conf := read("etc/falak/fpm/shop.conf")
+	for _, w := range []string{"[global]\npid = /run/php/falak-fpm-shop.pid\n", "daemonize = no\n", "[falak-shop]\nuser = shop\n", "listen = /run/php/falak-shop-8.4.sock\n"} {
+		if !strings.Contains(conf, w) {
+			t.Fatalf("missing %q in\n%s", w, conf)
+		}
+	}
+	if strings.Count(conf, "Managed by Falak") != 1 {
+		t.Fatal(conf)
+	}
+	unit := read("etc/systemd/system/falak-fpm-shop.service")
+	for _, w := range []string{"Slice=falak-site_shop.slice\n", "ExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/falak/fpm/shop.conf\n", "OOMPolicy=continue\n", "OOMScoreAdjust=-500\n", "Type=notify\n"} {
+		if !strings.Contains(unit, w) {
+			t.Fatalf("missing %q in\n%s", w, unit)
+		}
+	}
+	want := "php-fpm8.4 -t --fpm-config /etc/falak/fpm/shop.conf|systemctl reload php8.4-fpm|systemctl daemon-reload|systemctl enable falak-fpm-shop.service|systemctl restart falak-fpm-shop.service"
+	if strings.Join(f.Lines(), "|") != want {
+		t.Fatal(f.Lines())
+	}
+
+	// Idempotent; a pool change only reloads the own master.
+	f.Reset()
+	if r, _ := rt.FPMPool(ctx, p, st); r.(ListenResult).Changed || len(f.Lines()) != 0 {
+		t.Fatal(f.Lines())
+	}
+	p.MaxChildren = 9
+	rt.FPMPool(ctx, p, st)
+	if strings.Join(f.Lines(), "|") != "php-fpm8.4 -t --fpm-config /etc/falak/fpm/shop.conf|systemctl reload-or-restart falak-fpm-shop.service" {
+		t.Fatal(f.Lines())
+	}
+
+	// Limits removed: back into the shared master.
+	f.Reset()
+	p.Slice = ""
+	if r, _ := rt.FPMPool(ctx, p, st); !r.(ListenResult).Changed {
+		t.Fatal("not moved back")
+	}
+	if read("etc/systemd/system/falak-fpm-shop.service") != "" || read("etc/falak/fpm/shop.conf") != "" || !strings.Contains(read("etc/php/8.4/fpm/pool.d/falak-shop.conf"), "[falak-shop]") {
+		t.Fatal("own master left behind")
+	}
+	if strings.Join(f.Lines(), "|") != "systemctl disable --now falak-fpm-shop.service|systemctl daemon-reload|php-fpm8.4 -t|systemctl reload php8.4-fpm" {
+		t.Fatal(f.Lines())
+	}
+
+	// A bad slice name is a payload error.
+	p.Slice = "site-shop"
+	if _, err := rt.FPMPool(ctx, p, st); !commands.IsPayloadError(err) {
+		t.Fatal(err)
+	}
+}
+
+// An own master that fails to start is rolled back: the pool is served by the shared master again.
+func TestFPMPoolOwnMasterRollsBackWhenItFailsToStart(t *testing.T) {
+	f := (&runnertest.Fake{}).On("systemctl restart falak-fpm-shop.service", runner.Result{ExitCode: 1, Stderr: []byte("Job failed")})
+	rt, root, st := setup(t, f, nil)
+	mk(t, root, "/etc/php/8.4/fpm/pool.d")
+	ctx := context.Background()
+	p := FPMPoolPayload{PHPVersion: "8.4", Pool: "shop", User: "shop"}
+	rt.FPMPool(ctx, p, st)
+	f.Reset()
+
+	p.Slice = "site_shop"
+	_, err := rt.FPMPool(ctx, p, st)
+	if err == nil || !strings.Contains(err.Error(), "shared php8.4-fpm again") {
+		t.Fatal(err)
+	}
+	read := func(rel string) string { b, _ := os.ReadFile(filepath.Join(root, rel)); return string(b) }
+	if !strings.Contains(read("etc/php/8.4/fpm/pool.d/falak-shop.conf"), "[falak-shop]") || read("etc/systemd/system/falak-fpm-shop.service") != "" || read("etc/falak/fpm/shop.conf") != "" {
+		t.Fatal("not rolled back")
+	}
+	if !f.Ran("systemctl disable --now falak-fpm-shop.service") || f.Lines()[len(f.Lines())-1] != "systemctl reload php8.4-fpm" {
+		t.Fatal(f.Lines())
+	}
+}
+
 func TestEdgeUnitJoinsSiteGroupsAndNeverDropsThem(t *testing.T) {
 	fs := hostfs.FS{Root: t.TempDir()}
 	f := (&runnertest.Fake{}).On("getent passwd caddy", runner.Result{Stdout: []byte("caddy:x:998:998::/var/lib/caddy:/usr/sbin/nologin\n")})

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"syscall"
 	"time"
+
+	"github.com/OthmanHaba/falak/agent/internal/cgroup"
 )
 
 // Program mirrors one entry of proc.apply `programs`.
@@ -32,6 +34,13 @@ type Program struct {
 	Site         string            `json:"site,omitempty"`
 	// Mask names the secret variables of env: their values are masked in the program's logs (file and OTLP).
 	Mask []string `json:"mask,omitempty"`
+	// Slice is the key of the proc.apply slice the program runs in (its limits); "" = the agent's own cgroup.
+	Slice string `json:"slice,omitempty"`
+	// OomScoreAdj is the program's OOM preference (-1000..1000; negative = killed last).
+	OomScoreAdj int `json:"oom_score_adj,omitempty"`
+	// MaxRestarts stops restarting an instance (state fatal) after this many restarts in a row that never reached
+	// start_seconds of uptime; 0 = keep restarting.
+	MaxRestarts int `json:"max_restarts,omitempty"`
 }
 
 // Backoff controls restart delays.
@@ -45,7 +54,9 @@ type LogSpec struct {
 	Stdout   string `json:"stdout,omitempty"`
 	Stderr   string `json:"stderr,omitempty"`
 	MaxBytes *int64 `json:"max_bytes,omitempty"`
-	OTLP     *bool  `json:"otlp,omitempty"`
+	// MaxFiles is how many rotated files are kept (<log>.1 … <log>.N; default 1).
+	MaxFiles int   `json:"max_files,omitempty"`
+	OTLP     *bool `json:"otlp,omitempty"`
 }
 
 // Restart policies.
@@ -133,6 +144,15 @@ func (p Program) validate() error {
 	if p.Numprocs > 64 {
 		return fmt.Errorf("program %s: numprocs > 64", p.Name)
 	}
+	if p.Slice != "" && !cgroup.NameRe.MatchString(p.Slice) {
+		return fmt.Errorf("program %s: invalid slice %q", p.Name, p.Slice)
+	}
+	if p.OomScoreAdj < -1000 || p.OomScoreAdj > 1000 {
+		return fmt.Errorf("program %s: oom_score_adj out of range", p.Name)
+	}
+	if p.MaxRestarts < 0 || (p.Log != nil && (p.Log.MaxFiles < 0 || p.Log.MaxFiles > 100)) {
+		return fmt.Errorf("program %s: invalid max_restarts or log max_files", p.Name)
+	}
 	return nil
 }
 
@@ -172,4 +192,6 @@ type ProcessStatus struct {
 	Restarts     int        `json:"restarts"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	LastExitCode *int       `json:"last_exit_code,omitempty"`
+	// LaunchError: the last start never ran the program (its slice's scope, a missing tool, its directory).
+	LaunchError string `json:"launch_error,omitempty"`
 }

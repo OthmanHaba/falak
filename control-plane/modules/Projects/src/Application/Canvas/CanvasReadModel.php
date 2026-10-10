@@ -10,6 +10,7 @@ use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Deployments\Contracts\Data\DeploymentSummary;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Limits\Contracts\ServiceHealth;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Projects\Domain\Models\Environment;
@@ -63,7 +64,14 @@ final class CanvasReadModel
         private readonly ComposeInspector $inspector,
         private readonly DatabaseConnections $connections,
         private readonly ServiceVolumes $volumes,
+        private readonly ServiceHealth $health,
     ) {}
+
+    /** @var array<string, list<string>> OOM / restart-loop badges by site id, then by database instance id */
+    private array $siteBadges = [];
+
+    /** @var array<string, list<string>> */
+    private array $instanceBadges = [];
 
     /**
      * @return array{services: list<CanvasService>, edges: list<CanvasEdge>, groups: list<CanvasGroup>}
@@ -86,6 +94,8 @@ final class CanvasReadModel
         }
 
         $databases = $this->databases->findMany($databaseIds);
+        $this->siteBadges = $this->health->badgesForSites(array_keys($sites));
+        $this->instanceBadges = $this->health->badgesForInstances(array_values(array_filter(array_map(fn (DatabaseData $database) => $database->instanceId, array_values($databases)))));
         $deployments = $this->deployments->currentForSites(array_keys($sites));
         $volumes = $this->volumes->forSites(array_keys($sites));
         $domains = $this->domains->primaryDomains(array_keys($sites));
@@ -139,9 +149,11 @@ final class CanvasReadModel
     {
         [$status, $label] = $this->siteStatus($site, $deployment);
         $host = $domain ?? $site->testDomain;
+        // "Laravel · PHP 8.4 · 512 MB · 1 CPU" (the limits it runs with).
         $subtitle = implode(' · ', array_filter([
             $site->framework->label(),
             $site->runtime->isPhp() && $site->phpVersion ? "PHP {$site->phpVersion}" : $site->runtime->label(),
+            $site->limits->summary(),
         ]));
 
         $compose = null;
@@ -161,7 +173,8 @@ final class CanvasReadModel
             'subtitle' => $subtitle,
             'servers' => array_map(fn ($target) => $this->server($target->serverId, $target->isLeader(), $servers, $agents), $site->targets),
             // Runtime traits worth seeing on the card (Laravel Octane serves the app behind the edge).
-            'badges' => $site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : [],
+            // OOM kills and restart loops (Limits) of the site, its compose services, workers and daemons.
+            'badges' => [...($site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : []), ...($this->siteBadges[$site->id] ?? [])],
             // Its volumes (a classic site's shared directories, a container's mounts); compose services carry their own.
             'volumes' => $compose === null && $site->runtime !== SiteRuntime::Static ? self::siteVolumes($site->id, $volumes) : [],
             'compose' => $compose !== null ? ['template' => $compose['template'], 'collapsed' => $compose['collapsed'], 'services' => $compose['services']] : null,
@@ -203,7 +216,10 @@ final class CanvasReadModel
                 $servers[$database->serverId]->name ?? null,
             ])),
             'servers' => [$this->server($database->serverId, false, $servers, $agents)],
-            'badges' => in_array($database->health, ['unhealthy', 'stopped', 'missing'], true) ? [ucfirst((string) $database->health)] : [],
+            'badges' => [
+                ...(in_array($database->health, ['unhealthy', 'stopped', 'missing'], true) ? [ucfirst((string) $database->health)] : []),
+                ...($database->instanceId !== null ? $this->instanceBadges[$database->instanceId] ?? [] : []),
+            ],
             // The container's data volume.
             'volumes' => ($volume = $database->volumeId !== null ? $this->volumes->find($database->volumeId) : null) !== null
                 ? [self::chip($volume, $volume->name, 'data')]

@@ -165,13 +165,65 @@
         }
       }
     },
+    "restart_policy": {
+      "enum": [
+        "no",
+        "always",
+        "unless-stopped",
+        "on-failure"
+      ],
+      "default": "unless-stopped"
+    },
     "memory_bytes": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Hard memory limit; swap is capped at the same value (no swap on top), so a service over its limit is OOM-killed"
     },
     "cpus": {
       "type": "number",
       "minimum": 0
+    },
+    "memory_reservation_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Soft limit: under memory pressure the kernel reclaims the container down to it (Docker MemoryReservation); at most memory_bytes"
+    },
+    "pids_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Most processes/threads in the container (0 = unlimited)"
+    },
+    "max_restarts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Restart attempts with restart_policy on-failure (0 = unlimited)"
+    },
+    "log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_size_mb"
+      ],
+      "description": "Caps the container's log: json-file driver with max-size / max-file (otherwise the daemon's default driver)",
+      "properties": {
+        "max_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10240
+        },
+        "max_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1
+        }
+      }
+    },
+    "oom_score_adj": {
+      "type": "integer",
+      "minimum": -1000,
+      "maximum": 1000,
+      "description": "OOM preference: negative values are killed last by the host's OOM killer (Falak sends -500 for `protect`)"
     },
     "health": {
       "type": "object",

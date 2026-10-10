@@ -5,6 +5,7 @@ namespace Falak\Processes\Http\Requests;
 use Closure;
 use Cron\CronExpression;
 use DateTimeZone;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Processes\Domain\Models\Daemon;
 use Falak\Sites\Contracts\Data\SiteData;
 use Illuminate\Validation\Rule;
@@ -33,6 +34,8 @@ final class ProcessRules
             'max_jobs' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'max_time' => ['nullable', 'integer', 'min:0', 'max:604800'],
             'memory' => ['required', 'integer', 'min:32', 'max:65536'],
+            // Bounded by the servers in SaveWorker (LimitValidator).
+            ...ResourceLimits::rules(),
             ...self::env(),
             ...self::servers($site),
         ];
@@ -52,6 +55,7 @@ final class ProcessRules
             'restart' => ['required', Rule::in(Daemon::RESTART_POLICIES)],
             'stop_signal' => ['required', Rule::in(Daemon::STOP_SIGNALS)],
             'stop_timeout' => ['required', 'integer', 'min:1', 'max:3600'],
+            ...ResourceLimits::rules(),
             ...self::env(),
             ...self::servers($site),
         ];

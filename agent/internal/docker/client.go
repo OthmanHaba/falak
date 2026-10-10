@@ -470,8 +470,13 @@ type HostConfig struct {
 	NetworkMode   string        `json:"NetworkMode,omitempty"`
 	RestartPolicy RestartPolicy `json:"RestartPolicy"`
 	Memory        int64         `json:"Memory,omitempty"`
-	NanoCPUs      int64         `json:"NanoCpus,omitempty"`
-	ShmSize       int64         `json:"ShmSize,omitempty"`
+	// MemorySwap is memory + swap (equal to Memory: no swap on top of the limit).
+	MemorySwap        int64      `json:"MemorySwap,omitempty"`
+	MemoryReservation int64      `json:"MemoryReservation,omitempty"`
+	NanoCPUs          int64      `json:"NanoCpus,omitempty"`
+	OomScoreAdj       int        `json:"OomScoreAdj,omitempty"`
+	LogConfig         *LogConfig `json:"LogConfig,omitempty"`
+	ShmSize           int64      `json:"ShmSize,omitempty"`
 	// Hardening (function containers).
 	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`
@@ -498,7 +503,8 @@ type PortBinding struct {
 
 // RestartPolicy of a container.
 type RestartPolicy struct {
-	Name string `json:"Name,omitempty"`
+	Name              string `json:"Name,omitempty"`
+	MaximumRetryCount int    `json:"MaximumRetryCount,omitempty"`
 }
 
 // ContainerCreate creates a named container.

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/docker.update.schema.json",
+  "title": "docker.update \u2014 change the limits of running containers in place (a Docker site's colors, or one compose service)",
+  "type": "object",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "required": [
+        "site"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "project"
+            ]
+          },
+          {
+            "required": [
+              "service"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "project",
+        "service"
+      ],
+      "not": {
+        "required": [
+          "site"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "A Docker site's containers (label falak.site)"
+    },
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Compose project (label com.docker.compose.project)"
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$",
+      "description": "Compose service (label com.docker.compose.service)"
+    },
+    "memory_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 leaves it unchanged; swap follows the limit"
+    },
+    "memory_reservation_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cpus": {
+      "type": "number",
+      "minimum": 0
+    },
+    "pids_limit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "restart_policy": {
+      "enum": [
+        "no",
+        "always",
+        "unless-stopped",
+        "on-failure"
+      ]
+    },
+    "max_restarts": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "containers"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

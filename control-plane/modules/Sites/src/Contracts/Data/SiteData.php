@@ -2,6 +2,8 @@
 
 namespace Falak\Sites\Contracts\Data;
 
+use Falak\Limits\Contracts\LimitDefaults;
+use Falak\Limits\Contracts\ResourceLimits;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Framework;
@@ -20,6 +22,11 @@ final readonly class SiteData
      * @param  ?ComposeConfig  $compose  compose runtime only
      * @param  ?int  $containerPort  docker runtime: the port the app listens on inside its container
      * @param  ?string  $rootDirectory  repository subfolder the app lives in (monorepos; null = the repository root)
+     * @param  ResourceLimits  $limits  the site's limits (its container, or its slice on hosts), as stored: a site created in
+     *                                  a non-production environment got that environment's defaults written here
+     *                                  ({@see LimitDefaults}); nothing is merged at runtime
+     * @param  array<string, ResourceLimits>  $composeLimits  compose runtime: the limits of each service by name; '*' is
+     *                                                        what services without their own get
      */
     public function __construct(
         public string $id,
@@ -52,6 +59,8 @@ final readonly class SiteData
         public ?ComposeConfig $compose = null,
         public ?int $containerPort = null,
         public ?string $rootDirectory = null,
+        public ResourceLimits $limits = new ResourceLimits,
+        public array $composeLimits = [],
     ) {}
 
     /** Docker runtime: the in-container port (sites from before container_port listen on their host port). */
@@ -67,6 +76,12 @@ final readonly class SiteData
             || $this->runtime === SiteRuntime::Function
             || ($this->runtime === SiteRuntime::Docker && $this->dockerImage !== null)
             || ($this->compose?->source === ComposeSource::Inline && $this->compose->version !== null);
+    }
+
+    /** A compose service's limits: its own, else the project's '*' (defaults written at creation), else none. */
+    public function composeServiceLimits(string $service): ResourceLimits
+    {
+        return $this->composeLimits[$service] ?? $this->composeLimits['*'] ?? new ResourceLimits;
     }
 
     public function currentPath(): string
