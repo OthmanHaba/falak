@@ -123,7 +123,9 @@ it('counts the requests and 5xx answers of one release with Loki metric queries'
 
     expect($counts->total)->toBe(140)->and($counts->errors)->toBe(7)->and($counts->errorRate())->toBe(0.05);
     Http::assertSent(fn (Request $r) => str_starts_with($r['query'], 'sum(count_over_time({')
-        && str_contains($r['query'], 'falak_release_id="01JRE00000000000000000000A"') && str_ends_with($r['query'], '[300s]))'));
+        && str_contains($r['query'], 'falak_release_id="01JRE00000000000000000000A"') && str_ends_with($r['query'], '[300s]))')
+        // The control plane's own health checks are left out.
+        && str_contains($r['query'], '| user_agent_original!~"Falak-HealthCheck/.*"'));
 
     // Another organization's site counts nothing (and asks Loki nothing).
     expect(app(AccessLogCounts::class)->forRelease(strtolower((string) Str::ulid()), $this->site->id, '01jre00000000000000000000a', now()->subMinutes(5), now())->total)->toBe(0);

@@ -13,7 +13,7 @@ use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 interface AccessLogCounts
 {
     /**
-     * Requests served by one release of the site from $from up to $to.
+     * Requests served by one release of the site from $from up to $to (the control plane's own health checks left out).
      *
      * @throws TelemetryUnavailable
      * @throws TelemetryQueryFailed

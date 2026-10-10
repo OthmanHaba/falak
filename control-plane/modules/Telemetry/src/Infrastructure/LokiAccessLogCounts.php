@@ -8,6 +8,7 @@ use Falak\Telemetry\Application\Queries\LogQueryBuilder;
 use Falak\Telemetry\Contracts\AccessLogCounts;
 use Falak\Telemetry\Contracts\Data\RequestCounts;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\PromQl;
 
 /**
  * Counts access records with Loki instant metric queries (`sum(count_over_time(… [range]))` at $to), on the same
@@ -15,6 +16,9 @@ use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
  */
 final class LokiAccessLogCounts implements AccessLogCounts
 {
+    /** User-Agent of the control plane's health checks (Deployments' SiteHealthProbe). */
+    public const PROBE_AGENT = 'Falak-HealthCheck/';
+
     public function __construct(private readonly SiteDirectory $sites) {}
 
     public function forRelease(string $organizationId, string $siteId, string $releaseId, DateTimeInterface $from, DateTimeInterface $to): RequestCounts
@@ -28,7 +32,9 @@ final class LokiAccessLogCounts implements AccessLogCounts
         $range = max(1, $to->getTimestamp() - $from->getTimestamp());
         $http = self::client();
         $count = function (array $filters) use ($http, $organizationId, $site, $range, $to): int {
-            $logql = 'sum(count_over_time('.LogQueryBuilder::access($organizationId, $site->slug, $filters)." [{$range}s]))";
+            // The control plane's own health checks (deploy steps, the watch after a release goes live) are not traffic.
+            $selector = LogQueryBuilder::access($organizationId, $site->slug, $filters).' | user_agent_original!~'.PromQl::quote(self::PROBE_AGENT.'.*');
+            $logql = "sum(count_over_time({$selector} [{$range}s]))";
             $body = $http->ensureSuccessful($http->get('/loki/api/v1/query', ['query' => $logql, 'time' => LokiLogsQuery::nanos($to)]))->json();
 
             if (! is_array($body) || ($body['status'] ?? null) !== 'success') {
