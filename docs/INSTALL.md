@@ -160,7 +160,8 @@ The agent binaries come from the control-plane image, so servers download them f
 ```
 
 **Which file?** `.env` holds the settings `deploy/compose.yml` passes to the containers by name (domains, secrets,
-`MAIL_*`, sizing, telemetry, `FALAK_REGISTRATION`, …) plus falak-ctl's own (`FALAK_BACKUP_*`, `FALAK_PRUNE_IMAGES`).
+`MAIL_*`, sizing, telemetry, `FALAK_REGISTRATION`, …) plus falak-ctl's own (`FALAK_BACKUP_KEEP`, `FALAK_PRUNE_IMAGES`).
+The DR bucket and passphrase are not there: they live in `/opt/falak/dr/dr.env` (`falak-ctl dr setup`).
 Every other app variable — e.g. `GITHUB_APP_*`, `FALAK_WEBHOOK_URL`, `FALAK_*_MIRROR` — goes in `custom.env`;
 compose does not forward it from `.env`. A variable compose passes by name always comes from `.env`: setting it in
 `custom.env` has no effect.
@@ -185,7 +186,7 @@ column (another organization's, say), it no longer decrypts.
   `falak-ctl kek export /root/falak-emergency-kit.txt`, then move the file to a password manager or offline
   storage and delete it from the host. It is never printed to the terminal. `falak-ctl kek import <file>` puts the
   KEK back (`--force` replaces a different one, which is kept aside).
-- **Backups.** A backup contains the KEK only when it is encrypted (`FALAK_BACKUP_PASSPHRASE`). Otherwise
+- **Backups.** A backup contains the KEK only when it is encrypted (the DR passphrase, `falak-ctl dr setup`). Otherwise
   `falak-ctl backup` warns that the backup can't be decrypted without the KEK, which you then keep separately (the
   emergency kit). It also leaves the KMS / Vault credentials (`FALAK_KEK_AWS_ACCESS_KEY_ID`,
   `FALAK_KEK_AWS_SECRET_ACCESS_KEY`, `FALAK_KEK_AWS_SESSION_TOKEN`, `FALAK_KEK_VAULT_TOKEN`) out of an unencrypted
@@ -455,6 +456,19 @@ the upgrade outside a production environment start with that environment's defau
 changing the defaults later, or moving a service, never changes the limits of services that exist. A PHP-FPM site
 that gets memory, CPU or process limits moves into its own PHP-FPM master (a short restart of its pool).
 
+### Upgrading to v0.10.0: disaster recovery
+
+- `FALAK_BACKUP_PASSPHRASE` and `FALAK_BACKUP_S3_*` are no longer read from `.env`: run `falak-ctl dr setup`
+  with the same bucket and passphrase (it stores them in `/opt/falak/dr/dr.env`, root only), then delete them
+  from `.env`. Encrypted backups taken before need that passphrase.
+- The cron line from earlier docs (`/etc/cron.d/falak-backup`) is replaced by `falak-backup.timer`: remove it.
+- Backups now also hold `edge-pki`; restoring an older backup keeps this host's.
+- Backups are `*.fdr` now (encrypted and authenticated). Older `*.tar.gz.enc` backups restore from local files only
+  (no MAC: with a warning), never from the bucket: take a new backup (`falak-ctl backup --upload`) after upgrading.
+- Single-organization installs need nothing; on installs with several organizations, set `FALAK_DR_ORGANIZATION`
+  (the operator organization's id) in `.env` and run `falak-ctl up`, or nobody sees the control plane's DR.
+- The PHP containers mount `/opt/falak/state` read-only (`state/dr.json`, written by falak-ctl, no secrets).
+
 ### Upgrading the server agents
 
 An update does not touch your servers: each keeps running its `falak-agent` until you upgrade it. The new
@@ -535,30 +549,49 @@ A backup contains:
 
 - `db.dump`: `pg_dump -Fc` of the database;
 - the `falak-ca` volume (Fleet CA certificate and agent API certificate), `app-storage` (build artifacts,
-  app files) and `caddy-data` (ACME account and certificates);
+  app files), `caddy-data` (ACME account and certificates) and `edge-pki` (the edge's client certificate for
+  the agent API); `registry-data` (the built-in registry's images) with `--include-registry` or
+  `falak-ctl dr setup --include-registry`;
 - `.env` and `custom.env`;
-- the key-encryption key (`secrets/kek`), **only when `FALAK_BACKUP_PASSPHRASE` is set**. Without a passphrase the
-  backup warns that it can't be decrypted without the KEK: keep the emergency kit (`falak-ctl kek export`) apart
-  from the backups.
+- the key-encryption key (`secrets/kek`, and `kek.previous`), **only when the backup is encrypted with the DR
+  passphrase**. Without a passphrase the backup warns that it can't be decrypted without the KEK: keep the
+  emergency kit (`falak-ctl kek export`) apart from the backups;
+- a `manifest`: Falak version, image digests, volumes, KEK id(s), row counts of the main tables (drills compare
+  them).
 
 > **The Fleet CA is critical.** Every agent trusts only this CA, and its private key is stored in the database,
 > sealed under the KEK. A backup is only useful with its **database, `.env` and the KEK together**. If you lose
 > any of them, every server must be re-enrolled and every secret entered again. Keep copies **off the host**.
 
-- Retention: the newest `FALAK_BACKUP_KEEP` backups are kept (default 14).
-- Schedule a daily backup with cron:
-  `echo '15 3 * * * root /usr/local/bin/falak-ctl backup --quiet' > /etc/cron.d/falak-backup`
-- Encryption: set `FALAK_BACKUP_PASSPHRASE` in `.env` to write `*.tar.gz.enc` (AES-256, `openssl enc -pbkdf2`).
-  `restore` needs the same passphrase.
-- Off-site copies (S3-compatible, via `curl --aws-sigv4`): set `FALAK_BACKUP_S3_ENDPOINT`
-  (e.g. `https://s3.eu-central-1.amazonaws.com`), `FALAK_BACKUP_S3_BUCKET`, `FALAK_BACKUP_S3_REGION`,
-  `FALAK_BACKUP_S3_ACCESS_KEY`, `FALAK_BACKUP_S3_SECRET_KEY`, and optionally `FALAK_BACKUP_S3_PREFIX`. Uploads
-  use path-style URLs. The local copy is kept even when an upload fails.
+- Retention: the newest `FALAK_BACKUP_KEEP` backups are kept on the host (default 14). Expire old uploads with
+  a lifecycle rule on the bucket, and turn on versioning or object lock there.
+- **Off-site, encrypted, on a schedule: `falak-ctl dr setup`.** It asks for an S3-compatible bucket (endpoint,
+  bucket, region, keys, prefix) and a DR passphrase, tests the bucket, and installs `falak-backup.timer`
+  (every 6 h by default, `falak-ctl backup --upload --scheduled`) and a monthly `falak-drill.timer`. The settings
+  live in `/opt/falak/dr/dr.env` (root only, never mounted into a container, never in a backup). Uploads are always
+  encrypted and authenticated (`*.fdr`: AES-256 then HMAC-SHA256, PBKDF2 with 600 000 iterations; see
+  DISASTER_RECOVERY.md "Backup format"); `backup --upload` without the passphrase is refused. `falak-ctl dr status` and Settings → Disaster recovery show the last
+  backup, its age and size, and the last drill. Until it is configured the panel shows its owners and admins a
+  banner, `doctor` warns and a weekly `dr.not_configured` alert goes out.
+- **Restore drills:** `falak-ctl dr drill` downloads the latest upload, restores it into a throwaway compose
+  project (`falak-drill`: its own directory, volumes, network and subnet; postgres, valkey and the control plane
+  only, so nothing talks to your servers), checks the migrations, that the KEK unwraps every data key and the row
+  counts, then removes it.
+- `restore` takes a file, a name in `backups/`, `s3://latest` or `s3://<backup name>` (downloaded, authenticated
+  with the DR passphrase before it is decrypted; only `.fdr` objects).
 
-**Move to a new host:** install Falak on the new host with the same `--domain`, copy the backup over, run
-`falak-ctl restore <file> --yes`, then point DNS at the new host. The restore brings back the old `.env`
-(including `APP_KEY`) and, from an encrypted backup, the KEK, so agents keep working without re-enrolling. For an
-unencrypted backup, import the KEK first: `falak-ctl kek import <emergency kit> --force`.
+**Move to a new host, or the host is lost:** see [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md). In short, on a
+fresh VPS with the same `--domain`:
+
+```bash
+curl -fsSL https://falak.sh/install.sh | sudo bash -s -- --domain falak.example.com --email you@example.com \
+  --restore-from s3://latest      # asks for the bucket settings and the DR passphrase
+```
+
+then point DNS at the new host. The restore brings back the old `.env` (including `APP_KEY`), the KEK, the Fleet
+CA and the edge PKI, so agents reconnect without re-enrolling. With a local file instead: install, copy it over,
+`falak-ctl restore <file> --yes`. For an unencrypted backup, import the KEK first:
+`falak-ctl kek import <emergency kit> --force`.
 
 ## 7. Change the domain
 

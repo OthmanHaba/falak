@@ -20,6 +20,7 @@ use Falak\Edge\Application\Listeners\ReactToSiteChanges;
 use Falak\Edge\Application\Listeners\ReapplyAfterAgentUpgrade;
 use Falak\Edge\Application\PathMounts;
 use Falak\Edge\Contracts\DnsCheck;
+use Falak\Edge\Contracts\DomainRecords;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Events\CertificateInstallFailed;
 use Falak\Edge\Events\CertificateIssued;
@@ -31,6 +32,7 @@ use Falak\Edge\Infrastructure\Dns\DohResolver;
 use Falak\Edge\Infrastructure\Dns\StreamTlsProbe;
 use Falak\Edge\Infrastructure\Dns\SystemResolver;
 use Falak\Edge\Infrastructure\Dns\TlsProbe;
+use Falak\Edge\Infrastructure\EloquentDomainRecords;
 use Falak\Edge\Infrastructure\EloquentEdgeRoutes;
 use Falak\Edge\Infrastructure\EloquentSiteDomains;
 use Falak\Edge\Infrastructure\ResolverDnsCheck;
@@ -73,6 +75,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         WebOriginPolicy::class => CloudflareOriginPolicy::class,
         SiteDomains::class => EloquentSiteDomains::class,
         DnsCheck::class => ResolverDnsCheck::class,
+        DomainRecords::class => EloquentDomainRecords::class,
         TlsProbe::class => StreamTlsProbe::class,
     ];
 

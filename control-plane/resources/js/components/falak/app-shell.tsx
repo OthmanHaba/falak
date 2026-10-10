@@ -1,7 +1,9 @@
 import { initializeTheme } from '@/hooks/use-appearance';
+import { shellBannersFor, shellContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
-import { type BreadcrumbItem } from '@/types';
-import { useEffect, type ReactNode } from 'react';
+import { type BreadcrumbItem, type SharedData } from '@/types';
+import { usePage } from '@inertiajs/react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { CommandPalette } from './command-palette';
 import { useFlashToasts } from './flash';
 import { Toaster } from './toast';
@@ -23,6 +25,8 @@ export interface AppShellProps {
 export function AppShell({ children, breadcrumbs, variant = 'page', className }: AppShellProps) {
     useFlashToasts();
     useEffect(() => initializeTheme(), []);
+    const { props } = usePage<SharedData>();
+    const banners = useMemo(() => (props.organization?.current ? shellBannersFor(shellContext(props)) : []), [props]);
 
     return (
         <TooltipProvider delayDuration={300}>
@@ -34,6 +38,9 @@ export function AppShell({ children, breadcrumbs, variant = 'page', className }:
                     Skip to content
                 </a>
                 <TopBar breadcrumbs={breadcrumbs} />
+                {banners.map((banner) => (
+                    <banner.component key={banner.id} />
+                ))}
                 <main
                     id="main"
                     className={cn(

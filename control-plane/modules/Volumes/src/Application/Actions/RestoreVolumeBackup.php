@@ -17,6 +17,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * Restore a backup into a NEW volume (never over live data). With $swap, the services of the backed-up volume are
  * switched to the restored one and redeployed once it is ready; the old volume stays until someone deletes it.
+ * With $relocate (its server is gone: the Recovery wizard) the swap goes to another server, and a compose stack's
+ * volume keeps its Docker name and compose key there, so the stack's next deploy mounts the restored data.
  */
 final class RestoreVolumeBackup
 {
@@ -29,7 +31,7 @@ final class RestoreVolumeBackup
     /**
      * @throws ValidationException
      */
-    public function __invoke(VolumeBackup $backup, string $serverId, string $name, ?int $sizeBytes = null, bool $swap = false, ?string $actorId = null, #[\SensitiveParameter] ?string $identity = null): Operation
+    public function __invoke(VolumeBackup $backup, string $serverId, string $name, ?int $sizeBytes = null, bool $swap = false, ?string $actorId = null, #[\SensitiveParameter] ?string $identity = null, bool $relocate = false): Operation
     {
         if (! $backup->restorable()) {
             throw ValidationException::withMessages(['backup' => 'Only successful, encrypted backups whose storage provider still exists can be restored.']);
@@ -45,12 +47,16 @@ final class RestoreVolumeBackup
             throw ValidationException::withMessages(['backup' => 'A database’s data volume is restored with the database.']);
         }
 
-        if ($swap && ($source === null || $source->server_id !== $serverId)) {
+        if ($swap && ($source === null || ($source->server_id !== $serverId && ! $relocate))) {
             throw ValidationException::withMessages(['swap' => 'Swapping needs the backed-up volume, and a restore on its server.']);
         }
 
         $size = $backup->volume_kind === VolumeKind::Sized ? self::size($backup, $sizeBytes) : null;
         $target = $this->create->prepare($backup->organization_id, $serverId, $name, $backup->volume_kind, $size, labels: (array) ($source?->labels ?? []), actorId: $actorId);
+
+        if ($relocate && $source !== null && $source->composeKey() !== null) {
+            $target->forceFill(['docker_name' => $source->docker_name, 'options' => $source->options]);
+        }
 
         $operation = DB::transaction(function () use ($target, $backup, $source, $swap, $actorId) {
             CreateVolume::save($target);

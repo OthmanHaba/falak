@@ -116,6 +116,11 @@ printf 'FALAK_DOMAIN=falak.example.com\n' > "$FALAK_DIR/.env"
   SECRETS_DIR="$FALAK_DIR/secrets"
   KEK_FILE="$SECRETS_DIR/kek"
   KEK_PREVIOUS="$SECRETS_DIR/kek.previous"
+  DR_DIR="$FALAK_DIR/dr"
+  DR_FILE="$DR_DIR/dr.env"
+  STATE_DIR="$FALAK_DIR/state"
+  DR_STATE="$STATE_DIR/dr.state"
+  DR_JSON="$STATE_DIR/dr.json"
 }
 ensure_kek --quiet
 current="$(kek_fingerprint "$KEK_FILE")"
@@ -166,22 +171,20 @@ compose() { if [ "${1:-}" = exec ] && [ "${3:-}" = postgres ]; then echo dump; f
 docker() { printf 'x'; }
 keys_check_json() { echo '{"ok":true,"kek_ids":[]}'; }
 openssl() { return 1; }
-printf 'FALAK_BACKUP_PASSPHRASE=pw\n' >> "$FALAK_DIR/.env"
+dr_set FALAK_BACKUP_PASSPHRASE pw
 (cmd_backup --quiet >/dev/null 2>&1) && fail "backup succeeded although encryption failed"
 leftover="$(find "$BACKUP_DIR" -name 'falak-backup-*' 2>/dev/null)"
 [ -z "$leftover" ] || fail "a failed encryption left $leftover"
 pass "a backup whose encryption fails leaves no plaintext archive behind"
 
-openssl() { # stub: copies -in to -out
-  local in="" out=""
-  while [ $# -gt 0 ]; do case "$1" in -in) in="$2"; shift ;; -out) out="$2"; shift ;; esac; shift; done
-  cp "$in" "$out"
-}
+unset -f openssl
+dr_set FALAK_BACKUP_PASSPHRASE 'a long enough passphrase'
 cmd_backup --quiet >/dev/null 2>&1 || fail "backup failed with a working openssl"
-enc="$(find "$BACKUP_DIR" -name 'falak-backup-*.tar.gz.enc')"
+enc="$(find "$BACKUP_DIR" -name 'falak-backup-*.fdr')"
 [ -n "$enc" ] || fail "no encrypted backup written"
-[ -z "$(find "$BACKUP_DIR" -name '*.tmp')" ] || fail "temporary archives left behind"
-tar -tzf "$enc" | grep -q '^\./secrets/kek$' || fail "the encrypted backup lacks the KEK"
+[ -z "$(find "$BACKUP_DIR" -name '*.tmp' -o -name '*.ct')" ] || fail "temporary archives left behind"
+FALAK_DR_PASS='a long enough passphrase' dr_open "$enc" "$work/opened.tar.gz"
+tar -tzf "$work/opened.tar.gz" | grep -q '^\./secrets/kek$' || fail "the encrypted backup lacks the KEK"
 pass "an encrypted backup carries the KEK and leaves no temporary archive"
 
 # --- entrypoint: roles other than web wait for the migrations, every role checks the KEK first -------------
