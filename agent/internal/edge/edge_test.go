@@ -285,6 +285,40 @@ func TestRenderDNSChallenge(t *testing.T) {
 	}
 }
 
+func TestRenderWildcardCertificateServesPreviewHosts(t *testing.T) {
+	wild := []WildcardCertificate{{Subject: "*.prv.example.com", DNS: DNS{Provider: "cloudflare", APIToken: "tok"}}}
+	cfg, err := Render(Payload{ACMEEmail: "ops@example.com", WildcardCertificates: wild, Sites: []Site{
+		{ID: "p", Domains: []string{"pr-7-web.prv.example.com"}, Kind: "static", Root: "/srv/p", TLS: &TLS{Mode: "wildcard"}},
+	}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := mustJSON(cfg)
+	for _, want := range []string{
+		`"automate":["*.prv.example.com"]`,
+		`"subjects":["*.prv.example.com"]`,
+		`"challenges":{"dns":{"provider":{"api_token":"tok","name":"cloudflare"}}}`,
+		`"skip_certificates":["pr-7-web.prv.example.com"]`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %s in %s", want, s)
+		}
+	}
+	if strings.Contains(s, `"subjects":["pr-7-web.prv.example.com"]`) {
+		t.Fatalf("a preview host got its own certificate: %s", s)
+	}
+	for name, p := range map[string]Payload{
+		"not covered": {WildcardCertificates: wild, Sites: []Site{{ID: "p", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/r", TLS: &TLS{Mode: "wildcard"}}}},
+		"two labels":  {WildcardCertificates: wild, Sites: []Site{{ID: "p", Domains: []string{"a.b.prv.example.com"}, Kind: "static", Root: "/r", TLS: &TLS{Mode: "wildcard"}}}},
+		"no token":    {WildcardCertificates: []WildcardCertificate{{Subject: "*.prv.example.com", DNS: DNS{Provider: "cloudflare"}}}},
+		"bad subject": {WildcardCertificates: []WildcardCertificate{{Subject: "prv.example.com", DNS: DNS{Provider: "cloudflare", APIToken: "t"}}}},
+	} {
+		if _, err := Render(p, ""); err == nil {
+			t.Fatalf("%s: want an error", name)
+		}
+	}
+}
+
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)

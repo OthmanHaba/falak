@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/OthmanHaba/falak/agent/internal/logs"
 )
@@ -20,6 +22,21 @@ type Payload struct {
 	// TrustedProxies are CIDRs (Cloudflare's ranges when the site is proxied) whose client IP headers are believed:
 	// logs, IP allow / deny lists and rate limits then see the visitor, not the proxy.
 	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+	// WildcardCertificates are obtained and renewed through ACME DNS-01 (a preview domain): sites in tls mode
+	// "wildcard" are served by the one covering their hosts, with no certificate per host.
+	WildcardCertificates []WildcardCertificate `json:"wildcard_certificates,omitempty"`
+}
+
+// WildcardCertificate is one *.<domain> certificate managed by the edge.
+type WildcardCertificate struct {
+	Subject string `json:"subject"`
+	DNS     DNS    `json:"dns"`
+}
+
+// covers reports whether the wildcard covers host (exactly one label below its domain).
+func (w WildcardCertificate) covers(host string) bool {
+	label, ok := strings.CutSuffix(host, strings.TrimPrefix(w.Subject, "*"))
+	return ok && label != "" && !strings.Contains(label, ".")
 }
 
 // Site is one routed site.
@@ -54,6 +71,8 @@ type Site struct {
 
 var accessLogName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
+var wildcardSubject = regexp.MustCompile(`^\*\.[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
 // AccessLogger is the Caddy logger of a site's access log (http.log.access.<AccessLogger>).
 func AccessLogger(name string) string { return "falak-access-" + name }
 
@@ -62,7 +81,7 @@ func AccessLogPath(name string) string { return path.Join(logs.AccessLogDir, nam
 
 // TLS settings.
 type TLS struct {
-	Mode     string `json:"mode,omitempty"` // acme (default) | internal | custom | off
+	Mode     string `json:"mode,omitempty"` // acme (default) | internal | custom | off | wildcard
 	CertName string `json:"cert_name,omitempty"`
 	DNS      *DNS   `json:"dns,omitempty"` // ACME DNS-01 challenge (wildcards)
 	// HTTPChallengeOnly disables TLS-ALPN-01: behind a proxy that terminates TLS (Cloudflare's orange cloud) it can
@@ -174,6 +193,15 @@ func Render(p Payload, certDir string) (obj, error) {
 				"tags":        []any{"falak-" + s.TLS.CertName},
 			})
 			tlsRoutes = append(tlsRoutes, routes...)
+		case "wildcard":
+			// The covering wildcard certificate (automated below) serves these hosts: none of their own.
+			for _, h := range hosts {
+				if !slices.ContainsFunc(p.WildcardCertificates, func(w WildcardCertificate) bool { return w.covers(h) }) {
+					return nil, fmt.Errorf("site %s: no wildcard certificate covers %s", s.ID, h)
+				}
+			}
+			skipCerts = append(skipCerts, hosts...)
+			tlsRoutes = append(tlsRoutes, routes...)
 		case "acme":
 			if s.TLS != nil && s.TLS.DNS != nil {
 				if s.TLS.DNS.Provider == "" || s.TLS.DNS.APIToken == "" {
@@ -228,14 +256,31 @@ func Render(p Payload, certDir string) (obj, error) {
 		policies = append(policies, obj{"subjects": toAny(internalSubjects), "issuers": []any{obj{"module": "internal"}}})
 	}
 	policies = append(policies, dnsPolicies...)
+	var automate []any
+	for _, w := range p.WildcardCertificates {
+		if !wildcardSubject.MatchString(w.Subject) || w.DNS.Provider == "" || w.DNS.APIToken == "" {
+			return nil, fmt.Errorf("wildcard certificate %q: a *.<domain> subject, dns provider and api_token are required", w.Subject)
+		}
+		iss := acmeIssuer(p)
+		iss["challenges"] = obj{"dns": obj{"provider": obj{"name": w.DNS.Provider, "api_token": w.DNS.APIToken}}}
+		policies = append(policies, obj{"subjects": []any{w.Subject}, "issuers": []any{iss}})
+		automate = append(automate, w.Subject)
+	}
 	if len(acmeSubjects) > 0 && (p.ACMEEmail != "" || p.ACMECA != "") {
 		policies = append(policies, obj{"subjects": toAny(acmeSubjects), "issuers": []any{acmeIssuer(p)}})
 	}
 	if len(policies) > 0 {
 		tlsApp["automation"] = obj{"policies": policies}
 	}
+	certs := obj{}
 	if len(loadFiles) > 0 {
-		tlsApp["certificates"] = obj{"load_files": loadFiles}
+		certs["load_files"] = loadFiles
+	}
+	if len(automate) > 0 {
+		certs["automate"] = automate
+	}
+	if len(certs) > 0 {
+		tlsApp["certificates"] = certs
 	}
 	if len(tlsApp) > 0 {
 		cfg["apps"].(obj)["tls"] = tlsApp
