@@ -13,6 +13,7 @@ use Falak\Fleet\Contracts\Data\MetricSample;
 use Falak\Servers\Application\DiskForecast;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -23,27 +24,41 @@ use Throwable;
  * clear) on
  *
  *  - servers.disk_usage: a data filesystem above servers.health.disk_warning_percent (warning) / disk_critical_percent
- *    (critical) of used + available, per mount (the root filesystem alone for agents before v0.10.0);
+ *    (critical) of used + available for disk_hold_minutes, per mount (the root filesystem alone for agents before
+ *    v0.10.0); resolved once hysteresis_points below the threshold;
  *  - servers.disk_forecast: with $forecast (every 15 minutes), a mount a rising line through the last six hours fills
  *    within forecast_hours (DiskForecast; resolved once the forecast is over 1.5 × that, or not filling);
  *  - servers.memory_high / cpu_high / load_high: every sample of the window above the threshold (load: load1 above
- *    cpus × load_per_cpu), the samples covering the window;
+ *    cpus × load_per_cpu), the samples covering the window; resolved once every sample of the last clear_minutes is
+ *    hysteresis_points below it (load: 10% below);
  *  - servers.reboot_required: the distribution asked for a reboot (facts);
- *  - servers.agent_outdated: the agent is older than the shipped build for agent_outdated_minutes.
+ *  - servers.agent_outdated: one alert per organization listing its servers whose agent is older than the shipped
+ *    build, once that held for agent_outdated_minutes.
+ *
+ * Unique while queued or running: a slow run is never overlapped by the next minute's.
  *
  * Offline agents are skipped (fleet.agent_offline covers them): their conditions neither raise nor resolve.
  */
-final class CheckServerHealth implements ShouldQueue
+final class CheckServerHealth implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
     public const WINDOW_SLACK_SECONDS = 60;
 
+    public int $uniqueFor = 900;
+
     public function __construct(public bool $forecast = false) {}
+
+    public function uniqueId(): string
+    {
+        return $this->forecast ? 'forecast' : 'health';
+    }
 
     public function handle(AgentDirectory $agents, AgentUpgrades $upgrades, AlertConditions $conditions): void
     {
         $servers = Server::query()->where('status', ServerStatus::Active)->get(['id', 'organization_id', 'name']);
+        /** @var array<string, list<string>> $outdated organization => "server (version)" */
+        $outdated = array_fill_keys($servers->pluck('organization_id')->unique()->all(), []);
 
         foreach ($servers->chunk(200) as $chunk) {
             $ids = $chunk->pluck('id')->all();
@@ -57,16 +72,30 @@ final class CheckServerHealth implements ShouldQueue
                     continue;
                 }
 
+                if ($versions[$server->id]->updateAvailable ?? false) {
+                    $outdated[$server->organization_id][] = "{$server->name} (".($agent->version ?? 'unknown version').')';
+                }
+
                 try {
-                    $this->check($server, $agent, (bool) ($versions[$server->id]->updateAvailable ?? false), $agents, $conditions);
+                    $this->check($server, $agent, $agents, $conditions);
                 } catch (Throwable $e) {
                     Log::warning('Server health check failed.', ['server_id' => $server->id, 'error' => $e->getMessage()]);
                 }
             }
         }
+
+        foreach ($outdated as $org => $names) {
+            $conditions->observe((string) $org, 'servers.agent_outdated', $names !== [], fn () => new AlertData(
+                (string) $org, 'servers.agent_outdated', Severity::Warning,
+                count($names) === 1 ? 'An agent is outdated' : count($names).' agents are outdated',
+                'Older than the build this control plane ships: '.implode(', ', array_slice($names, 0, 20)).(count($names) > 20 ? ', …' : '').
+                '. Update them under Servers → Update all agents.',
+                '/servers', context: ['servers' => count($names)],
+            ), forSeconds: (int) config('servers.health.agent_outdated_minutes', 60) * 60);
+        }
     }
 
-    private function check(Server $server, AgentInfo $agent, bool $outdated, AgentDirectory $agents, AlertConditions $conditions): void
+    private function check(Server $server, AgentInfo $agent, AgentDirectory $agents, AlertConditions $conditions): void
     {
         $config = (array) config('servers.health');
         $org = $server->organization_id;
@@ -79,14 +108,17 @@ final class CheckServerHealth implements ShouldQueue
         $disks = self::disks($agent);
         $keep = [];
 
+        $band = (float) $config['hysteresis_points'];
+
         foreach ($disks as $mount => [$used, $available]) {
             $capacity = $used + $available;
             $percent = $capacity > 0 ? $used / $capacity * 100 : 0.0;
 
             foreach (['critical' => (float) $config['disk_critical_percent'], 'warning' => (float) $config['disk_warning_percent']] as $level => $threshold) {
-                $key = "servers.disk:{$server->id}:{$level}:{$mount}";
+                $key = "servers.disk:{$server->id}:{$level}:".self::mountKey($mount);
                 $keep[] = $key;
-                $conditions->observe($org, $key, $percent > $threshold, fn () => new AlertData(
+                $holds = $percent > $threshold ? true : ($percent <= $threshold - $band ? false : null);
+                $conditions->observe($org, $key, $holds, fn () => new AlertData(
                     $org,
                     'servers.disk_usage',
                     $level === 'critical' ? Severity::Critical : Severity::Warning,
@@ -97,7 +129,7 @@ final class CheckServerHealth implements ShouldQueue
                     context: ['server_id' => $server->id, 'mount' => $mount, 'used_percent' => (int) floor($percent)],
                 ), fn () => new AlertData($org, 'servers.disk_usage', Severity::Info,
                     sprintf('Disk %s on %s is below %d%% again', $mount, $server->name, (int) $threshold), sprintf('Now %d%% full.', (int) floor($percent)), $url,
-                    context: ['server_id' => $server->id, 'mount' => $mount]));
+                    context: ['server_id' => $server->id, 'mount' => $mount]), forSeconds: (int) $config['disk_hold_minutes'] * 60);
             }
         }
 
@@ -114,12 +146,12 @@ final class CheckServerHealth implements ShouldQueue
             'Installed updates (a kernel or system libraries) only take effect after a restart. Reboot it in a quiet moment.',
             $url, context: ['server_id' => $server->id],
         ));
+    }
 
-        $conditions->observe($org, "servers.agent_outdated:{$server->id}", $outdated, fn () => new AlertData(
-            $org, 'servers.agent_outdated', Severity::Warning, "The agent on {$server->name} is outdated",
-            sprintf('It runs %s, older than the build this control plane ships. Update it from the server page (or Servers → Update all agents).', $agent->version ?? 'an unknown version'),
-            $url, context: ['server_id' => $server->id, 'version' => $agent->version],
-        ), forSeconds: (int) $config['agent_outdated_minutes'] * 60);
+    /** Mounts in condition keys are hashed (paths may be long or odd); alerts show the path itself. */
+    public static function mountKey(string $mount): string
+    {
+        return substr(hash('sha256', $mount), 0, 16);
     }
 
     /**
@@ -144,7 +176,7 @@ final class CheckServerHealth implements ShouldQueue
             }
 
             $forecast = DiskForecast::hoursUntilFull($series, $used + $available, $now->getTimestamp());
-            $key = "servers.disk_forecast:{$server->id}:{$mount}";
+            $key = "servers.disk_forecast:{$server->id}:".self::mountKey($mount);
             $keep[] = $key;
 
             if (! $forecast['known']) {
@@ -185,25 +217,28 @@ final class CheckServerHealth implements ShouldQueue
         $checks = [
             'memory' => [(int) $config['memory_minutes'], $memory > 0 ? fn (MetricSample $s) => $s->memoryUsedBytes / $memory * 100 : null, (float) $config['memory_percent'], 'servers.memory_high',
                 fn (int $m) => sprintf('Memory on %s above %d%% for %d minutes', $server->name, (int) $config['memory_percent'], $m),
-                'Processes may be killed for memory soon. Look for a leaking service on the server page, or give the server more memory.'],
+                'Processes may be killed for memory soon. Look for a leaking service on the server page, or give the server more memory.',
+                (float) $config['memory_percent'] - (float) $config['hysteresis_points']],
             'cpu' => [(int) $config['cpu_minutes'], fn (MetricSample $s) => $s->cpuPercent, (float) $config['cpu_percent'], 'servers.cpu_high',
                 fn (int $m) => sprintf('CPU on %s above %d%% for %d minutes', $server->name, (int) $config['cpu_percent'], $m),
-                'Requests slow down while the CPU is saturated. Find the busy process on the server page, or scale the server.'],
+                'Requests slow down while the CPU is saturated. Find the busy process on the server page, or scale the server.',
+                (float) $config['cpu_percent'] - (float) $config['hysteresis_points']],
             'load' => [(int) $config['load_minutes'], fn (MetricSample $s) => $s->load1, $loadLimit, 'servers.load_high',
                 fn (int $m) => sprintf('Load on %s above %s for %d minutes', $server->name, rtrim(rtrim(number_format($loadLimit, 1), '0'), '.'), $m),
-                sprintf('More work is queued than its %d CPU(s) can run (or processes wait on disk I/O).', $cpus)],
+                sprintf('More work is queued than its %d CPU(s) can run (or processes wait on disk I/O).', $cpus), $loadLimit * 0.9],
         ];
 
-        foreach ($checks as $name => [$minutes, $value, $threshold, $type, $title, $body]) {
+        $clearMinutes = (int) $config['clear_minutes'];
+
+        foreach ($checks as $name => [$minutes, $value, $threshold, $type, $title, $body, $clearBelow]) {
             if ($value === null) {
                 continue;
             }
 
-            $held = self::heldAbove($samples, $value, $threshold, $now, $minutes);
-
-            if ($held === null) {
-                continue; // not enough samples: no change
-            }
+            // Raised when the whole window is above; resolved only once the last clear_minutes are all well below.
+            $held = self::heldAbove($samples, $value, $threshold, $now, $minutes) === true
+                ? true
+                : (self::heldBelow($samples, $value, $clearBelow, $now, $clearMinutes) ? false : null);
 
             $conditions->observe($org, "servers.{$name}:{$server->id}", $held, fn () => new AlertData(
                 $org, $type, Severity::Warning, $title($minutes), $body, "/servers/{$server->id}", context: ['server_id' => $server->id],
@@ -236,6 +271,32 @@ final class CheckServerHealth implements ShouldQueue
             }
 
             if ($v <= $threshold) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether every sample of the last $minutes is at or below $limit (enough samples to say).
+     *
+     * @param  list<MetricSample>  $samples
+     * @param  callable(MetricSample): ?float  $value
+     */
+    public static function heldBelow(array $samples, callable $value, float $limit, DateTimeImmutable $now, int $minutes): bool
+    {
+        $since = $now->getTimestamp() - $minutes * 60;
+        $window = array_values(array_filter($samples, fn (MetricSample $s) => $s->at->getTimestamp() >= $since));
+
+        if (count($window) < 2 || $window[0]->at->getTimestamp() > $since + 30) {
+            return false;
+        }
+
+        foreach ($window as $sample) {
+            $v = $value($sample);
+
+            if ($v === null || $v > $limit) {
                 return false;
             }
         }

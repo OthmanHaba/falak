@@ -50,7 +50,21 @@ function health_alerts(string $type, bool $recovery = false): Collection
     return Alert::query()->where('type', $type)->where('recovery', $recovery)->get();
 }
 
-it('alerts per mount at 80% and 90% and resolves as space comes back', function () {
+/** Checks now and again once the disk hold time passed. */
+function health_check_held(object $test, array $metrics): void
+{
+    ($test->online)($metrics);
+    dispatch_sync(new CheckServerHealth);
+    $test->travel(5)->minutes();
+    ($test->online)($metrics);
+    dispatch_sync(new CheckServerHealth);
+}
+
+it('alerts per mount at 80% and 90% once held for 5 minutes, and resolves 5 points below', function () {
+    ($this->online)(['disks' => ['/' => [85 * GIB, 15 * GIB, 100 * GIB], '/data' => [10 * GIB, 90 * GIB, 100 * GIB]]]);
+    dispatch_sync(new CheckServerHealth);
+    expect(health_alerts('servers.disk_usage'))->toHaveCount(0);
+    $this->travel(5)->minutes();
     ($this->online)(['disks' => ['/' => [85 * GIB, 15 * GIB, 100 * GIB], '/data' => [10 * GIB, 90 * GIB, 100 * GIB]]]);
     dispatch_sync(new CheckServerHealth);
 
@@ -60,11 +74,23 @@ it('alerts per mount at 80% and 90% and resolves as space comes back', function 
         ->and($warning->url)->toBe(url("/servers/{$this->server->id}"));
 
     // Climbs past 90%: the critical alert joins; repeated checks raise nothing more.
-    ($this->online)(['disks' => ['/' => [95 * GIB, 5 * GIB, 100 * GIB]]]);
-    dispatch_sync(new CheckServerHealth);
+    health_check_held($this, ['disks' => ['/' => [95 * GIB, 5 * GIB, 100 * GIB]]]);
     dispatch_sync(new CheckServerHealth);
     expect(health_alerts('servers.disk_usage'))->toHaveCount(2)
-        ->and(health_alerts('servers.disk_usage')->pluck('severity')->all())->toContain(Severity::Critical);
+        ->and(health_alerts('servers.disk_usage')->pluck('severity')->all())->toContain(Severity::Critical)
+        ->and(Condition::query()->where('key', 'like', 'servers.disk:%')->pluck('key')->every(fn ($key) => ! str_contains($key, '/')))->toBeTrue();
+
+    // Hovering around the thresholds changes nothing (no flapping).
+    foreach ([88, 91, 86, 89] as $percent) {
+        ($this->online)(['disks' => ['/' => [$percent * GIB, (100 - $percent) * GIB, 100 * GIB]]]);
+        dispatch_sync(new CheckServerHealth);
+    }
+    expect(health_alerts('servers.disk_usage', recovery: true))->toHaveCount(0);
+
+    // 85%: 5 points below critical resolves it; 50%: the warning too.
+    ($this->online)(['disks' => ['/' => [85 * GIB, 15 * GIB, 100 * GIB]]]);
+    dispatch_sync(new CheckServerHealth);
+    expect(health_alerts('servers.disk_usage', recovery: true))->toHaveCount(1);
 
     // Freed: both resolve.
     ($this->online)(['disks' => ['/' => [50 * GIB, 50 * GIB, 100 * GIB]]]);
@@ -74,8 +100,7 @@ it('alerts per mount at 80% and 90% and resolves as space comes back', function 
 });
 
 it('falls back to the root filesystem for agents without disks', function () {
-    ($this->online)(['disk_used_bytes' => 82 * GIB]);
-    dispatch_sync(new CheckServerHealth);
+    health_check_held($this, ['disk_used_bytes' => 82 * GIB]);
 
     expect(health_alerts('servers.disk_usage')->sole()->title)->toBe('Disk / on web-1 is 82% full');
 });
@@ -110,9 +135,15 @@ it('alerts on memory only when every sample of ten minutes is above 90%', functi
     dispatch_sync(new CheckServerHealth);
     expect(health_alerts('servers.memory_high')->sole()->title)->toBe('Memory on web-1 above 90% for 10 minutes');
 
-    // Back below: resolved.
-    $this->travel(2)->minutes();
-    health_samples($this->agent, 1, fn () => ['memory_used_bytes' => 2 * GIB]);
+    // Just under the threshold: still raised (it resolves 5 points below, for 5 minutes).
+    $this->travel(6)->minutes();
+    health_samples($this->agent, 6, fn () => ['memory_used_bytes' => (int) (7.0 * GIB)]); // 87.5%
+    dispatch_sync(new CheckServerHealth);
+    expect(health_alerts('servers.memory_high', recovery: true))->toHaveCount(0);
+
+    // Back well below: resolved.
+    $this->travel(6)->minutes();
+    health_samples($this->agent, 6, fn () => ['memory_used_bytes' => 2 * GIB]);
     dispatch_sync(new CheckServerHealth);
     expect(health_alerts('servers.memory_high', recovery: true))->toHaveCount(1);
 });
@@ -129,9 +160,14 @@ it('alerts on CPU over 15 minutes and load over twice the CPUs', function () {
     expect(health_alerts('servers.cpu_high'))->toHaveCount(1)
         ->and(health_alerts('servers.load_high')->sole()->title)->toBe('Load on web-1 above 4 for 15 minutes');
 
-    // Load exactly at the limit is not above it.
+    // At the limit: no longer above it, but not 10% below either: still raised.
     AgentMetric::query()->delete();
     health_samples($this->agent, 16, fn () => ['cpu_percent' => 97.0, 'load1' => 4.0]);
+    dispatch_sync(new CheckServerHealth);
+    expect(health_alerts('servers.load_high', recovery: true))->toHaveCount(0);
+
+    AgentMetric::query()->delete();
+    health_samples($this->agent, 16, fn () => ['cpu_percent' => 97.0, 'load1' => 3.5]);
     dispatch_sync(new CheckServerHealth);
     expect(health_alerts('servers.load_high', recovery: true))->toHaveCount(1);
 });
@@ -166,7 +202,17 @@ it('alerts when the agent stays outdated for an hour, with the update as the sug
     ($this->online)();
     dispatch_sync(new CheckServerHealth);
     $alert = health_alerts('servers.agent_outdated')->sole();
-    expect($alert->action)->toBe('Update agent')->and($alert->body)->toContain('v1.0.0');
+    expect($alert->title)->toBe('An agent is outdated')
+        ->and($alert->action)->toBe('Update agent')
+        ->and($alert->url)->toBe(url('/servers'))
+        ->and($alert->body)->toContain('web-1 (v1.0.0)');
+
+    // A second outdated server joins the same alert: no second one.
+    $second = Server::factory()->create(['organization_id' => $this->organization->id, 'name' => 'web-2']);
+    $agent2 = fleet_enroll($this->organization->id, $second->id, ['agent_version' => 'v1.0.0', 'agent_sha256' => str_repeat('a', 64)])['agent'];
+    $agent2->forceFill(['status' => AgentStatus::Online, 'last_heartbeat_at' => now()])->save();
+    dispatch_sync(new CheckServerHealth);
+    expect(health_alerts('servers.agent_outdated'))->toHaveCount(1);
 });
 
 it('forecasts a disk filling within 48 hours from six hours of samples', function () {
@@ -217,7 +263,19 @@ it('keeps servers of other organizations out of an organization\'s alerts', func
     ($this->online)();
 
     dispatch_sync(new CheckServerHealth);
+    $this->travel(5)->minutes();
+    $agent->forceFill(['last_heartbeat_at' => now()])->save();
+    ($this->online)();
+    dispatch_sync(new CheckServerHealth);
 
     expect(Alert::query()->where('organization_id', $this->organization->id)->count())->toBe(0)
         ->and(Alert::query()->where('organization_id', $other->id)->where('type', 'servers.disk_usage')->count())->toBe(2);
+});
+
+it('keys long mount paths by a hash and keeps the path in the alert', function () {
+    $mount = '/mnt/'.str_repeat('very-long-name/', 12);
+    health_check_held($this, ['disks' => [$mount => [95 * GIB, 5 * GIB, 100 * GIB]]]);
+
+    expect(Condition::query()->pluck('key')->every(fn ($key) => strlen($key) < 80))->toBeTrue()
+        ->and(health_alerts('servers.disk_usage')->first()->context['mount'])->toBe($mount);
 });
