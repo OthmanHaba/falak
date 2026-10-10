@@ -293,6 +293,44 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         return new CheckoutCredentials(url: $client->httpsUrl($connection, $repository), httpsUsername: $username, httpsPassword: $password);
     }
 
+    public function commentOnPullRequest(string $connectionId, string $repository, int $number, string $body, ?string $commentId = null): string
+    {
+        $connection = $this->find($connectionId);
+        $client = $this->client($connection);
+
+        if ($commentId !== null && ($id = $client->commentOnPullRequest($connection, $repository, $number, $body, $commentId)) !== null) {
+            return $id;
+        }
+
+        return (string) $client->commentOnPullRequest($connection, $repository, $number, $body);
+    }
+
+    public function setCommitStatus(string $connectionId, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        $connection = $this->find($connectionId);
+        $this->client($connection)->setCommitStatus($connection, $repository, $sha, $state, $context, $description, $url);
+    }
+
+    public function usersWithAccount(string $organizationId, string $provider, string $login): array
+    {
+        if (trim($login) === '') {
+            return [];
+        }
+
+        return Connection::query()
+            ->where('organization_id', $organizationId)
+            ->where('provider', $provider)
+            ->whereIn('auth_type', ['oauth', 'token', 'basic'])
+            ->where('status', 'active')
+            ->whereNotNull('created_by')
+            ->whereRaw('lower(account) = ?', [mb_strtolower(trim($login))])
+            ->pluck('created_by')
+            ->map(fn ($id) => (string) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     private function knownHosts(string $url): ?string
     {
         $host = CustomGitClient::isUrl($url) && preg_match('#^[^@/]+@([^:]+):#', $url, $m) === 1 ? $m[1] : parse_url($url, PHP_URL_HOST);

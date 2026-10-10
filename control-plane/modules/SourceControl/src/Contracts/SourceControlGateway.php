@@ -66,6 +66,31 @@ interface SourceControlGateway
     /** Remove the push webhook when no longer needed (best-effort at the provider). */
     public function removeWebhook(string $connectionId, string $repository): void;
 
+    /**
+     * Post Falak's comment on a pull request, or edit it when $commentId is given (posted anew when it was deleted).
+     * Throws {@see Exceptions\NoApi} for git servers without an API.
+     *
+     * @return string the comment's id
+     */
+    public function commentOnPullRequest(string $connectionId, string $repository, int $number, string $body, ?string $commentId = null): string;
+
+    /**
+     * Report a commit status under $context (GitHub commit status, GitLab pipeline status, Bitbucket build status).
+     * Throws {@see Exceptions\NoApi} for git servers without an API.
+     *
+     * @param  'pending'|'success'|'failure'  $state
+     */
+    public function setCommitStatus(string $connectionId, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void;
+
+    /**
+     * Falak users of the organization who connected the provider account $login (OAuth and token connections record
+     * the account they authenticate as): how a provider login maps to Falak members. App installations prove nothing
+     * about a person and are left out.
+     *
+     * @return list<string> user ids
+     */
+    public function usersWithAccount(string $organizationId, string $provider, string $login): array;
+
     /** Largest file {@see file()} returns. */
     public const MAX_FILE_BYTES = 1048576;
 

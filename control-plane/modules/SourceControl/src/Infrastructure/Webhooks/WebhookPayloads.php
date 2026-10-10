@@ -5,12 +5,13 @@ namespace Falak\SourceControl\Infrastructure\Webhooks;
 use DateTimeImmutable;
 use Exception;
 use Falak\SourceControl\Contracts\Data\CommitData;
+use Falak\SourceControl\Contracts\Data\PullRequestData;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Infrastructure\Providers\BitbucketClient;
 use Illuminate\Http\Request;
 
 /**
- * Signature verification and push parsing for inbound webhooks, per provider.
+ * Signature verification and push / pull request parsing for inbound webhooks, per provider.
  *
  * - GitHub: X-Hub-Signature-256 = "sha256=" . HMAC-SHA256(body, secret)
  * - GitLab: X-Gitlab-Token = secret
@@ -153,6 +154,197 @@ class WebhookPayloads
         }
 
         return $pushes;
+    }
+
+    /**
+     * The pull request event of a delivery (null: not one, or one previews don't act on, like a title edit on GitHub).
+     *
+     * - GitHub `pull_request` opened / reopened / synchronize / closed, `issue_comment` created on a pull request;
+     * - GitLab `Merge Request Hook` open / reopen / update with new commits (`oldrev`) / close / merge, `Note Hook` on
+     *   a merge request;
+     * - Bitbucket `pullrequest:created|updated|fulfilled|rejected|comment_created`.
+     *
+     * Custom git servers have no API to comment or report statuses with: their deliveries are ignored.
+     */
+    public function pullRequestEvent(ProviderType $provider, Request $request): ?ParsedPullRequestEvent
+    {
+        $payload = (array) $request->json()->all();
+
+        try {
+            return match ($provider) {
+                ProviderType::GitHub => self::githubPullRequest((string) $request->header('X-GitHub-Event'), $payload),
+                ProviderType::GitLab => self::gitlabMergeRequest((string) $request->header('X-Gitlab-Event'), $payload),
+                ProviderType::Bitbucket => self::bitbucketPullRequest((string) $request->header('X-Event-Key'), $payload),
+                ProviderType::Custom => null,
+            };
+        } catch (\TypeError) {
+            // A malformed payload (a field of the wrong type): not an event.
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function githubPullRequest(string $event, array $payload): ?ParsedPullRequestEvent
+    {
+        $action = (string) ($payload['action'] ?? '');
+        $repository = (string) ($payload['repository']['full_name'] ?? '');
+
+        if ($event === 'issue_comment') {
+            $issue = (array) ($payload['issue'] ?? []);
+
+            if ($action !== 'created' || ! isset($issue['pull_request']) || $repository === '' || ! isset($issue['number'])) {
+                return null;
+            }
+
+            return new ParsedPullRequestEvent(
+                kind: ParsedPullRequestEvent::COMMENTED,
+                repository: $repository,
+                number: (int) $issue['number'],
+                commentId: (string) ($payload['comment']['id'] ?? ''),
+                commentAuthor: $payload['comment']['user']['login'] ?? null,
+                commentBody: (string) ($payload['comment']['body'] ?? ''),
+            );
+        }
+
+        $kind = match ($action) {
+            'opened', 'reopened' => ParsedPullRequestEvent::OPENED,
+            'synchronize' => ParsedPullRequestEvent::UPDATED,
+            'closed' => ParsedPullRequestEvent::CLOSED,
+            default => null,
+        };
+        $pr = (array) ($payload['pull_request'] ?? []);
+
+        if ($event !== 'pull_request' || $kind === null || $repository === '' || ! isset($pr['number'], $pr['head']['sha'])) {
+            return null;
+        }
+
+        $source = $pr['head']['repo']['full_name'] ?? null;
+
+        return new ParsedPullRequestEvent($kind, $repository, (int) $pr['number'], new PullRequestData(
+            repository: $repository,
+            number: (int) $pr['number'],
+            title: (string) ($pr['title'] ?? ''),
+            url: $pr['html_url'] ?? null,
+            headBranch: (string) ($pr['head']['ref'] ?? ''),
+            headSha: (string) $pr['head']['sha'],
+            baseBranch: (string) ($pr['base']['ref'] ?? ''),
+            author: $pr['user']['login'] ?? null,
+            // A deleted fork has no head repository: still untrusted.
+            isFork: $source === null || strcasecmp((string) $source, $repository) !== 0,
+            sourceRepository: $source,
+        ), merged: (bool) ($pr['merged'] ?? false));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function gitlabMergeRequest(string $event, array $payload): ?ParsedPullRequestEvent
+    {
+        $repository = (string) ($payload['project']['path_with_namespace'] ?? '');
+        $attributes = (array) ($payload['object_attributes'] ?? []);
+
+        if ($event === 'Note Hook') {
+            $mr = (array) ($payload['merge_request'] ?? []);
+
+            if (($attributes['noteable_type'] ?? null) !== 'MergeRequest' || $repository === '' || ! isset($mr['iid'])) {
+                return null;
+            }
+
+            return new ParsedPullRequestEvent(
+                kind: ParsedPullRequestEvent::COMMENTED,
+                repository: $repository,
+                number: (int) $mr['iid'],
+                commentId: (string) ($attributes['id'] ?? ''),
+                commentAuthor: $payload['user']['username'] ?? null,
+                commentBody: (string) ($attributes['note'] ?? ''),
+            );
+        }
+
+        if ($event !== 'Merge Request Hook' || ($payload['object_kind'] ?? null) !== 'merge_request' || $repository === '' || ! isset($attributes['iid'])) {
+            return null;
+        }
+
+        $action = (string) ($attributes['action'] ?? '');
+        $kind = match (true) {
+            in_array($action, ['open', 'reopen'], true) => ParsedPullRequestEvent::OPENED,
+            // Updates without new commits (title, labels, assignees) carry no oldrev.
+            $action === 'update' && isset($attributes['oldrev']) => ParsedPullRequestEvent::UPDATED,
+            in_array($action, ['close', 'merge'], true) => ParsedPullRequestEvent::CLOSED,
+            default => null,
+        };
+        $sha = (string) ($attributes['last_commit']['id'] ?? '');
+
+        if ($kind === null || $sha === '') {
+            return null;
+        }
+
+        $source = $attributes['source']['path_with_namespace'] ?? null;
+
+        return new ParsedPullRequestEvent($kind, $repository, (int) $attributes['iid'], new PullRequestData(
+            repository: $repository,
+            number: (int) $attributes['iid'],
+            title: (string) ($attributes['title'] ?? ''),
+            url: $attributes['url'] ?? null,
+            headBranch: (string) ($attributes['source_branch'] ?? ''),
+            headSha: $sha,
+            baseBranch: (string) ($attributes['target_branch'] ?? ''),
+            author: $payload['user']['username'] ?? null,
+            isFork: ($attributes['source_project_id'] ?? null) !== ($attributes['target_project_id'] ?? null),
+            sourceRepository: $source,
+        ), merged: $action === 'merge');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function bitbucketPullRequest(string $event, array $payload): ?ParsedPullRequestEvent
+    {
+        $pr = (array) ($payload['pullrequest'] ?? []);
+        $repository = (string) ($payload['repository']['full_name'] ?? $pr['destination']['repository']['full_name'] ?? '');
+
+        if ($repository === '' || ! isset($pr['id'])) {
+            return null;
+        }
+
+        if ($event === 'pullrequest:comment_created') {
+            return new ParsedPullRequestEvent(
+                kind: ParsedPullRequestEvent::COMMENTED,
+                repository: $repository,
+                number: (int) $pr['id'],
+                commentId: (string) ($payload['comment']['id'] ?? ''),
+                commentAuthor: $payload['comment']['user']['nickname'] ?? $payload['actor']['nickname'] ?? null,
+                commentBody: (string) ($payload['comment']['content']['raw'] ?? ''),
+            );
+        }
+
+        $kind = match ($event) {
+            'pullrequest:created' => ParsedPullRequestEvent::OPENED,
+            'pullrequest:updated' => ParsedPullRequestEvent::UPDATED,
+            'pullrequest:fulfilled', 'pullrequest:rejected' => ParsedPullRequestEvent::CLOSED,
+            default => null,
+        };
+        $sha = (string) ($pr['source']['commit']['hash'] ?? '');
+
+        if ($kind === null || $sha === '') {
+            return null;
+        }
+
+        $source = $pr['source']['repository']['full_name'] ?? null;
+
+        return new ParsedPullRequestEvent($kind, $repository, (int) $pr['id'], new PullRequestData(
+            repository: $repository,
+            number: (int) $pr['id'],
+            title: (string) ($pr['title'] ?? ''),
+            url: $pr['links']['html']['href'] ?? null,
+            headBranch: (string) ($pr['source']['branch']['name'] ?? ''),
+            headSha: $sha,
+            baseBranch: (string) ($pr['destination']['branch']['name'] ?? ''),
+            author: $pr['author']['nickname'] ?? $pr['author']['display_name'] ?? null,
+            isFork: $source === null || strcasecmp((string) $source, $repository) !== 0,
+            sourceRepository: $source,
+        ), merged: $event === 'pullrequest:fulfilled');
     }
 
     private static function branch(mixed $ref): ?string

@@ -175,4 +175,31 @@ final class FakeSourceControlGateway implements SourceControlGateway
     {
         return new CheckoutCredentials($this->cloneUrl($connectionId, $repository), 'PRIVATE');
     }
+
+    /** @var array<string, array{repository: string, number: int, body: string}> pull request comments by id */
+    public array $comments = [];
+
+    /** @var list<array{repository: string, sha: string, state: string, context: string, description: string, url: ?string}> */
+    public array $statuses = [];
+
+    /** @var array<string, list<string>> "provider|login" => user ids */
+    public array $accounts = [];
+
+    public function commentOnPullRequest(string $connectionId, string $repository, int $number, string $body, ?string $commentId = null): string
+    {
+        $id = $commentId !== null && isset($this->comments[$commentId]) ? $commentId : (string) (count($this->comments) + 1);
+        $this->comments[$id] = ['repository' => $repository, 'number' => $number, 'body' => $body];
+
+        return $id;
+    }
+
+    public function setCommitStatus(string $connectionId, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        $this->statuses[] = compact('repository', 'sha', 'state', 'context', 'description', 'url');
+    }
+
+    public function usersWithAccount(string $organizationId, string $provider, string $login): array
+    {
+        return $this->accounts[strtolower("{$provider}|{$login}")] ?? [];
+    }
 }

@@ -21,6 +21,7 @@ use Illuminate\Support\Collection;
  *
  * - `push` → the push log + {@see PushReceived}, for repositories a Falak site deploys
  *   from (the ones {@see SourceControlGateway::ensureWebhook()} marked);
+ * - `pull_request` / `issue_comment` on a pull request → the pull request events, for those repositories too;
  * - `installation` deleted / suspend / unsuspend → the connection becomes disconnected / suspended / active;
  * - `installation_repositories` → the cached repository list is refreshed.
  */
@@ -29,6 +30,7 @@ final class ReceiveGitHubAppEvent
     public function __construct(
         private readonly WebhookPayloads $payloads,
         private readonly RecordPushes $record,
+        private readonly AnnouncePullRequest $announce,
         private readonly GitHubAppTokens $tokens,
         private readonly AuditLog $audit,
     ) {}
@@ -42,7 +44,7 @@ final class ReceiveGitHubAppEvent
         $payload = (array) $request->json()->all();
         $installationId = (string) ($payload['installation']['id'] ?? '');
 
-        if ($installationId === '' || ! in_array($event, ['push', 'installation', 'installation_repositories'], true)) {
+        if ($installationId === '' || ! in_array($event, ['push', 'pull_request', 'issue_comment', 'installation', 'installation_repositories'], true)) {
             return ['ignored' => $event];
         }
 
@@ -55,7 +57,7 @@ final class ReceiveGitHubAppEvent
             ->get();
 
         return match ($event) {
-            'push' => $this->push($connections, $payload, $request),
+            'push', 'pull_request', 'issue_comment' => $this->repositoryEvent($event, $connections, $payload, $request),
             'installation' => $this->installation($app, $connections, (string) ($payload['action'] ?? ''), $installationId),
             'installation_repositories' => $this->repositories($connections),
         };
@@ -66,7 +68,7 @@ final class ReceiveGitHubAppEvent
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private function push(Collection $connections, array $payload, Request $request): array
+    private function repositoryEvent(string $event, Collection $connections, array $payload, Request $request): array
     {
         $repository = (string) ($payload['repository']['full_name'] ?? '');
         $received = 0;
@@ -77,13 +79,15 @@ final class ReceiveGitHubAppEvent
                 ->whereRaw('lower(repository) = ?', [strtolower($repository)])
                 ->first();
 
-            // Not a repository Falak deploys from (no push-to-deploy site): nothing to record.
+            // Not a repository Falak deploys from (no push-to-deploy site, no previews): nothing to record.
             if ($repository === '' || ! $webhook) {
                 continue;
             }
 
             $webhook->forceFill(['last_delivery_at' => now()])->save();
-            $received += count(($this->record)($connection, $webhook->repository, $this->payloads->pushes(ProviderType::GitHub, $request), $webhook));
+            $received += $event === 'push'
+                ? count(($this->record)($connection, $webhook->repository, $this->payloads->pushes(ProviderType::GitHub, $request), $webhook))
+                : (int) ($this->announce)($connection, $webhook->repository, $this->payloads->pullRequestEvent(ProviderType::GitHub, $request));
         }
 
         return ['received' => $received];
