@@ -42,12 +42,17 @@ function Triggers({ watch }: { watch: ReleaseWatch }) {
 
     return (
         <ul className="grid gap-1" aria-label="Triggers">
-            <TriggerRow label="Health check" state={!triggers.health ? 'off' : !health ? 'unknown' : health.failures > 0 ? 'warn' : 'ok'}>
-                {!triggers.health
-                    ? 'off'
-                    : health
-                      ? `${health.failures}/${health.threshold} failures in a row${health.message ? ` · ${health.message}` : ''}`
-                      : 'first check within 30 s'}
+            <TriggerRow
+                label="Health check"
+                state={health?.unavailable ? 'unknown' : !triggers.health ? 'off' : !health ? 'unknown' : (health.failures ?? 0) > 0 ? 'warn' : 'ok'}
+            >
+                {health?.unavailable
+                    ? health.unavailable
+                    : !triggers.health
+                      ? 'off'
+                      : health
+                        ? `${health.failures ?? 0}/${health.threshold ?? 0} failures in a row${health.message ? ` · ${health.message}` : ''}`
+                        : 'first check within 30 s'}
             </TriggerRow>
             <TriggerRow label="5xx rate" state={!triggers.errors ? 'off' : !errors || errors.unavailable ? 'unknown' : 'ok'}>
                 {!triggers.errors

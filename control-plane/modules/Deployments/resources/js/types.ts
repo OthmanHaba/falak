@@ -110,8 +110,17 @@ export interface ReleaseWatch {
     remaining_s: number;
     checked_at: string | null;
     checks: {
-        health?: { ok: boolean; failures: number; threshold: number; message: string | null };
-        errors?: { total?: number; errors?: number; rate?: number; threshold: number; min_requests: number; unavailable?: string };
+        /** `unavailable`: the site's health check is off, so the trigger is skipped. */
+        health?: { ok?: boolean; failures?: number; threshold?: number; message?: string | null; unavailable?: string };
+        errors?: {
+            total?: number;
+            errors?: number;
+            rate?: number;
+            threshold: number;
+            min_requests: number;
+            min_errors?: number;
+            unavailable?: string;
+        };
         crash?: { events: number; message: string };
         issue?: { events: number; message: string };
     };

@@ -280,7 +280,12 @@ export function WatchAfterDeploySettings({ ctx }: ServiceTabProps) {
                         <div className="grid gap-3 sm:col-span-2">
                             <h4 className="text-fg-muted text-xs font-medium">Triggers</h4>
                             {toggle('health', 'The health check fails several times in a row (through the edge, every 30 s)')}
-                            {form.health && (
+                            {form.health && !data.settings.health_enabled && (
+                                <p className="text-fg-muted text-xs">
+                                    The site&apos;s health check is off (Strategy &amp; health check above), so this trigger is skipped.
+                                </p>
+                            )}
+                            {form.health && data.settings.health_enabled && (
                                 <Field label="Failures in a row" error={errors.health_failures} hint="Uses the health check path and status above.">
                                     <Input
                                         mono
