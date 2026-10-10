@@ -117,8 +117,13 @@ final class RestoreToTime
             $copy->id = strtolower((string) Str::ulid());
             $copy->forceFill([
                 ...collect($source->getAttributes())->only(['organization_id', 'server_id', 'server_name', 'engine', 'version', 'image', 'image_digest', 'port', 'memory_bytes', 'cpus'])->all(),
-                // Read-only in the engine's config too (it survives a restart), no scheduled events while it is inspected.
-                'settings' => [...(array) ($source->settings ?? []), 'read_only' => true, 'event_scheduler' => false],
+                // Read-only in the engine's config too (it survives a restart), and on MySQL / MariaDB no scheduled events
+                // while it is inspected (falak-db refuses event_scheduler for other engines).
+                'settings' => [
+                    ...(array) ($source->settings ?? []),
+                    'read_only' => true,
+                    ...($source->engine->isMysqlFamily() ? ['event_scheduler' => false] : []),
+                ],
                 // The restored data keeps the source's accounts and their passwords.
                 'root_password' => $source->root_password,
                 'name' => substr($source->name, 0, 30).'-pitr-'.substr($copy->id, -5),
