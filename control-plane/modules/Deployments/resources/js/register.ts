@@ -29,7 +29,8 @@ registerServiceLayers({
     component: DeploymentPanel,
 });
 
-// Settings tab blocks (§5.1): push to deploy (Source), strategy / retention / health check and the deploy hook (Deploy).
+// Settings tab blocks (§5.1): push to deploy (Source), strategy / retention / health check, the watch after deploy and
+// the deploy hook (Deploy).
 const settings = () => import('./panel/settings');
 registerServiceSettingsSections(
     {
@@ -53,6 +54,17 @@ registerServiceSettingsSections(
         // Functions have no repository, build, deploy script or commands (docs/plans/FUNCTIONS.md).
         when: (ctx) => ctx.service.icon !== 'function',
         component: lazy(() => settings().then((module) => ({ default: module.DeployStrategySettings }))),
+    },
+    {
+        id: 'deployments.watch',
+        kinds: ['site'],
+        section: 'deploy',
+        sectionTitle: 'Deploy',
+        order: 320,
+        permission: 'deployments.view',
+        // Functions scale to zero and only switch to a release that booted: nothing to watch.
+        when: (ctx) => ctx.service.icon !== 'function',
+        component: lazy(() => settings().then((module) => ({ default: module.WatchAfterDeploySettings }))),
     },
     {
         id: 'deployments.hook',

@@ -119,14 +119,16 @@ export function useDeployment(siteId: string, deploymentId: string, onFinished?:
 
     const deployment = detail?.deployment;
     const terminal = deployment ? TERMINAL.includes(deployment.status) : false;
-    useTick(Boolean(deployment && !terminal));
+    // A live release's watch window keeps the view fresh (countdown, trigger status) after the deployment finished.
+    const watching = deployment?.watch?.status === 'watching';
+    useTick(Boolean(deployment && (!terminal || watching)));
 
     useEffect(() => {
-        if (!deployment || terminal) return;
-        const timer = window.setInterval(() => void refresh(), live ? 10000 : 2000);
+        if (!deployment || (terminal && !watching)) return;
+        const timer = window.setInterval(() => void refresh(), terminal ? (live ? 30000 : 10000) : live ? 10000 : 2000);
 
         return () => window.clearInterval(timer);
-    }, [deployment, terminal, live, refresh]);
+    }, [deployment, terminal, watching, live, refresh]);
 
     const wasTerminal = useRef(terminal);
     const finished = useRef(onFinished);

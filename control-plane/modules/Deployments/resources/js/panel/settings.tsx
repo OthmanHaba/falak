@@ -30,7 +30,20 @@ interface DeploySettingsData {
     branch: string | null;
     hookUrl: string | null;
     hasHook: boolean;
+    watch: WatchSettings & { migrations: boolean; production: boolean };
     can: { manage: boolean };
+}
+
+/** Rollback after a release goes live (opt-in). */
+interface WatchSettings {
+    enabled: boolean;
+    minutes: number;
+    health: boolean;
+    health_failures: number;
+    crashes: boolean;
+    errors: boolean;
+    issues: boolean;
+    on_trigger: 'rollback' | 'alert_only';
 }
 
 const url = (siteId: string) => `/sites/${siteId}/deploy-settings`;
@@ -164,6 +177,124 @@ export function DeployStrategySettings({ ctx }: ServiceTabProps) {
                         {number('health_timeout_s', 'Timeout (s)')}
                         {number('health_retries', 'Attempts')}
                         {number('health_retry_delay_s', 'Delay between attempts (s)')}
+                    </>
+                )}
+            </form>
+        </Section>
+    );
+}
+
+const pickWatch = ({ enabled, minutes, health, health_failures, crashes, errors, issues, on_trigger }: WatchSettings): WatchSettings => ({
+    enabled,
+    minutes,
+    health,
+    health_failures,
+    crashes,
+    errors,
+    issues,
+    on_trigger,
+});
+
+/** Deploy section: watch the release after it goes live and roll back (or alert) when a trigger fires. */
+export function WatchAfterDeploySettings({ ctx }: ServiceTabProps) {
+    const { data, error, reload } = useDeploySettings(ctx);
+    const initial = data ? pickWatch(data.watch) : null;
+    const [form, setForm] = useState<WatchSettings | null>(initial);
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => setForm(data ? pickWatch(data.watch) : null), [data]);
+
+    if (!data || !form || !initial) return error ? <Callout tone="danger">{error}</Callout> : <SkeletonRows rows={3} />;
+
+    const manage = data.can.manage;
+    const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+    const set = (patch: Partial<WatchSettings>) => setForm({ ...form, ...patch });
+    const toggle = (key: 'health' | 'crashes' | 'errors' | 'issues', label: string) => (
+        <Field inline label={label}>
+            <Switch checked={form[key]} disabled={!manage || !form.enabled} onCheckedChange={(on) => set({ [key]: on })} />
+        </Field>
+    );
+
+    const submit = async (event: FormEvent) => {
+        event.preventDefault();
+        setSaving(true);
+        setErrors((await send('PUT', `${url(ctx.service.ref_id)}/watch`, form, 'Watch after deploy saved', reload)) ?? {});
+        setSaving(false);
+    };
+
+    return (
+        <Section
+            title="Watch after deploy"
+            description="After a deployment goes live, watch it for a few minutes and roll back to the previous release if it turns unhealthy. Not for the first deployment, nor for rollbacks."
+            footer={
+                manage && (
+                    <>
+                        <Button variant="ghost" disabled={!dirty || saving} onClick={() => setForm(initial)}>
+                            Reset
+                        </Button>
+                        <Button variant="primary" type="submit" form="deploy-watch" loading={saving} disabled={!dirty}>
+                            Save
+                        </Button>
+                    </>
+                )
+            }
+        >
+            <form id="deploy-watch" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+                <Field inline label="Watch each release after it goes live" className="sm:col-span-2">
+                    <Switch checked={form.enabled} disabled={!manage} onCheckedChange={(on) => set({ enabled: on })} />
+                </Field>
+                {!form.enabled && data.watch.production && (
+                    <Callout tone="info" className="sm:col-span-2">
+                        Suggested for production services: a release that fails after going live is rolled back within minutes.
+                    </Callout>
+                )}
+                {form.enabled && (
+                    <>
+                        <Field label="Watch for (minutes)" error={errors.minutes} hint="1–60 minutes.">
+                            <Input
+                                mono
+                                inputMode="numeric"
+                                disabled={!manage}
+                                value={String(form.minutes)}
+                                onChange={(event) => set({ minutes: Number(event.target.value.replace(/\D/g, '') || 0) })}
+                            />
+                        </Field>
+                        <Field label="When a trigger fires" error={errors.on_trigger}>
+                            <Select
+                                value={form.on_trigger}
+                                disabled={!manage}
+                                onValueChange={(value) => set({ on_trigger: value === 'alert_only' ? 'alert_only' : 'rollback' })}
+                                options={[
+                                    { value: 'rollback', label: 'Roll back and alert' },
+                                    { value: 'alert_only', label: 'Alert only' },
+                                ]}
+                            />
+                        </Field>
+                        {data.watch.migrations && (
+                            <Callout tone="warning" title="This service runs database migrations" className="sm:col-span-2">
+                                A rollback returns to the previous code but does not reverse migrations. If the previous release can&apos;t run on the
+                                migrated schema, choose &quot;Alert only&quot;.
+                            </Callout>
+                        )}
+                        <div className="grid gap-3 sm:col-span-2">
+                            <h4 className="text-fg-muted text-xs font-medium">Triggers</h4>
+                            {toggle('health', 'The health check fails several times in a row (through the edge, every 30 s)')}
+                            {form.health && (
+                                <Field label="Failures in a row" error={errors.health_failures} hint="Uses the health check path and status above.">
+                                    <Input
+                                        mono
+                                        inputMode="numeric"
+                                        disabled={!manage}
+                                        value={String(form.health_failures)}
+                                        onChange={(event) => set({ health_failures: Number(event.target.value.replace(/\D/g, '') || 0) })}
+                                    />
+                                </Field>
+                            )}
+                            {toggle('crashes', 'A process crash-loops or is killed for running out of memory')}
+                            {toggle('errors', '5xx responses above 3× the previous release’s rate (at least 5%)')}
+                            {toggle('issues', 'A new error appears in Insights')}
+                        </div>
                     </>
                 )}
             </form>

@@ -12,7 +12,7 @@ import {
 } from '@/components/falak';
 import { type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, GitCommitHorizontal, Hourglass, Loader2, RotateCcw, Terminal, Webhook, X, type LucideIcon } from 'lucide-react';
+import { Check, ChevronDown, Eye, GitCommitHorizontal, Hourglass, Loader2, RotateCcw, Terminal, Webhook, X, type LucideIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 import { type Deployment } from '../types';
 import { durationMs, firstLine, type RunningDeployment } from './api';
@@ -161,6 +161,13 @@ export function DeploymentCard({
                 <div className="px-3.5 pb-3 sm:px-4">
                     <WaitingNotice deployment={deployment} compact />
                 </div>
+            )}
+            {deployment.watch?.status === 'watching' && (
+                <p className="text-info flex items-center gap-1.5 px-3.5 pb-3 text-xs font-medium sm:px-4" data-testid="watch-card-line">
+                    <Eye className="size-3.5 animate-pulse" aria-hidden />
+                    Watching for {Math.max(1, Math.ceil(deployment.watch.remaining_s / 60))} more min —{' '}
+                    {deployment.watch.on_trigger === 'alert_only' ? 'alerts' : 'rolls back'} if it turns unhealthy
+                </p>
             )}
             <button
                 type="button"
