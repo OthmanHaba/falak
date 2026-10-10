@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property ?array<string, string> $environment the site variables its `.env` was written with (references resolved)
  * @property ReleaseStatus $status
  * @property ?Carbon $activated_at
+ * @property ?Carbon $auto_rolled_back_at its watch rolled it back: never an automatic rollback target
  * @property Carbon $created_at
  */
 class Release extends Model
@@ -45,7 +46,7 @@ class Release extends Model
      */
     protected function casts(): array
     {
-        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'compose' => SealedArray::class, 'environment' => SealedArray::class];
+        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'auto_rolled_back_at' => 'datetime', 'compose' => SealedArray::class, 'environment' => SealedArray::class];
     }
 
     public static function current(string $siteId): ?self
@@ -78,6 +79,7 @@ class Release extends Model
             'active' => $this->status === ReleaseStatus::Active,
             'can_rollback' => $this->canRollBackTo(),
             'activated_at' => $this->activated_at?->toIso8601String(),
+            'auto_rolled_back_at' => $this->auto_rolled_back_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
         ];
     }

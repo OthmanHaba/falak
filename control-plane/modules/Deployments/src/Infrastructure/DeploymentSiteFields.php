@@ -10,7 +10,8 @@ use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteResourceExtension;
 
 /**
- * Adds `strategy` and `current_release` to the public site API resource.
+ * Adds `strategy`, `current_release` and `release_watch` (rollback after a release goes live) to the public site API
+ * resource.
  */
 final class DeploymentSiteFields implements SiteResourceExtension
 {
@@ -37,6 +38,7 @@ final class DeploymentSiteFields implements SiteResourceExtension
             $fields[$siteId] = [
                 'strategy' => $strategy?->value,
                 'current_release' => $current->get($siteId)?->toApi(),
+                'release_watch' => $settings->get($siteId)?->watch() ?? ['enabled' => false],
             ];
         }
 

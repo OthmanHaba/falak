@@ -35,7 +35,10 @@ use Illuminate\Support\Carbon;
  * @property ?string $target_release_id
  * @property ?string $previous_release_id
  * @property bool $rolling_back
- * @property bool $rolled_back
+ * @property bool $rolled_back a failed deployment's servers were reverted, or a live release was rolled back by its watch
+ * @property ?string $rolled_back_reason why the watch after it went live rolled it back (or only alerted)
+ * @property ?Carbon $rolled_back_at
+ * @property ?string $auto_rollback_of a rollback deployment started by the watch of this deployment
  * @property bool $cancel_requested
  * @property ?array<string, string> $variables
  * @property ?array<string, mixed> $settings
@@ -80,6 +83,7 @@ class Deployment extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'waiting_since' => 'datetime',
+            'rolled_back_at' => 'datetime',
         ];
     }
 

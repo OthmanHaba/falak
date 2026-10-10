@@ -3,13 +3,16 @@
 namespace Falak\Deployments\Http\Controllers\Api;
 
 use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Application\Actions\UpdateWatchSettings;
 use Falak\Deployments\Application\Orchestration\Orchestrator;
 use Falak\Deployments\Domain\Enums\ReleaseStatus;
 use Falak\Deployments\Domain\Enums\Trigger;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\OutputLine;
 use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Deployments\Http\Controllers\DeploySettingsController;
 use Falak\Deployments\Http\Controllers\PresentsDeployments;
 use Falak\Deployments\Http\Controllers\ResolvesSites;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -110,5 +113,22 @@ final class DeploymentApiController extends Controller
             ->orderByRaw("case when status = 'active' then 0 else 1 end")->orderByDesc('activated_at')->orderByDesc('created_at')->orderByDesc('id')->get();
 
         return response()->json(['data' => $releases->map(fn (Release $r) => $r->toApi())->values()]);
+    }
+
+    /** GET /api/v1/sites/{site}/release-watch — the watch after a release goes live (rollback on a trigger). */
+    public function watch(Request $request, string $site): JsonResponse
+    {
+        $data = $this->site($request->user(), $site);
+
+        return response()->json(['data' => DeploySettingsController::watchResource($data, SiteSettings::for($data))]);
+    }
+
+    /** PUT /api/v1/sites/{site}/release-watch {enabled?, minutes?, health?, health_failures?, crashes?, errors?, issues?, on_trigger?} */
+    public function updateWatch(Request $request, string $site, UpdateWatchSettings $update): JsonResponse
+    {
+        $data = $this->site($request->user(), $site, DeploymentPermissions::MANAGE);
+        $settings = $update($data, $request->validate(UpdateWatchSettings::rules()), (string) $request->user()?->getAuthIdentifier());
+
+        return response()->json(['data' => DeploySettingsController::watchResource($data, $settings)]);
     }
 }

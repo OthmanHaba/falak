@@ -21,6 +21,7 @@ use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\DeploymentStep;
 use Falak\Deployments\Domain\Models\DeploymentTarget;
 use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\ReleaseWatch;
 use Falak\Deployments\Domain\Models\ServerRelease;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Deployments\Domain\Models\StepCommand;
@@ -992,7 +993,10 @@ final class Orchestrator
             ReleaseActivated::dispatch((string) $deployment->release_id, $deployment->organization_id, $deployment->site_id, $deployment->id, $release?->commit ?? $deployment->commit, $previous?->id, $serverIds);
 
             if ($deployment->trigger === Trigger::Rollback) {
-                DeploymentRolledBack::dispatch($deployment->id, $deployment->organization_id, $deployment->site_id, $site->slug ?? $deployment->site_slug, $deployment->release_id, $serverIds, false);
+                // An automatic rollback after a release went live tells why (the watch of the deployment it replaced).
+                $watched = $deployment->auto_rollback_of !== null ? ReleaseWatch::query()->find($deployment->auto_rollback_of) : null;
+                DeploymentRolledBack::dispatch($deployment->id, $deployment->organization_id, $deployment->site_id, $site->slug ?? $deployment->site_slug, $deployment->release_id, $serverIds,
+                    $deployment->auto_rollback_of !== null, $watched?->reason, (bool) $watched?->migrations);
             }
 
             // Programs and schedules follow the live release (sites without a restart step, e.g. static, included).

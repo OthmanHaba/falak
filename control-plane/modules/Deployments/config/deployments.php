@@ -31,6 +31,21 @@ return [
             'retries' => 3,
             'retry_delay_s' => 5,
         ],
+        'watch' => [
+            'minutes' => 5,
+            'health_failures' => 3,
+        ],
+    ],
+
+    // Rollback after a release goes live (Settings → Deploy → "Watch after deploy", opt-in per site): the watch
+    // window's health checks run every 30 s; the 5xx trigger fires above max(baseline × factor, error_rate) once the
+    // release served at least min_requests; at most one automatic rollback per site per cooldown_minutes.
+    'watch' => [
+        'min_requests' => (int) env('FALAK_WATCH_MIN_REQUESTS', 20),
+        'error_rate' => 0.05,
+        'baseline_factor' => 3,
+        'baseline_minutes' => 60,
+        'cooldown_minutes' => 60,
     ],
 
     // A deployment triggered while some of the site's servers are still being prepared waits for them (status
