@@ -19,6 +19,8 @@ type Summary struct {
 	CPUPercent    float64
 	MemUsedBytes  int64
 	DiskUsedBytes int64
+	// Disks are the host's data filesystems (ReadDisks).
+	Disks []DiskUsage
 }
 
 // Sampler reads /proc under a (re-rootable) host fs.
@@ -46,6 +48,7 @@ func (s *Sampler) Summary() Summary {
 	if fsu, err := ReadFS(s.fs, "/"); err == nil {
 		out.DiskUsedBytes = fsu.Used
 	}
+	out.Disks = ReadDisks(s.fs)
 	if cur, err := ReadCPU(s.fs); err == nil {
 		s.mu.Lock()
 		prev := CPUTimes{}
