@@ -19,7 +19,6 @@ final class TelemetryPayload
     public static function build(string $organizationId, string $serverId, TelemetrySettings $settings, array $sites): array
     {
         $payload = [
-            'endpoint' => $settings->endpoint(),
             'resource' => [
                 'org_id' => strtoupper($organizationId),
                 'server_id' => strtoupper($serverId),
@@ -29,6 +28,12 @@ final class TelemetryPayload
             'metrics' => ['enabled' => true, 'interval_s' => max(5, $settings->metricsInterval())],
             'insights' => ['enabled' => true],
         ];
+
+        // No endpoint configured (an install without the observability stack sets FALAK_OTLP_ENDPOINT empty): the
+        // agent keeps the one it got at enrollment. An empty string is not a URI, so the whole payload was refused.
+        if (($endpoint = $settings->endpoint()) !== '') {
+            $payload = ['endpoint' => $endpoint, ...$payload];
+        }
 
         if ($token = $settings->token()) {
             $payload['headers'] = ['Authorization' => 'Bearer '.$token];
