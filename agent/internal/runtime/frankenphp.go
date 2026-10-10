@@ -199,6 +199,13 @@ func EnsureEdgeUnit(ctx context.Context, r runner.Runner, fs hostfs.FS, st comma
 		}
 		changed = true
 	}
+	// The edge runs as its own user and reads /etc/falak/caddy: /etc/falak must be traversable (o+x), whatever
+	// created it first (0700 on some installs).
+	if fixed, err := hostfs.EnsureTraversable(fs, "/etc/falak"); err != nil {
+		return false, err
+	} else if fixed {
+		changed = true
+	}
 	u.Groups = mergeGroups(fs, u.Groups)
 	unitChanged, err := fs.WriteFile(EdgeUnitPath, []byte(RenderEdgeUnit(u)), 0o644)
 	if err != nil {

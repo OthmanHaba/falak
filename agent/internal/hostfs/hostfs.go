@@ -153,3 +153,20 @@ func ParseMode(s string, def os.FileMode) (os.FileMode, error) {
 	}
 	return os.FileMode(n), nil
 }
+
+// EnsureTraversable adds the search (x) bit for group and others to an existing directory so other users can reach
+// what's inside without listing it (0700 → 0711). Missing directories are left alone. Returns whether it changed.
+func EnsureTraversable(f FS, dir string) (bool, error) {
+	fi, err := os.Stat(f.P(dir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	perm := fi.Mode().Perm()
+	if !fi.IsDir() || perm&0o011 == 0o011 {
+		return false, nil
+	}
+	return true, os.Chmod(f.P(dir), perm|0o011)
+}
