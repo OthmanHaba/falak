@@ -18,12 +18,12 @@ final class FixCatalogue
         'updates.install' => ['label' => 'Install the pending security updates now (services may restart)', 'disruptive' => true, 'agent' => true, 'undoable' => false],
         'updates.reboot' => ['label' => 'Reboot in the maintenance window', 'disruptive' => true, 'agent' => true, 'undoable' => true],
         'fail2ban.sshd' => ['label' => 'Guard SSH with fail2ban', 'disruptive' => false, 'agent' => true, 'undoable' => true],
-        'docker.tcp_off' => ['label' => 'Turn off the Docker TCP socket (restarts Docker; live-restore keeps containers)', 'disruptive' => true, 'agent' => true, 'undoable' => true],
+        'docker.tcp_off' => ['label' => 'Turn off the Docker TCP socket (restarts Docker; without live-restore every container restarts)', 'disruptive' => true, 'agent' => true, 'undoable' => true],
         'kernel.sysctl' => ['label' => 'Harden kernel network settings (90-falak-hardening.conf)', 'disruptive' => false, 'agent' => true, 'undoable' => true],
         'files.secret_permissions' => ['label' => 'Make secret files private', 'disruptive' => false, 'agent' => true, 'undoable' => true],
         'time.sync' => ['label' => 'Keep the clock in sync (systemd-timesyncd)', 'disruptive' => false, 'agent' => true, 'undoable' => true],
         'firewall.apply' => ['label' => 'Apply the firewall again', 'disruptive' => false, 'agent' => false, 'undoable' => false],
-        'firewall.close_port' => ['label' => 'Close the port with a firewall deny rule', 'disruptive' => false, 'agent' => false, 'undoable' => true],
+        'firewall.close_port' => ['label' => 'Close the port with a firewall deny rule (a deny wins over allow rules, also ones added later)', 'disruptive' => false, 'agent' => false, 'undoable' => true],
     ];
 
     /**

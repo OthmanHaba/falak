@@ -73,6 +73,7 @@ export default function SecurityServer({ server, audit, latest, history, fixes, 
     const [confirming, setConfirming] = useState<FindingRow | null>(null);
     const [rebootAt, setRebootAt] = useState('04:00');
     const [busy, setBusy] = useState<string | null>(null);
+    const [forcing, setForcing] = useState<FixRunRow | null>(null);
     const running = latest?.status === 'running' || fixes.some((f) => ['queued', 'applying', 'undoing'].includes(f.status));
     usePoll(running ? 3_000 : 60_000, { only: RELOAD });
 
@@ -246,6 +247,11 @@ export default function SecurityServer({ server, audit, latest, history, fixes, 
                                         Undo
                                     </Button>
                                 )}
+                                {can.fix && run.can_undo && run.error?.includes('changed since the fix') && (
+                                    <Button size="sm" variant="danger" icon={<RotateCcw />} onClick={() => setForcing(run)}>
+                                        Undo anyway…
+                                    </Button>
+                                )}
                             </li>
                         ))}
                     </ul>
@@ -277,6 +283,39 @@ export default function SecurityServer({ server, audit, latest, history, fixes, 
                         <Input id="reboot_at" type="time" value={rebootAt} onChange={(e) => setRebootAt(e.target.value)} />
                     </Field>
                 )}
+            </Dialog>
+            <Dialog
+                open={forcing !== null}
+                onOpenChange={(open) => !open && setForcing(null)}
+                title="Undo anyway?"
+                description={forcing?.label}
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setForcing(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            onClick={() => {
+                                if (forcing)
+                                    post(
+                                        `undo-${forcing.id}`,
+                                        `/security/servers/${server.id}/fixes/${forcing.id}/undo`,
+                                        { force: true },
+                                        'Undoing the fix',
+                                    );
+                                setForcing(null);
+                            }}
+                        >
+                            Overwrite and undo
+                        </Button>
+                    </>
+                }
+            >
+                <p className="text-fg-muted text-sm">
+                    Files this fix changed were edited since. Undoing puts back the files as they were before the fix and throws those edits away.
+                </p>
+                {forcing?.error && <p className="text-fg-muted font-mono text-xs break-words">{forcing.error}</p>}
             </Dialog>
         </ServerLayout>
     );

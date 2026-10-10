@@ -25,14 +25,17 @@ final class UndoFix
         private readonly AuditLog $audit,
     ) {}
 
-    public function __invoke(FixRun $run, string $userId): FixRun
+    /**
+     * @param  bool  $force  restore files changed since the fix (the agent refuses otherwise and lists them)
+     */
+    public function __invoke(FixRun $run, string $userId, bool $force = false): FixRun
     {
         if (! $run->canUndo()) {
             throw ValidationException::withMessages(['fix' => 'This fix can no longer be undone (undo works for '.config('security.undo_days', 7).' days).']);
         }
 
         $fix = FixCatalogue::find($run->fix_id);
-        $this->audit->record('security.undo_requested', 'server', $run->server_id, ['fix_id' => $run->fix_id, 'run_id' => $run->id, 'backup_id' => $run->backup_id], $run->organization_id);
+        $this->audit->record('security.undo_requested', 'server', $run->server_id, ['fix_id' => $run->fix_id, 'run_id' => $run->id, 'backup_id' => $run->backup_id, 'force' => $force], $run->organization_id);
 
         if ($fix !== null && ! $fix['agent']) {
             $this->firewalls->deleteRule($run->server_id, (string) $run->backup_id);
@@ -41,7 +44,7 @@ final class UndoFix
         }
 
         try {
-            $handle = $this->agents->dispatch($run->server_id, 'security.undo', ['fix_id' => $run->fix_id, 'backup_id' => $run->backup_id], (int) config('security.fix_timeout', 1800), "security.undo:{$run->id}");
+            $handle = $this->agents->dispatch($run->server_id, 'security.undo', ['fix_id' => $run->fix_id, 'backup_id' => $run->backup_id, ...($force ? ['force' => true] : [])], (int) config('security.fix_timeout', 1800), "security.undo:{$run->id}");
         } catch (AgentUnavailable) {
             throw ValidationException::withMessages(['fix' => 'The server agent is not connected.']);
         }

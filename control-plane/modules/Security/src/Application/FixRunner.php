@@ -11,6 +11,7 @@ use Falak\Security\Domain\Enums\FixStatus;
 use Falak\Security\Domain\FixCatalogue;
 use Falak\Security\Domain\Models\FixRun;
 use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerSshKeys;
 use Throwable;
 
 /**
@@ -26,12 +27,13 @@ final class FixRunner
         private readonly ServerDirectory $servers,
         private readonly AuditLog $audit,
         private readonly StartAudit $startAudit,
+        private readonly ServerSshKeys $keys,
     ) {}
 
     /**
      * Start a queued (or new) fix run.
      *
-     * @param  array<string, string>  $options  e.g. ["reboot_at" => "04:00"]
+     * @param  array<string, mixed>  $options  e.g. ["reboot_at" => "04:00"]
      */
     public function start(FixRun $run, array $options = []): FixRun
     {
@@ -43,6 +45,11 @@ final class FixRunner
 
         if (! $fix['agent']) {
             return $this->controlPlane($run, $fix);
+        }
+
+        if ($run->fix_id === 'ssh.harden') {
+            // The agent doesn't count the keys Falak installs for its own falak user as a way in for people.
+            $options['managed_keys'] = (object) $this->keys->authorizedKeys($run->server_id);
         }
 
         try {

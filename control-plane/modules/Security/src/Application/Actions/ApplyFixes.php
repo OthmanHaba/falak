@@ -65,8 +65,10 @@ final class ApplyFixes
             throw ValidationException::withMessages(['fix_id' => 'No safe fixes to apply.']);
         }
 
-        // Control-plane fixes (firewall rules) first: they settle at once.
-        usort($ids, fn (string $a, string $b) => [FixCatalogue::find($a)['agent'] ?? true, $a] <=> [FixCatalogue::find($b)['agent'] ?? true, $b]);
+        // kernel.sysctl first (protected_hardlinks / protected_symlinks guard the file fixes after it), then the
+        // control-plane fixes (firewall rules: they settle at once), then the rest.
+        $rank = fn (string $id) => [$id === 'kernel.sysctl' ? 0 : 1, FixCatalogue::find($id)['agent'] ?? true, $id];
+        usort($ids, fn (string $a, string $b) => $rank($a) <=> $rank($b));
 
         $batch = (string) Str::ulid();
         $runs = DB::transaction(fn () => array_map(function (string $id, int $i) use ($server, $userId, $batch) {

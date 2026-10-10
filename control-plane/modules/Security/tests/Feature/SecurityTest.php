@@ -203,7 +203,7 @@ it('needs a confirmation for disruptive fixes and only offers what the audit fou
     $this->post("/security/servers/{$this->server->id}/fixes", ['fix_id' => 'updates.reboot', 'confirm' => true, 'reboot_at' => '03:30'])->assertSessionHasNoErrors();
     $this->post("/security/servers/{$this->server->id}/fixes", ['fix_id' => 'ssh.harden', 'confirm' => true])->assertSessionHasErrors('fix_id'); // already running
 
-    expect(array_map(fn ($c) => $c['payload'], $this->agents->dispatched('security.fix')))->toBe([['fix_id' => 'ssh.harden'], ['fix_id' => 'updates.reboot', 'reboot_at' => '03:30']])
+    expect(array_map(fn ($c) => $c['payload'], $this->agents->dispatched('security.fix')))->toBe([['fix_id' => 'ssh.harden', 'managed_keys' => ['falak' => [], 'root' => []]], ['fix_id' => 'updates.reboot', 'reboot_at' => '03:30']])
         ->and(FixRun::query()->where('fix_id', 'ssh.harden')->value('disruptive'))->toBeTrue();
 });
 
@@ -232,11 +232,11 @@ it('applies every safe fix in sequence, leaving disruptive ones alone', function
     $this->post("/security/servers/{$this->server->id}/fixes/safe")->assertSessionHasNoErrors();
 
     $runs = FixRun::query()->orderBy('position')->get();
-    expect($runs->pluck('fix_id')->all())->toBe(['files.secret_permissions', 'kernel.sysctl', 'time.sync'])
+    expect($runs->pluck('fix_id')->all())->toBe(['kernel.sysctl', 'files.secret_permissions', 'time.sync']) // sysctl (link protection) first
         ->and($runs->pluck('status')->all())->toBe([FixStatus::Applying, FixStatus::Queued, FixStatus::Queued])
         ->and($this->agents->dispatched('security.fix'))->toHaveCount(1);
 
-    foreach (['files.secret_permissions', 'kernel.sysctl', 'time.sync'] as $i => $id) {
+    foreach (['kernel.sysctl', 'files.secret_permissions', 'time.sync'] as $i => $id) {
         $command = $this->agents->last('security.fix');
         expect($command['payload']['fix_id'])->toBe($id);
         expect($this->agents->dispatched('security.audit'))->toHaveCount(1); // not before the batch is done
@@ -340,4 +340,37 @@ it('lists every server with its score and badge', function () {
         ->where('servers.1.audit.score', 70)
         ->where('servers.1.audit.production_ready', false)
         ->where('servers.0.audit', null));
+});
+
+it('never closes SSH, web, WireGuard or explicitly allowed ports', function (string $fixId, string $why) {
+    $this->get("/servers/{$this->server->id}/firewall"); // default rules: SSH, HTTP, HTTPS
+    FirewallRule::query()->create(['organization_id' => $this->organization->id, 'server_id' => $this->server->id, 'name' => 'Metrics', 'action' => 'allow', 'protocol' => 'tcp', 'port' => '9100-9200', 'position' => 9]);
+    security_audit($this->agents, $this->server, [security_check('firewall.port.x', 'warn', 'low', $fixId, 'firewall')]);
+
+    $this->post("/security/servers/{$this->server->id}/fixes", ['fix_id' => $fixId])->assertSessionHasNoErrors();
+
+    $run = FixRun::query()->sole();
+    expect($run->status)->toBe(FixStatus::Failed)
+        ->and($run->error)->toContain($why)
+        ->and(FirewallRule::query()->where('action', 'deny')->count())->toBe(0);
+})->with([
+    'ssh' => ['firewall.close_port:tcp:22', 'SSH port'],
+    'web' => ['firewall.close_port:tcp:443', 'edge serves'],
+    'allowed range' => ['firewall.close_port:tcp:9150', 'allow rule "Metrics"'],
+]);
+
+it('forces an undo only when asked', function () {
+    security_audit($this->agents, $this->server, [security_check('kernel.x', 'fail', 'low', 'kernel.sysctl', 'kernel')]);
+    $this->post("/security/servers/{$this->server->id}/fixes", ['fix_id' => 'kernel.sysctl']);
+    $this->agents->succeed($this->agents->last('security.fix')['handle'], ['fix_id' => 'kernel.sysctl', 'changed' => true, 'backup_id' => '20261009T120000Z-1a2b3c4d', 'disruptive' => false, 'undoable' => true, 'message' => 'ok']);
+    $run = FixRun::query()->sole();
+
+    $this->post("/security/servers/{$this->server->id}/fixes/{$run->id}/undo");
+    expect($this->agents->last('security.undo')['payload'])->not->toHaveKey('force');
+    $this->agents->fail($this->agents->last('security.undo')['handle'], 'changed since the fix: /etc/sysctl.d/90-falak-hardening.conf; undo with force to overwrite them');
+    expect($run->refresh()->error)->toContain('changed since the fix');
+
+    $this->post("/security/servers/{$this->server->id}/fixes/{$run->id}/undo", ['force' => true])->assertSessionHasNoErrors();
+    expect($this->agents->last('security.undo')['payload'])->toMatchArray(['force' => true])
+        ->and(AuditEntry::query()->where('action', 'security.undo_requested')->latest('id')->first()->context['force'] ?? null)->toBeTrue();
 });

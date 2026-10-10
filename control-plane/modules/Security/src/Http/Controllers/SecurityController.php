@@ -143,7 +143,8 @@ final class SecurityController extends Controller
     {
         $data = $this->server($request->user(), $server, 'security.fix');
         $run = FixRun::query()->where('server_id', $data->id)->findOrFail($fix);
-        $undo($run, (string) $request->user()?->getAuthIdentifier());
+        $validated = $request->validate(['force' => ['sometimes', 'boolean']]);
+        $undo($run, (string) $request->user()?->getAuthIdentifier(), (bool) ($validated['force'] ?? false));
 
         return back();
     }

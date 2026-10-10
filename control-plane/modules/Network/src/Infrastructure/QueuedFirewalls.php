@@ -10,6 +10,7 @@ use Falak\Network\Domain\Enums\RuleAction;
 use Falak\Network\Domain\Enums\RuleProtocol;
 use Falak\Network\Domain\Models\FirewallRule;
 use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerSshKeys;
 use InvalidArgumentException;
 
 final class QueuedFirewalls implements Firewalls
@@ -18,6 +19,7 @@ final class QueuedFirewalls implements Firewalls
         private readonly ApplyFirewall $apply,
         private readonly FirewallCompiler $compiler,
         private readonly ServerDirectory $servers,
+        private readonly ServerSshKeys $keys,
     ) {}
 
     public function converge(string $serverId): void
@@ -77,6 +79,10 @@ final class QueuedFirewalls implements Firewalls
             throw new InvalidArgumentException("Invalid port {$port}.");
         }
 
+        if ($reason = $this->protectedPort($server->id, $proto, $port)) {
+            throw new InvalidArgumentException("Port {$proto->value}/{$port} is not closed: {$reason}");
+        }
+
         $existing = FirewallRule::query()
             ->where('server_id', $server->id)
             ->where('action', RuleAction::Deny->value)
@@ -90,6 +96,44 @@ final class QueuedFirewalls implements Firewalls
         }
 
         return app(SaveFirewallRule::class)($server, ['name' => mb_substr($name, 0, 120), 'action' => RuleAction::Deny->value, 'protocol' => $proto->value, 'port' => (string) $port])->id;
+    }
+
+    /**
+     * Why a port must never get a deny rule from here (a deny wins over every accept): SSH, the web ports the edge
+     * serves, private networks' WireGuard ports, and ports an allow rule opens on purpose. null when it may be closed.
+     */
+    private function protectedPort(string $serverId, RuleProtocol $protocol, int $port): ?string
+    {
+        $payload = $this->compiler->compile($serverId);
+        $ssh = array_unique([(int) $payload['ssh_port'], $this->keys->sshPort($serverId), 22]);
+
+        if ($protocol !== RuleProtocol::Udp && in_array($port, $ssh, true)) {
+            return 'it is the SSH port.';
+        }
+
+        if ($protocol !== RuleProtocol::Udp && in_array($port, [80, 443], true)) {
+            return 'the edge serves sites on it.';
+        }
+
+        foreach ($payload['rules'] as $rule) {
+            if (str_starts_with((string) $rule['id'], 'wg-') && $protocol !== RuleProtocol::Tcp && in_array((string) $port, $rule['ports'] ?? [], true)) {
+                return 'a private network (WireGuard) uses it.';
+            }
+        }
+
+        $allowed = FirewallRule::query()
+            ->where('server_id', $serverId)
+            ->where('action', RuleAction::Allow->value)
+            ->whereNotNull('port')
+            ->get()
+            ->first(function (FirewallRule $rule) use ($protocol, $port) {
+                [$from, $to] = array_pad(explode('-', (string) $rule->port, 2), 2, $rule->port);
+                $sameProtocol = $rule->protocol === RuleProtocol::Any || $protocol === RuleProtocol::Any || $rule->protocol === $protocol;
+
+                return $sameProtocol && $port >= (int) $from && $port <= (int) $to;
+            });
+
+        return $allowed !== null ? "the allow rule \"{$allowed->name}\" opens it." : null;
     }
 
     public function deleteRule(string $serverId, string $ruleId): bool
