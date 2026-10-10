@@ -31,4 +31,25 @@ interface DatabaseProvisioner
      * once the agent confirms. Unknown ids are ignored.
      */
     public function delete(string $databaseId, bool $deleteVolume = false): void;
+
+    /**
+     * Restore the newest successful logical backup of $sourceDatabaseId (Falak-held key) into $targetDatabaseId, which
+     * must be active (e.g. a preview's copy of a staging database). RestoreFinished follows with the returned id.
+     *
+     * @throws ValidationException no such backup, or the target can't take it
+     */
+    public function restoreLatestBackup(string $sourceDatabaseId, string $targetDatabaseId, ?string $actorId = null): string;
+
+    /**
+     * Run a user's script against an active SQL database, inside its container, as the oldest user granted access to
+     * it: `sql` through psql / mysql (stopping at the first error; Postgres in one transaction), `command` with sh and
+     * the connection in DB_* variables (and PG* / MYSQL_PWD). Fleet's CommandFinished / CommandFailed report it, with the
+     * idempotency key `databases.script:<$key>`.
+     *
+     * @param  'sql'|'command'  $kind
+     * @return string the command id
+     *
+     * @throws ValidationException
+     */
+    public function runScript(string $databaseId, string $kind, string $script, string $key, int $timeout = 900): string;
 }

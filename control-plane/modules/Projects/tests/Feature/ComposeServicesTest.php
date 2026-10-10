@@ -375,6 +375,16 @@ it('gives the service back when creating the Falak service fails, and refuses a 
         }
 
         public function delete(string $databaseId, bool $deleteVolume = false): void {}
+
+        public function restoreLatestBackup(string $sourceDatabaseId, string $targetDatabaseId, ?string $actorId = null): string
+        {
+            return '';
+        }
+
+        public function runScript(string $databaseId, string $kind, string $script, string $key, int $timeout = 900): string
+        {
+            return '';
+        }
     });
     app()->forgetInstance(ComposeServiceExtraction::class);
     $extraction = app(ComposeServiceExtraction::class);

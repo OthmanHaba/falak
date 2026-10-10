@@ -5,6 +5,7 @@ namespace Falak\Databases\Application\Listeners;
 use Falak\Databases\Application\Actions\ApplyDatabaseUser;
 use Falak\Databases\Application\Actions\ApplyInstance;
 use Falak\Databases\Application\Actions\CreateDatabase;
+use Falak\Databases\Application\Actions\RunDatabaseScript;
 use Falak\Databases\Application\Actions\SettleDrill;
 use Falak\Databases\Application\Actions\SettlePitr;
 use Falak\Databases\Application\Actions\TakeOverInstance;
@@ -70,6 +71,8 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
     public function handleFinished(CommandFinished $event): void
     {
+        $this->forgetScriptSecrets($event->type, $event->commandId, $event->idempotencyKey);
+
         if (in_array($event->type, self::TYPES, true)) {
             $this->settle($event->type, $event->commandId, $event->idempotencyKey, true, null, $event->result);
         }
@@ -77,9 +80,19 @@ final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, Shoul
 
     public function handleFailed(CommandFailed $event): void
     {
+        $this->forgetScriptSecrets($event->type, $event->commandId, $event->idempotencyKey);
+
         if (in_array($event->type, self::TYPES, true)) {
             $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
             $this->settle($event->type, $event->commandId, $event->idempotencyKey, false, mb_substr($reason, 0, 1000), $event->result);
+        }
+    }
+
+    /** A database script's password ({@see RunDatabaseScript}) is not kept once it ran. */
+    private function forgetScriptSecrets(string $type, string $commandId, string $key): void
+    {
+        if ($type === 'system.exec' && str_starts_with($key, RunDatabaseScript::KEY_PREFIX) && ! $this->agents->forgetSecrets($commandId, RunDatabaseScript::SECRET_PATHS)) {
+            Log::info('Database script secrets not forgotten yet.', ['command_id' => $commandId]);
         }
     }
 
