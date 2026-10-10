@@ -20,17 +20,17 @@ final class DatabaseAlertConditions implements AlertConditions
 
     public function __construct(private readonly Alerts $alerts) {}
 
-    public function observe(string $organizationId, string $key, bool $holds, Closure $alert, ?Closure $recovery = null, int $forSeconds = 0): void
+    public function observe(string $organizationId, string $key, bool $holds, Closure $alert, ?Closure $recovery = null, int $forSeconds = 0, bool $announceRecovery = true): void
     {
-        $holds ? $this->hold($organizationId, $key, $alert, $forSeconds) : $this->clear($organizationId, $key, $recovery);
+        $holds ? $this->hold($organizationId, $key, $alert, $forSeconds) : $this->clear($organizationId, $key, $recovery, $announceRecovery);
     }
 
     public function clearExcept(string $organizationId, string $prefix, array $keep = []): void
     {
+        // Filtered here rather than with LIKE: keys hold "_" and "%" freely (an organization has few conditions).
         $stale = Condition::query()->where('organization_id', $organizationId)
-            ->where('key', 'like', str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $prefix).'%')
-            ->whereNotIn('key', $keep)
-            ->pluck('key');
+            ->pluck('key')
+            ->filter(fn (string $key) => str_starts_with($key, $prefix) && ! in_array($key, $keep, true));
 
         foreach ($stale as $key) {
             $this->clear($organizationId, (string) $key, null);
@@ -73,7 +73,7 @@ final class DatabaseAlertConditions implements AlertConditions
     /**
      * @param  (Closure(): AlertData)|null  $recovery
      */
-    private function clear(string $organizationId, string $key, ?Closure $recovery): void
+    private function clear(string $organizationId, string $key, ?Closure $recovery, bool $announce = true): void
     {
         $condition = DB::transaction(function () use ($organizationId, $key) {
             $condition = Condition::query()->where('organization_id', $organizationId)->where('key', $key)->lockForUpdate()->first();
@@ -83,6 +83,12 @@ final class DatabaseAlertConditions implements AlertConditions
         });
 
         if ($condition?->raised_at === null) {
+            return;
+        }
+
+        if (! $announce) {
+            self::release($organizationId, $key);
+
             return;
         }
 
@@ -106,11 +112,16 @@ final class DatabaseAlertConditions implements AlertConditions
     {
         Condition::query()->where('seen_at', '<', now()->subDays($days))->chunkById(500, function ($conditions) {
             foreach ($conditions as $condition) {
-                DedupState::query()->where('organization_id', $condition->organization_id)->where('dedup_key', $condition->key)
-                    ->whereNull('resolved_at')->update(['resolved_at' => now()]);
+                self::release($condition->organization_id, $condition->key);
                 $condition->delete();
             }
         });
+    }
+
+    /** Ends the alert episode of $key without a recovery: the next time it holds, it alerts again. */
+    private static function release(string $organizationId, string $key): void
+    {
+        DedupState::query()->where('organization_id', $organizationId)->where('dedup_key', $key)->whereNull('resolved_at')->update(['resolved_at' => now()]);
     }
 
     private static function withKey(AlertData $data, string $key, bool $resolves = false): AlertData
