@@ -21,6 +21,7 @@ use Falak\Volumes\Application\Listeners\ForgetDeletedResources;
 use Falak\Volumes\Application\Listeners\HandleCommandOutcome;
 use Falak\Volumes\Contracts\ServiceVolumes;
 use Falak\Volumes\Contracts\VolumeMounts;
+use Falak\Volumes\Contracts\VolumeRecovery;
 use Falak\Volumes\Domain\Models\Attachment;
 use Falak\Volumes\Domain\Models\BackupSchedule;
 use Falak\Volumes\Domain\Models\Operation;
@@ -31,6 +32,7 @@ use Falak\Volumes\Events\VolumeAlmostFull;
 use Falak\Volumes\Events\VolumeDrillFinished;
 use Falak\Volumes\Infrastructure\ActionServiceVolumes;
 use Falak\Volumes\Infrastructure\EloquentVolumeMounts;
+use Falak\Volumes\Infrastructure\EloquentVolumeRecovery;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -45,6 +47,7 @@ class VolumesServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         VolumeMounts::class => EloquentVolumeMounts::class,
         ServiceVolumes::class => ActionServiceVolumes::class,
+        VolumeRecovery::class => EloquentVolumeRecovery::class,
     ];
 
     public function register(): void

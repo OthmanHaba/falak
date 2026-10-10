@@ -18,6 +18,7 @@ use Falak\Databases\Contracts\BackupStorage;
 use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Databases\Contracts\DatabaseRecovery;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
@@ -40,6 +41,7 @@ use Falak\Databases\Infrastructure\AgentRequests\PitrUploadUrls;
 use Falak\Databases\Infrastructure\EloquentBackupPosture;
 use Falak\Databases\Infrastructure\EloquentDatabaseConnections;
 use Falak\Databases\Infrastructure\EloquentDatabaseDirectory;
+use Falak\Databases\Infrastructure\EloquentDatabaseRecovery;
 use Falak\Databases\Infrastructure\ObjectStorageBackupStorage;
 use Falak\Fleet\Contracts\AgentRequests;
 use Falak\Fleet\Events\AgentDatabasesReported;
@@ -69,6 +71,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         DatabaseDirectory::class => EloquentDatabaseDirectory::class,
         DatabaseConnections::class => EloquentDatabaseConnections::class,
         DatabaseProvisioner::class => ActionDatabaseProvisioner::class,
+        DatabaseRecovery::class => EloquentDatabaseRecovery::class,
         BackupStorage::class => ObjectStorageBackupStorage::class,
         BackupPosture::class => EloquentBackupPosture::class,
     ];
