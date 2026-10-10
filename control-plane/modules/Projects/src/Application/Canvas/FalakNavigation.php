@@ -24,7 +24,7 @@ final class FalakNavigation
     ) {}
 
     /**
-     * @return array{projects: list<array{id: string, name: string, icon: ?string, environments: list<array{id: string, name: string, slug: string, is_production: bool}>}>, current: array{project_id: ?string, environment_id: ?string}}
+     * @return array{projects: list<array{id: string, name: string, icon: ?string, environments: list<array{id: string, name: string, slug: string, is_production: bool, is_preview: bool}>}>, current: array{project_id: ?string, environment_id: ?string}}
      */
     public function for(Request $request): array
     {
@@ -47,6 +47,7 @@ final class FalakNavigation
                     'name' => $environment->name,
                     'slug' => $environment->slug,
                     'is_production' => $environment->is_production,
+                    'is_preview' => (bool) $environment->is_preview,
                 ])->values()->all(),
             ])->values()->all(),
             'current' => $this->current($request, $organizationId, $projects->keyBy('id')->all()),
