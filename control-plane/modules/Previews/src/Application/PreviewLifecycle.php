@@ -29,7 +29,7 @@ use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
- * A pull request's preview from open to close (docs/PREVIEWS.md):
+ * A pull request's preview from open to close (docs/plans/V0_10_PRODUCTION.md §11):
  *
  * - opened → per project whose base environment deploys the repository: a fork's pull request waits for a member's
  *   approval; past the project's limit it queues; else the base environment is forked (only the included services,

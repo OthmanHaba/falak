@@ -518,6 +518,38 @@ example "grow volume", "fix in baseline").
 A "Previews" tab per project showing each PR, its status, URLs, age and cost estimate, with redeploy and delete. In
 the environment switcher, previews are grouped under "Previews".
 
+Implementation notes (built on `feat/v010-previews`):
+- **Module** `Previews` (settings per project, one row per project and pull request). Projects owns the environment
+  flags (`is_preview`, `is_fork_preview`, `shared_services`) through `PreviewEnvironments`; Edge owns the preview
+  domain through `PreviewDomains`; Databases restores the newest backup into another database and runs scripts in a
+  database container through `DatabaseProvisioner`.
+- **Preview domain** (Settings → Previews): one instance row, edited by the owners and admins of the operator
+  organization (`FALAK_PREVIEWS_OPERATOR_ORGANIZATION`, else the oldest organization). Names under it are reserved
+  for previews. **TLS:** with Cloudflare, `*.<domain>` points at the edge server, which holds one DNS-01 wildcard
+  certificate (`edge.caddy.apply` `wildcard_certificates`, tls mode `wildcard`: no certificate per host, so Let's
+  Encrypt's per-domain limits are untouched); a preview on another server gets a tagged A record and its own
+  HTTP-01 certificate. Without a managed provider the user keeps the wildcard record and previews run on the edge
+  server, each live host getting an HTTP-01 certificate when it is routed. This replaces on-demand TLS: Caddy only
+  ever asks for hosts Falak routed (no `ask` endpoint to secure, nothing issued for random names).
+- **Hosts** `pr-{number}-{service}` (`{project}` also works); a label another project took gets a short suffix
+  derived from the project.
+- **Forks:** never deployed automatically; a member approves in Falak, or comments `/falak preview` from a provider
+  account they connected in Falak (OAuth or token connection of the organization) with `previews.manage`. Every new
+  commit of a fork needs a new approval. Fork previews resolve no secret at all (literal secret values are emptied
+  when the sites are copied) and get the `fork_preview` limits; other previews get `preview` limits and only secrets
+  marked available to previews.
+- **Databases:** `empty`, `clone_backup` (newest Falak-held backup of the chosen environment, default the base),
+  `clone_sanitize` (production by default; the SQL or command script runs in the database container as the
+  database's user; a failure deletes the restored database and the preview never deploys). Redis / Valkey start
+  empty. Volumes start empty (shared paths are recreated).
+- **Webhooks:** enabling previews pins the base repositories' webhooks (kept whatever push-to-deploy does).
+  Commit statuses (`falak/preview`) everywhere, also for GitHub Apps (no check runs).
+- **Cookies:** `__Host-falak_session` and `__Host-XSRF-TOKEN` (host-only, Secure, Path=/); `SESSION_DOMAIN`,
+  `SESSION_PATH`, `SESSION_COOKIE` and `SESSION_SECURE_COOKIE` are gone. Everyone signs in again after the upgrade.
+- **Not yet:** volume cloning into previews, a seed command for empty databases (the deploy script migrates), cost
+  estimates, compose public services other than the primary one, and updating webhooks created before v0.10.0
+  (re-save the site's push-to-deploy, or add the pull request events at the provider).
+
 ---
 
 ## Security review points (all steps)
