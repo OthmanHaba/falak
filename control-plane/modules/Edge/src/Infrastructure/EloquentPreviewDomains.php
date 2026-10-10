@@ -40,6 +40,12 @@ final class EloquentPreviewDomains implements PreviewDomains
         return PreviewDomain::current()?->toData();
     }
 
+    public function credentials(string $organizationId): array
+    {
+        return DnsCredential::query()->where('organization_id', $organizationId)->orderBy('name')->get()
+            ->map(fn (DnsCredential $c) => ['id' => $c->id, 'name' => $c->name, 'provider' => $c->provider])->values()->all();
+    }
+
     public function configure(string $organizationId, string $domain, ?string $dnsCredentialId, string $serverId, ?string $actorId = null): PreviewDomainData
     {
         $domain = strtolower(trim(rtrim(trim($domain), '.')));

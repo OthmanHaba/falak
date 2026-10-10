@@ -18,6 +18,13 @@ interface PreviewDomains
     public function settings(): ?PreviewDomainData;
 
     /**
+     * The organization's DNS credentials to pick from (never their tokens).
+     *
+     * @return list<array{id: string, name: string, provider: string}>
+     */
+    public function credentials(string $organizationId): array;
+
+    /**
      * Set the preview domain: $serverId and $dnsCredentialId must belong to $organizationId. With a Cloudflare
      * credential the `*.<domain>` record is created (or moved) to point at the server.
      *
