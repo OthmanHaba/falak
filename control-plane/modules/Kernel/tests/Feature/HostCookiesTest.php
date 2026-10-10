@@ -84,3 +84,29 @@ it('logs in through the prefixed cookies', function () {
     $this->assertAuthenticatedAs($user);
     expect(array_keys(kernel_cookies($response)))->toContain(HostCookies::SESSION);
 });
+
+it('prefixes the remember-me cookie too', function () {
+    [$user] = memberOf(null, Role::Owner);
+    $user->forceFill(['password' => 'correct horse battery'])->save();
+
+    $response = $this->post('/login', ['email' => $user->email, 'password' => 'correct horse battery', 'remember' => 'on']);
+
+    $remember = collect(kernel_cookies($response))->first(fn (Cookie $c) => str_contains($c->getName(), 'remember_'));
+    expect($remember)->not->toBeNull()
+        ->and($remember->getName())->toBe('__Host-remember_web')
+        ->and($remember->isSecure())->toBeTrue()
+        ->and($remember->getDomain())->toBeNull()
+        ->and($remember->getPath())->toBe('/');
+});
+
+it('keeps unprefixed, non-Secure names on a plain-HTTP install (the prefix needs Secure)', function () {
+    config(['app.url' => 'http://falak.test']);
+
+    expect(HostCookies::secure())->toBeFalse()
+        ->and(HostCookies::sessionName())->toBe('falak_session')
+        ->and(HostCookies::xsrfName())->toBe('XSRF-TOKEN')
+        ->and(HostCookies::name('remember_web'))->toBe('remember_web');
+
+    config(['app.url' => 'https://falak.test']);
+    expect(HostCookies::sessionName())->toBe(HostCookies::SESSION)->and(HostCookies::xsrfName())->toBe(HostCookies::XSRF);
+});

@@ -129,7 +129,7 @@ return [
 
     // `__Host-` prefixed (host-only, Secure, Path=/): preview environments share the panel's registrable domain and
     // must not be able to plant a cookie it reads. See Falak\Kernel\Http\HostCookies (the CSRF cookie).
-    'cookie' => HostCookies::SESSION,
+    'cookie' => HostCookies::sessionName(),
 
     /*
     |--------------------------------------------------------------------------
@@ -168,7 +168,8 @@ return [
     |
     */
 
-    'secure' => true,
+    // Secure (and `__Host-` prefixed names) whenever the panel is served over https; plain-HTTP dev installs only.
+    'secure' => HostCookies::secure(),
 
     /*
     |--------------------------------------------------------------------------
