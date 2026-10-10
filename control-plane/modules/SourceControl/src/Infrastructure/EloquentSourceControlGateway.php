@@ -320,9 +320,9 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         $this->client($connection)->setCommitStatus($connection, $repository, $sha, $state, $context, $description, $url);
     }
 
-    public function usersWithAccount(string $organizationId, string $provider, string $login): array
+    public function usersWithAccount(string $organizationId, string $provider, string $accountId): array
     {
-        if (trim($login) === '') {
+        if (trim($accountId) === '') {
             return [];
         }
 
@@ -332,7 +332,7 @@ final class EloquentSourceControlGateway implements SourceControlGateway
             ->whereIn('auth_type', ['oauth', 'token', 'basic'])
             ->where('status', 'active')
             ->whereNotNull('created_by')
-            ->whereRaw('lower(account) = ?', [mb_strtolower(trim($login))])
+            ->where('account_id', trim($accountId))
             ->pluck('created_by')
             ->map(fn ($id) => (string) $id)
             ->unique()

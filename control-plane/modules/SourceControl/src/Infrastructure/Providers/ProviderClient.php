@@ -16,6 +16,9 @@ interface ProviderClient
     /** Login / username of the authenticated account (verifies credentials). */
     public function account(Connection $connection): string;
 
+    /** The provider's immutable id of the authenticated user (null: none, e.g. an app installation or custom git). */
+    public function accountId(Connection $connection): ?string;
+
     /**
      * @return list<RepositoryData>
      */

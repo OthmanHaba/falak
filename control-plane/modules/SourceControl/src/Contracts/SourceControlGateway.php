@@ -89,13 +89,13 @@ interface SourceControlGateway
     public function setCommitStatus(string $connectionId, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void;
 
     /**
-     * Falak users of the organization who connected the provider account $login (OAuth and token connections record
-     * the account they authenticate as): how a provider login maps to Falak members. App installations prove nothing
-     * about a person and are left out.
+     * Falak users of the organization who connected the provider account with the immutable id $accountId (OAuth and
+     * token connections record the account they authenticate as): how a pull request commenter maps to Falak members.
+     * Never matched by login or nickname (renamed and reused). App installations prove nothing about a person.
      *
      * @return list<string> user ids
      */
-    public function usersWithAccount(string $organizationId, string $provider, string $login): array;
+    public function usersWithAccount(string $organizationId, string $provider, string $accountId): array;
 
     /** Largest file {@see file()} returns. */
     public const MAX_FILE_BYTES = 1048576;

@@ -41,6 +41,11 @@ class GitHubClient extends HttpProviderClient
         return (string) ($this->json($connection, '/user')['login'] ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        return $connection->isApp() ? null : ((string) ($this->json($connection, '/user')['id'] ?? '') ?: null);
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         if ($connection->isApp()) {

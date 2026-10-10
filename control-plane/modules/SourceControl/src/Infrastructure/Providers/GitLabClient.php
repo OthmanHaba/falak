@@ -30,6 +30,11 @@ class GitLabClient extends HttpProviderClient
         return (string) ($this->json($connection, '/user')['username'] ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        return (string) ($this->json($connection, '/user')['id'] ?? '') ?: null;
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         $query = array_filter(['membership' => 'true', 'simple' => 'true', 'order_by' => 'last_activity_at', 'per_page' => 100, 'search' => $search, 'search_namespaces' => $search ? 'true' : null]);

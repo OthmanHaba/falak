@@ -1,6 +1,7 @@
 <?php
 
 use Falak\Identity\Contracts\Role;
+use Falak\SourceControl\Application\Actions\CreateConnection;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Contracts\SourceControlGateway;
 use Falak\SourceControl\Domain\Models\Push;
@@ -99,7 +100,7 @@ describe('GitHub repository webhooks', function () {
             'action' => 'created',
             'repository' => ['full_name' => 'acme/shop'],
             'issue' => ['number' => 7, ...$issue],
-            'comment' => ['id' => 99, 'body' => '/falak preview', 'user' => ['login' => 'grace']],
+            'comment' => ['id' => 99, 'body' => '/falak preview', 'user' => ['login' => 'grace', 'id' => 1001], 'created_at' => '2026-10-10T10:00:00Z'],
         ];
 
         $post($comment(['pull_request' => ['url' => 'x']]), 'issue_comment')->assertJson(['pull_request_events' => 1]);
@@ -107,7 +108,8 @@ describe('GitHub repository webhooks', function () {
 
         Event::assertDispatchedTimes(PullRequestCommented::class, 1);
         Event::assertDispatched(PullRequestCommented::class, fn (PullRequestCommented $e) => $e->number === 7 && $e->author === 'grace'
-            && $e->body === '/falak preview' && $e->commentId === '99' && $e->repository === 'acme/shop');
+            && $e->body === '/falak preview' && $e->commentId === '99' && $e->repository === 'acme/shop'
+            && $e->authorId === '1001' && $e->createdAt?->format('c') === '2026-10-10T10:00:00+00:00');
     });
 
     it('rejects unsigned and mis-signed pull request deliveries', function () use ($post) {
@@ -165,11 +167,22 @@ describe('GitLab', function () {
             'object_kind' => 'note',
             'user' => ['username' => 'grace'],
             'project' => ['path_with_namespace' => 'acme/shop'],
-            'object_attributes' => ['id' => 12, 'note' => '/falak preview', 'noteable_type' => 'MergeRequest'],
+            'object_attributes' => ['id' => 12, 'note' => '/falak preview', 'noteable_type' => 'MergeRequest', 'action' => 'create', 'created_at' => '2026-10-10 10:00:00 UTC'],
             'merge_request' => ['iid' => 3],
         ], 'Note Hook')->assertJson(['pull_request_events' => 1]);
 
-        Event::assertDispatched(PullRequestCommented::class, fn (PullRequestCommented $e) => $e->number === 3 && $e->author === 'grace' && $e->commentId === '12');
+        // An edited note is not a new comment.
+        $post([
+            'object_kind' => 'note',
+            'user' => ['username' => 'grace', 'id' => 42],
+            'project' => ['path_with_namespace' => 'acme/shop'],
+            'object_attributes' => ['id' => 13, 'note' => '/falak preview', 'noteable_type' => 'MergeRequest', 'action' => 'update'],
+            'merge_request' => ['iid' => 3],
+        ], 'Note Hook')->assertJson(['pull_request_events' => 0]);
+
+        Event::assertDispatchedTimes(PullRequestCommented::class, 1);
+        Event::assertDispatched(PullRequestCommented::class, fn (PullRequestCommented $e) => $e->number === 3 && $e->author === 'grace' && $e->commentId === '12'
+            && $e->createdAt !== null);
     });
 });
 
@@ -210,10 +223,11 @@ describe('Bitbucket', function () {
     });
 
     it('announces pull request comments', function () use ($pr, $post) {
-        $post([...$pr(), 'comment' => ['id' => 44, 'content' => ['raw' => '/falak preview'], 'user' => ['nickname' => 'grace']]], 'pullrequest:comment_created')
+        $post([...$pr(), 'comment' => ['id' => 44, 'content' => ['raw' => '/falak preview'], 'user' => ['nickname' => 'grace', 'account_id' => '557058:abc'], 'created_on' => '2026-10-10T10:00:00+00:00']], 'pullrequest:comment_created')
             ->assertJson(['pull_request_events' => 1]);
 
-        Event::assertDispatched(PullRequestCommented::class, fn (PullRequestCommented $e) => $e->number === 5 && $e->author === 'grace' && $e->commentId === '44');
+        Event::assertDispatched(PullRequestCommented::class, fn (PullRequestCommented $e) => $e->number === 5 && $e->author === 'grace' && $e->commentId === '44'
+            && $e->authorId === '557058:abc');
     });
 });
 
@@ -301,16 +315,32 @@ describe('gateway', function () {
         Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && str_ends_with($r->url(), '/hooks/77'));
     });
 
-    it('maps a provider login to the members who connected that account', function () {
+    it('maps a provider account id, never a login, to the members who connected that account', function () {
         [$member] = memberOf($this->organization, Role::Developer);
-        sc_connection($this->organization->id, attributes: ['account' => 'Grace', 'created_by' => $member->id]);
-        sc_app_connection($this->organization->id, 'env', attributes: ['account' => 'mallory', 'created_by' => $member->id]);
+        sc_connection($this->organization->id, attributes: ['account' => 'grace', 'account_id' => '1001', 'created_by' => $member->id]);
+        sc_app_connection($this->organization->id, 'env', attributes: ['account' => 'mallory', 'account_id' => '666', 'created_by' => $member->id]);
         [, $other] = memberOf(null, Role::Owner);
-        sc_connection($other->id, attributes: ['account' => 'grace', 'created_by' => 'someone-else']);
+        sc_connection($other->id, attributes: ['account' => 'grace', 'account_id' => '1001', 'created_by' => 'someone-else']);
         $gateway = app(SourceControlGateway::class);
 
-        expect($gateway->usersWithAccount($this->organization->id, 'github', 'grace'))->toBe([$member->id])
-            ->and($gateway->usersWithAccount($this->organization->id, 'github', 'mallory'))->toBe([])
-            ->and($gateway->usersWithAccount($this->organization->id, 'gitlab', 'grace'))->toBe([]);
+        expect($gateway->usersWithAccount($this->organization->id, 'github', '1001'))->toBe([$member->id])
+            // A login is not an id (renamed and reused at the provider).
+            ->and($gateway->usersWithAccount($this->organization->id, 'github', 'grace'))->toBe([])
+            // An app installation proves nothing about a person.
+            ->and($gateway->usersWithAccount($this->organization->id, 'github', '666'))->toBe([])
+            ->and($gateway->usersWithAccount($this->organization->id, 'gitlab', '1001'))->toBe([]);
     });
+
+    it('records the immutable account id when a token connection is created', function (ProviderType $provider, string $url, array $user, string $id) {
+        Http::fake([$url => Http::response($user)]);
+        [$owner] = memberOf($this->organization, Role::Owner);
+
+        $connection = app(CreateConnection::class)($this->organization->id, $owner->id, $provider, 'token', ['token' => 't']);
+
+        expect($connection->account_id)->toBe($id);
+    })->with([
+        'github' => [ProviderType::GitHub, '*/user', ['login' => 'grace', 'id' => 1001], '1001'],
+        'gitlab' => [ProviderType::GitLab, '*/user', ['username' => 'grace', 'id' => 42], '42'],
+        'bitbucket' => [ProviderType::Bitbucket, '*/user', ['nickname' => 'grace', 'account_id' => '557058:abc', 'uuid' => '{u}'], '557058:abc'],
+    ]);
 });

@@ -182,7 +182,7 @@ final class FakeSourceControlGateway implements SourceControlGateway
     /** @var list<array{repository: string, sha: string, state: string, context: string, description: string, url: ?string}> */
     public array $statuses = [];
 
-    /** @var array<string, list<string>> "provider|login" => user ids */
+    /** @var array<string, list<string>> "provider|account id" => user ids */
     public array $accounts = [];
 
     public function commentOnPullRequest(string $connectionId, string $repository, int $number, string $body, ?string $commentId = null): string
@@ -208,8 +208,8 @@ final class FakeSourceControlGateway implements SourceControlGateway
         return $pinned ? $this->ensureWebhook($connectionId, $repository) : new WebhookData('', $connectionId, $repository, '', false);
     }
 
-    public function usersWithAccount(string $organizationId, string $provider, string $login): array
+    public function usersWithAccount(string $organizationId, string $provider, string $accountId): array
     {
-        return $this->accounts[strtolower("{$provider}|{$login}")] ?? [];
+        return $this->accounts["{$provider}|{$accountId}"] ?? [];
     }
 }

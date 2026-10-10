@@ -205,6 +205,8 @@ class WebhookPayloads
                 commentId: (string) ($payload['comment']['id'] ?? ''),
                 commentAuthor: $payload['comment']['user']['login'] ?? null,
                 commentBody: (string) ($payload['comment']['body'] ?? ''),
+                commentAuthorId: isset($payload['comment']['user']['id']) ? (string) $payload['comment']['user']['id'] : null,
+                commentedAt: self::date($payload['comment']['created_at'] ?? null),
             );
         }
 
@@ -248,7 +250,9 @@ class WebhookPayloads
         if ($event === 'Note Hook') {
             $mr = (array) ($payload['merge_request'] ?? []);
 
-            if (($attributes['noteable_type'] ?? null) !== 'MergeRequest' || $repository === '' || ! isset($mr['iid'])) {
+            // Edits of a note are not new comments (an approval can't be edited into an old note).
+            if (($attributes['noteable_type'] ?? null) !== 'MergeRequest' || $repository === '' || ! isset($mr['iid'])
+                || (isset($attributes['action']) && $attributes['action'] !== 'create')) {
                 return null;
             }
 
@@ -259,6 +263,8 @@ class WebhookPayloads
                 commentId: (string) ($attributes['id'] ?? ''),
                 commentAuthor: $payload['user']['username'] ?? null,
                 commentBody: (string) ($attributes['note'] ?? ''),
+                commentAuthorId: isset($payload['user']['id']) ? (string) $payload['user']['id'] : null,
+                commentedAt: self::date($attributes['created_at'] ?? null),
             );
         }
 
@@ -316,6 +322,8 @@ class WebhookPayloads
                 commentId: (string) ($payload['comment']['id'] ?? ''),
                 commentAuthor: $payload['comment']['user']['nickname'] ?? $payload['actor']['nickname'] ?? null,
                 commentBody: (string) ($payload['comment']['content']['raw'] ?? ''),
+                commentAuthorId: (string) ($payload['comment']['user']['account_id'] ?? $payload['comment']['user']['uuid'] ?? '') ?: null,
+                commentedAt: self::date($payload['comment']['created_on'] ?? null),
             );
         }
 

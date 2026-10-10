@@ -36,6 +36,13 @@ class BitbucketClient extends HttpProviderClient
         return (string) ($user['username'] ?? $user['nickname'] ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        $user = $this->json($connection, '/user');
+
+        return (string) ($user['account_id'] ?? $user['uuid'] ?? '') ?: null;
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         $query = ['role' => 'member', 'pagelen' => 100, 'sort' => '-updated_on'];

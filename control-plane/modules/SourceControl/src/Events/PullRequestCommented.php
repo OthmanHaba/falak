@@ -21,5 +21,9 @@ final class PullRequestCommented
         public string $commentId,
         public ?string $author,
         public string $body,
+        /** The provider's immutable id of the commenter (what approvals match) */
+        public ?string $authorId = null,
+        /** When the comment was written (provider's clock) */
+        public ?\DateTimeImmutable $createdAt = null,
     ) {}
 }

@@ -27,5 +27,7 @@ final readonly class ParsedPullRequestEvent
         public ?string $commentId = null,
         public ?string $commentAuthor = null,
         public string $commentBody = '',
+        public ?string $commentAuthorId = null,
+        public ?\DateTimeImmutable $commentedAt = null,
     ) {}
 }

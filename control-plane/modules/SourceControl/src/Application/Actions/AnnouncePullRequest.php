@@ -27,7 +27,7 @@ final class AnnouncePullRequest
 
         if ($event->kind === ParsedPullRequestEvent::COMMENTED) {
             PullRequestCommented::dispatch($connection->organization_id, $connection->id, $provider, $repository, $event->number,
-                (string) $event->commentId, $event->commentAuthor, Str::limit($event->commentBody, 4000, ''));
+                (string) $event->commentId, $event->commentAuthor, Str::limit($event->commentBody, 4000, ''), $event->commentAuthorId, $event->commentedAt);
 
             return true;
         }

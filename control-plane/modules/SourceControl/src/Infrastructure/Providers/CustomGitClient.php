@@ -18,6 +18,11 @@ class CustomGitClient implements ProviderClient
         return (string) ($connection->account ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        return null;
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         return [];

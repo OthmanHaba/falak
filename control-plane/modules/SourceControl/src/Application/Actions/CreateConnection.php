@@ -52,6 +52,15 @@ final class CreateConnection
             }
         }
 
+        // The immutable id previews match pull request commenters against (approvals): never a login.
+        if ($provider->hasApi() && $authType !== 'app') {
+            try {
+                $connection->account_id = $this->clients->for($provider)->accountId($connection);
+            } catch (SourceControlException) {
+                $connection->account_id = null;
+            }
+        }
+
         $connection->account = $account;
         $connection->name = $this->uniqueName($organizationId, $name ?: $provider->label().($account ? " ({$account})" : ''));
         $connection->save();
