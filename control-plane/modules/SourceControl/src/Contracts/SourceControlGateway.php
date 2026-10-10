@@ -63,8 +63,39 @@ interface SourceControlGateway
      */
     public function ensureWebhook(string $connectionId, string $repository): WebhookData;
 
-    /** Remove the push webhook when no longer needed (best-effort at the provider). */
+    /** Remove the push webhook when no longer needed (best-effort at the provider). A pinned webhook stays. */
     public function removeWebhook(string $connectionId, string $repository): void;
+
+    /**
+     * Ensure the repository's webhook and keep it (pinned) while previews need its pull request events, or release it
+     * ($pinned false: removable again once nothing deploys on push from it).
+     */
+    public function pinWebhook(string $connectionId, string $repository, bool $pinned = true): WebhookData;
+
+    /**
+     * Post Falak's comment on a pull request, or edit it when $commentId is given (posted anew when it was deleted).
+     * Throws {@see Exceptions\NoApi} for git servers without an API.
+     *
+     * @return string the comment's id
+     */
+    public function commentOnPullRequest(string $connectionId, string $repository, int $number, string $body, ?string $commentId = null): string;
+
+    /**
+     * Report a commit status under $context (GitHub commit status, GitLab pipeline status, Bitbucket build status).
+     * Throws {@see Exceptions\NoApi} for git servers without an API.
+     *
+     * @param  'pending'|'success'|'failure'  $state
+     */
+    public function setCommitStatus(string $connectionId, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void;
+
+    /**
+     * Falak users of the organization who connected the provider account with the immutable id $accountId (OAuth and
+     * token connections record the account they authenticate as): how a pull request commenter maps to Falak members.
+     * Never matched by login or nickname (renamed and reused). App installations prove nothing about a person.
+     *
+     * @return list<string> user ids
+     */
+    public function usersWithAccount(string $organizationId, string $provider, string $accountId): array;
 
     /** Largest file {@see file()} returns. */
     public const MAX_FILE_BYTES = 1048576;

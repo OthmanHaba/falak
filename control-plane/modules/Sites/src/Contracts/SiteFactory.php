@@ -26,9 +26,11 @@ interface SiteFactory
     /**
      * Copy a site's configuration, deploy script, Laravel toggles, shared paths and variables into a new
      * site. Servers are not copied (the copy has none unless `server_ids` is overridden) and push-to-deploy
-     * is off unless overridden.
+     * is off unless overridden. Previews: `strip_secrets` drops the secret values written in the variables,
+     * `only_variables` keeps just those names (plus `${{ }}` references unless `references` is false), `isolated`
+     * gives the copy its own Linux user.
      *
-     * @param  array{name?: string, name_suffix?: string, branch?: string, server_ids?: list<string>, leader_server_id?: string, push_to_deploy?: bool}  $overrides
+     * @param  array{name?: string, name_suffix?: string, branch?: string, server_ids?: list<string>, leader_server_id?: string, push_to_deploy?: bool, strip_secrets?: bool, isolated?: bool, only_variables?: list<string>, references?: bool}  $overrides
      *
      * @throws ValidationException
      */

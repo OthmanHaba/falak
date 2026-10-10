@@ -242,7 +242,7 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         $connection = $this->find($connectionId);
         $webhook = Webhook::query()->where('connection_id', $connection->id)->where('repository', $repository)->first();
 
-        if (! $webhook) {
+        if (! $webhook || $webhook->pinned) {
             return;
         }
 
@@ -257,6 +257,15 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         $webhook->delete();
 
         $this->audit->record('source_control.webhook_removed', 'webhook', $webhook->id, ['connection_id' => $connection->id, 'repository' => $repository], $connection->organization_id);
+    }
+
+    public function pinWebhook(string $connectionId, string $repository, bool $pinned = true): WebhookData
+    {
+        $data = $pinned ? $this->ensureWebhook($connectionId, $repository) : null;
+        $webhook = Webhook::query()->where('connection_id', $connectionId)->where('repository', $repository)->first();
+        $webhook?->forceFill(['pinned' => $pinned])->save();
+
+        return $data ?? $webhook?->toData() ?? new WebhookData('', $connectionId, $repository, '', false);
     }
 
     public function cloneUrl(string $connectionId, string $repository): string
@@ -291,6 +300,44 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         [$username, $password] = $client->httpsCredentials($connection);
 
         return new CheckoutCredentials(url: $client->httpsUrl($connection, $repository), httpsUsername: $username, httpsPassword: $password);
+    }
+
+    public function commentOnPullRequest(string $connectionId, string $repository, int $number, string $body, ?string $commentId = null): string
+    {
+        $connection = $this->find($connectionId);
+        $client = $this->client($connection);
+
+        if ($commentId !== null && ($id = $client->commentOnPullRequest($connection, $repository, $number, $body, $commentId)) !== null) {
+            return $id;
+        }
+
+        return (string) $client->commentOnPullRequest($connection, $repository, $number, $body);
+    }
+
+    public function setCommitStatus(string $connectionId, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        $connection = $this->find($connectionId);
+        $this->client($connection)->setCommitStatus($connection, $repository, $sha, $state, $context, $description, $url);
+    }
+
+    public function usersWithAccount(string $organizationId, string $provider, string $accountId): array
+    {
+        if (trim($accountId) === '') {
+            return [];
+        }
+
+        return Connection::query()
+            ->where('organization_id', $organizationId)
+            ->where('provider', $provider)
+            ->whereIn('auth_type', ['oauth', 'token', 'basic'])
+            ->where('status', 'active')
+            ->whereNotNull('created_by')
+            ->where('account_id', trim($accountId))
+            ->pluck('created_by')
+            ->map(fn ($id) => (string) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function knownHosts(string $url): ?string

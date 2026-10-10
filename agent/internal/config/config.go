@@ -55,7 +55,7 @@ func Default() Config {
 		OTLPSocket: "/run/falak/otlp.sock",
 		Heartbeat:  15 * time.Second,
 		PollWait:   30,
-		CaddyAdmin: "http://127.0.0.1:2019",
+		CaddyAdmin: "unix:///run/falak-edge/admin.sock",
 		DockerSock: "/var/run/docker.sock",
 	}
 }

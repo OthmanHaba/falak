@@ -12,6 +12,7 @@ use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Application\Jobs\CheckCertificateExpiry;
 use Falak\Edge\Application\Jobs\PurgeCloudflareCache;
 use Falak\Edge\Application\Jobs\ReconcileCloudflareTunnels;
+use Falak\Edge\Application\Jobs\ReconcilePreviewRecords;
 use Falak\Edge\Application\Jobs\SyncCloudflareDns;
 use Falak\Edge\Application\Listeners\ForgetDeletedOrganization;
 use Falak\Edge\Application\Listeners\ForgetDeletedServer;
@@ -22,6 +23,7 @@ use Falak\Edge\Application\PathMounts;
 use Falak\Edge\Contracts\DnsCheck;
 use Falak\Edge\Contracts\DomainRecords;
 use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Contracts\PreviewDomains;
 use Falak\Edge\Events\CertificateInstallFailed;
 use Falak\Edge\Events\CertificateIssued;
 use Falak\Edge\Events\DomainAdded;
@@ -34,6 +36,7 @@ use Falak\Edge\Infrastructure\Dns\SystemResolver;
 use Falak\Edge\Infrastructure\Dns\TlsProbe;
 use Falak\Edge\Infrastructure\EloquentDomainRecords;
 use Falak\Edge\Infrastructure\EloquentEdgeRoutes;
+use Falak\Edge\Infrastructure\EloquentPreviewDomains;
 use Falak\Edge\Infrastructure\EloquentSiteDomains;
 use Falak\Edge\Infrastructure\ResolverDnsCheck;
 use Falak\Edge\Infrastructure\RouteCompiler;
@@ -77,6 +80,14 @@ class EdgeServiceProvider extends ModuleServiceProvider
         DnsCheck::class => ResolverDnsCheck::class,
         DomainRecords::class => EloquentDomainRecords::class,
         TlsProbe::class => StreamTlsProbe::class,
+    ];
+
+    /**
+     * @var array<class-string, class-string>
+     */
+    public array $bindings = [
+        // Uses the request-scoped audit log.
+        PreviewDomains::class => EloquentPreviewDomains::class,
     ];
 
     public function register(): void
@@ -144,6 +155,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new ReconcileCloudflareTunnels)->everyFiveMinutes()->name('edge:cloudflare-tunnels')->withoutOverlapping();
             $schedule->job(new CheckCertificateExpiry)->hourlyAt(17)->name('edge:certificate-expiry')->withoutOverlapping();
+            $schedule->job(new ReconcilePreviewRecords)->everyTenMinutes()->name('edge:preview-records')->withoutOverlapping();
         });
         // Visitors get the new release: purge the site's names at Cloudflare after deploys and rollbacks.
         Event::listen(DeploymentSucceeded::class, fn (DeploymentSucceeded $event) => PurgeCloudflareCache::dispatch($event->siteId));

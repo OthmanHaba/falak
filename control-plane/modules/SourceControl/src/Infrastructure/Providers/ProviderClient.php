@@ -16,6 +16,9 @@ interface ProviderClient
     /** Login / username of the authenticated account (verifies credentials). */
     public function account(Connection $connection): string;
 
+    /** The provider's immutable id of the authenticated user (null: none, e.g. an app installation or custom git). */
+    public function accountId(Connection $connection): ?string;
+
     /**
      * @return list<RepositoryData>
      */
@@ -41,6 +44,19 @@ interface ProviderClient
     public function createWebhook(Connection $connection, string $repository, string $url, string $secret): string;
 
     public function deleteWebhook(Connection $connection, string $repository, string $hookId): void;
+
+    /**
+     * Post a comment on a pull request, or edit the comment $commentId; returns the comment's id. An edit of a comment
+     * that is gone returns null (the caller posts a new one).
+     */
+    public function commentOnPullRequest(Connection $connection, string $repository, int $number, string $body, ?string $commentId = null): ?string;
+
+    /**
+     * Set a commit status (GitHub commit status, GitLab pipeline status, Bitbucket build status).
+     *
+     * @param  'pending'|'success'|'failure'  $state
+     */
+    public function setCommitStatus(Connection $connection, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void;
 
     /** Content of a file at a ref (null: missing or not a file); throws for files larger than $maxBytes. */
     public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string;

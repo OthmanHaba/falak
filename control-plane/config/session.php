@@ -1,6 +1,6 @@
 <?php
 
-use Illuminate\Support\Str;
+use Falak\Kernel\Http\HostCookies;
 
 return [
 
@@ -127,10 +127,9 @@ return [
     |
     */
 
-    'cookie' => env(
-        'SESSION_COOKIE',
-        Str::slug(env('APP_NAME', 'laravel'), '_').'_session'
-    ),
+    // `__Host-` prefixed (host-only, Secure, Path=/): preview environments share the panel's registrable domain and
+    // must not be able to plant a cookie it reads. See Falak\Kernel\Http\HostCookies (the CSRF cookie).
+    'cookie' => HostCookies::sessionName(),
 
     /*
     |--------------------------------------------------------------------------
@@ -143,7 +142,7 @@ return [
     |
     */
 
-    'path' => env('SESSION_PATH', '/'),
+    'path' => '/',
 
     /*
     |--------------------------------------------------------------------------
@@ -156,7 +155,7 @@ return [
     |
     */
 
-    'domain' => env('SESSION_DOMAIN'),
+    'domain' => null,
 
     /*
     |--------------------------------------------------------------------------
@@ -169,7 +168,8 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // Secure (and `__Host-` prefixed names) whenever the panel is served over https; plain-HTTP dev installs only.
+    'secure' => HostCookies::secure(),
 
     /*
     |--------------------------------------------------------------------------

@@ -54,6 +54,8 @@ export interface FalakEnvironment {
     name: string;
     slug: string;
     is_production: boolean;
+    /** A pull request's preview (grouped under "Previews" in the switcher). */
+    is_preview?: boolean;
 }
 
 export interface FalakProject {

@@ -36,6 +36,13 @@ class BitbucketClient extends HttpProviderClient
         return (string) ($user['username'] ?? $user['nickname'] ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        $user = $this->json($connection, '/user');
+
+        return (string) ($user['account_id'] ?? $user['uuid'] ?? '') ?: null;
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         $query = ['role' => 'member', 'pagelen' => 100, 'sort' => '-updated_on'];
@@ -151,11 +158,11 @@ class BitbucketClient extends HttpProviderClient
     public function createWebhook(Connection $connection, string $repository, string $url, string $secret): string
     {
         $response = $this->send($connection, 'POST', '/repositories/'.$this->path($repository).'/hooks', body: [
-            'description' => 'Falak push-to-deploy',
+            'description' => 'Falak push-to-deploy and previews',
             'url' => $url,
             'active' => true,
             'secret' => $secret,
-            'events' => ['repo:push'],
+            'events' => ['repo:push', 'pullrequest:created', 'pullrequest:updated', 'pullrequest:fulfilled', 'pullrequest:rejected', 'pullrequest:comment_created'],
         ]);
 
         return (string) $response?->json('uuid');
@@ -164,6 +171,35 @@ class BitbucketClient extends HttpProviderClient
     public function deleteWebhook(Connection $connection, string $repository, string $hookId): void
     {
         $this->send($connection, 'DELETE', '/repositories/'.$this->path($repository).'/hooks/'.rawurlencode($hookId), nullOn404: true);
+    }
+
+    public function commentOnPullRequest(Connection $connection, string $repository, int $number, string $body, ?string $commentId = null): ?string
+    {
+        $comments = '/repositories/'.$this->path($repository).'/pullrequests/'.$number.'/comments';
+
+        if ($commentId !== null) {
+            $response = $this->send($connection, 'PUT', $comments.'/'.rawurlencode($commentId), body: ['content' => ['raw' => $body]], nullOn404: true);
+
+            return $response === null ? null : (string) $response->json('id');
+        }
+
+        return (string) $this->send($connection, 'POST', $comments, body: ['content' => ['raw' => $body]])?->json('id');
+    }
+
+    public function setCommitStatus(Connection $connection, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        // Bitbucket requires a URL; the key identifies the status (one per context).
+        $this->send($connection, 'POST', '/repositories/'.$this->path($repository).'/commit/'.rawurlencode($sha).'/statuses/build', body: [
+            'state' => match ($state) {
+                'success' => 'SUCCESSFUL',
+                'failure' => 'FAILED',
+                default => 'INPROGRESS',
+            },
+            'key' => substr(preg_replace('/[^A-Za-z0-9_.-]+/', '-', $context) ?? 'falak', 0, 40),
+            'name' => $context,
+            'description' => mb_substr($description, 0, 255),
+            'url' => $url ?? rtrim((string) config('app.url'), '/'),
+        ]);
     }
 
     public function sshUrl(Connection $connection, string $repository): string

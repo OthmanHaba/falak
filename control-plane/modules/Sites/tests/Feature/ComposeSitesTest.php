@@ -1,6 +1,9 @@
 <?php
 
 use Falak\Identity\Contracts\Role;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Service;
 use Falak\Sites\Contracts\ComposeInspector;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\ComposeSource;
@@ -161,6 +164,20 @@ it('allows policy violations when the organization allows privileged compose', f
     ]));
 
     expect($created->site->compose->source)->toBe(ComposeSource::Inline);
+});
+
+it('renders a fork preview under the strict policy, whatever the organization allows', function () {
+    OrganizationSettings::query()->create(['organization_id' => $this->organization->id, 'allow_privileged_compose' => true]);
+    $privileged = "services:\n  n8n:\n    image: x:1\n    privileged: true\n";
+    $site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_input([$this->server->id], ['compose_content' => $privileged]))->site;
+    $project = Project::query()->where('organization_id', $this->organization->id)->firstOrFail();
+    $fork = Environment::query()->forceCreate([
+        'organization_id' => $this->organization->id, 'project_id' => $project->id, 'name' => 'PR #1', 'slug' => 'pr-1', 'is_preview' => true, 'is_fork_preview' => true,
+    ]);
+    Service::query()->where('ref_id', $site->id)->update(['environment_id' => $fork->id]);
+
+    expect(fn () => app(ComposeSites::class)->render($site->id, $privileged, [], '01j9zq4n8v2m6r0t3w5y7b9d1f'))
+        ->toThrow(ComposeRenderException::class, 'forks always run under the strict policy');
 });
 
 it('renders releases: loopback public ports, labels, built images, no other host ports', function () {

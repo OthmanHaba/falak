@@ -4,11 +4,16 @@ namespace Falak\Databases\Infrastructure;
 
 use Falak\Databases\Application\Actions\CreateInstance;
 use Falak\Databases\Application\Actions\DeleteDatabase;
+use Falak\Databases\Application\Actions\RestoreBackup;
+use Falak\Databases\Application\Actions\RunDatabaseScript;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Enums\Engine;
+use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\Database;
+use Falak\Kernel\Security\BackupKeys;
 use Illuminate\Validation\ValidationException;
 use LogicException;
 
@@ -47,5 +52,32 @@ final class ActionDatabaseProvisioner implements DatabaseProvisioner
         if ($database = Database::query()->find(strtolower($databaseId))) {
             ($this->deleteDatabase)($database, withInstance: true, deleteVolume: $deleteVolume);
         }
+    }
+
+    public function restoreLatestBackup(string $sourceDatabaseId, string $targetDatabaseId, ?string $actorId = null): string
+    {
+        $target = Database::query()->with('instance')->find(strtolower($targetDatabaseId))
+            ?? throw ValidationException::withMessages(['database' => 'The database to restore into no longer exists.']);
+        $backup = Backup::query()
+            ->where('database_id', strtolower($sourceDatabaseId))
+            ->where('organization_id', $target->organization_id)
+            ->where('type', 'logical')
+            ->where('status', BackupStatus::Succeeded)
+            ->where('encryption_mode', BackupKeys::CP)
+            ->orderByDesc('finished_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->first(fn (Backup $backup) => $backup->isRestorable())
+            ?? throw ValidationException::withMessages(['backup' => 'The source database has no successful backup Falak can restore (customer-held keys need the key at restore time).']);
+
+        return (app(RestoreBackup::class))($backup, $target->instance, $target->name, $actorId)->id;
+    }
+
+    public function runScript(string $databaseId, string $kind, string $script, string $key, int $timeout = 900): string
+    {
+        $database = Database::query()->with('instance')->find(strtolower($databaseId))
+            ?? throw ValidationException::withMessages(['database' => 'The database no longer exists.']);
+
+        return (app(RunDatabaseScript::class))($database, $kind, $script, $key, $timeout)->id;
     }
 }

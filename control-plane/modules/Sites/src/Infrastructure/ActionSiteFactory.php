@@ -8,6 +8,7 @@ use Falak\Sites\Application\Actions\DuplicateSite;
 use Falak\Sites\Application\OctanePorts;
 use Falak\Sites\Contracts\Data\CreatedSite;
 use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
@@ -38,7 +39,7 @@ final class ActionSiteFactory implements SiteFactory
         }
 
         $create = app(CreateSite::class);
-        $site = (new DuplicateSite($create, app(OctanePorts::class), app(ServiceVolumes::class), app(VolumeMounts::class)))($source, $overrides, $placement, $userId);
+        $site = (new DuplicateSite($create, app(OctanePorts::class), app(ServiceVolumes::class), app(VolumeMounts::class), app(SecretVariables::class)))($source, $overrides, $placement, $userId);
 
         return new CreatedSite($site->toData(), array_values($create->warnings));
     }

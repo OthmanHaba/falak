@@ -73,7 +73,7 @@ describe('GitHub', function () {
             ->and($client->createWebhook($connection, 'acme/shop', 'https://falak.test/hook', 's3cret'))->toBe('88');
 
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/keys') && $r['read_only'] === true && $r['key'] === 'ssh-ed25519 AAAA');
-        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['events'] === ['push'] && $r['config']['secret'] === 's3cret' && $r['config']['content_type'] === 'json');
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['events'] === ['push', 'pull_request', 'issue_comment'] && $r['config']['secret'] === 's3cret' && $r['config']['content_type'] === 'json');
     });
 
     it('maps authentication failures to SourceControlException', function () {
@@ -218,7 +218,7 @@ describe('Bitbucket', function () {
             ->and($client->createWebhook($connection, 'acme/shop', 'https://falak.test/h', 's'))->toBe('{abc}')
             ->and($client->httpsCredentials($connection))->toBe(['x-token-auth', 'bb']);
 
-        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['events'] === ['repo:push'] && $r['secret'] === 's');
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['events'][0] === 'repo:push' && in_array('pullrequest:created', $r['events'], true) && $r['secret'] === 's');
     });
 
     it('maps authentication failures', function () {

@@ -19,6 +19,9 @@ use Falak\Sites\Contracts\SiteDirectory;
  *
  * `${{ secrets.NAME }}` resolves through the secret store, in the scope chain of the service whose variable holds
  * the reference (a site's variable referenced from another site still sees that site's own secrets).
+ *
+ * Preview environments (a pull request's): only secrets available to previews resolve, none at all for a pull request
+ * from a fork, and the services the preview shares with its base environment resolve there.
  */
 final class ReferenceResolver implements VariableReferences
 {
@@ -49,6 +52,9 @@ final class ReferenceResolver implements VariableReferences
     /** Resolving for a preview environment: only secrets available to previews. */
     private bool $forPreview = false;
 
+    /** Resolving for a fork's preview: no secret at all. */
+    private bool $noSecrets = false;
+
     /** @var array<string, array{value: string, sensitive: bool}> resolved "serviceId|NAME" secrets */
     private array $secretValues = [];
 
@@ -72,7 +78,11 @@ final class ReferenceResolver implements VariableReferences
 
     public function resolve(string $environmentId, string $siteId, array $variables): ResolvedVariables
     {
-        return $this->run($environmentId, $siteId, $variables);
+        try {
+            return $this->run($environmentId, $siteId, $variables);
+        } finally {
+            $this->forPreview = false;
+        }
     }
 
     public function resolveForSite(string $siteId, array $variables, ?array $only = null, bool $forPreview = false): ResolvedVariables
@@ -140,6 +150,7 @@ final class ReferenceResolver implements VariableReferences
         $this->sensitiveKeys = [];
         $this->marks = [];
         $this->nodeMarks = [];
+        $this->noSecrets = false;
 
         if ($environmentId === null) {
             return new ResolvedVariables($wanted, ['The site is not part of a project environment, so ${{ service.KEY }} references cannot be resolved.'], $references);
@@ -148,6 +159,8 @@ final class ReferenceResolver implements VariableReferences
         foreach (Service::query()->where('environment_id', $environmentId)->get() as $service) {
             $this->services[Service::handle($service->name)] = $service;
         }
+
+        $this->previewScope($environmentId);
 
         $self = $this->serviceOfSite();
         $output = [];
@@ -236,10 +249,45 @@ final class ReferenceResolver implements VariableReferences
     }
 
     /**
+     * A preview: secrets limited (none for a fork's), and the services it shares resolved in its base environment
+     * (the preview's own services win).
+     */
+    private function previewScope(string $environmentId): void
+    {
+        $environment = Environment::query()->find($environmentId);
+
+        if ($environment === null || ! $environment->is_preview) {
+            return;
+        }
+
+        $this->forPreview = true;
+        $this->noSecrets = $environment->is_fork_preview;
+        $shared = $environment->is_fork_preview ? [] : array_map(fn ($name) => Service::handle((string) $name), $environment->shared_services ?? []);
+
+        if ($shared === [] || $environment->forked_from_id === null) {
+            return;
+        }
+
+        foreach (Service::query()->where('environment_id', $environment->forked_from_id)->get() as $service) {
+            $handle = Service::handle($service->name);
+
+            if (in_array($handle, $shared, true)) {
+                $this->services[$handle] ??= $service;
+            }
+        }
+    }
+
+    /**
      * One `${{ secrets.NAME }}`: the secret's value, or the reference unchanged with an error.
      */
     private function secret(string $name, string $reference, string $variable, ?Service $owner): string
     {
+        if ($this->noSecrets) {
+            $this->errors[] = "{$variable}: {$reference}: previews of pull requests from forks get no secrets.";
+
+            return $reference;
+        }
+
         $chain = $owner !== null
             ? new ScopeChain($owner->organization_id, $owner->project_id, $owner->environment_id, $owner->id)
             : $this->environmentChain();

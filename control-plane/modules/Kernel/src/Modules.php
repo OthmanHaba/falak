@@ -34,6 +34,7 @@ final class Modules
         'Insights',
         'Alerting',
         'Security',
+        'Previews',
         'Terminal',
         'Recovery',
     ];

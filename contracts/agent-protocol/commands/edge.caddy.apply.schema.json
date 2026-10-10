@@ -61,9 +61,11 @@
                   "acme",
                   "internal",
                   "custom",
-                  "off"
+                  "off",
+                  "wildcard"
                 ],
-                "default": "acme"
+                "default": "acme",
+                "description": "wildcard: served by one of the payload's wildcard_certificates (no certificate per host)"
               },
               "cert_name": {
                 "type": "string",
@@ -316,6 +318,44 @@
         "minLength": 1
       },
       "maxItems": 200
+    },
+    "wildcard_certificates": {
+      "type": "array",
+      "description": "Wildcard certificates the edge obtains and renews through ACME DNS-01 (preview domains): sites in tls mode wildcard are served by the one covering their hosts",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "dns"
+        ],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "pattern": "^\\*\\.[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+          },
+          "dns": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "api_token"
+            ],
+            "properties": {
+              "provider": {
+                "enum": [
+                  "cloudflare"
+                ]
+              },
+              "api_token": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {

@@ -518,6 +518,59 @@ example "grow volume", "fix in baseline").
 A "Previews" tab per project showing each PR, its status, URLs, age and cost estimate, with redeploy and delete. In
 the environment switcher, previews are grouped under "Previews".
 
+Implementation notes (built on `feat/v010-previews`):
+- **Module** `Previews` (settings per project, one row per project and pull request). Projects owns the environment
+  flags (`is_preview`, `is_fork_preview`, `shared_services`) through `PreviewEnvironments`; Edge owns the preview
+  domain through `PreviewDomains`; Databases restores the newest backup into another database and runs scripts in a
+  database container through `DatabaseProvisioner`.
+- **Preview domain** (Settings → Previews): one instance row, edited by the owners and admins of the operator
+  organization (`FALAK_DR_ORGANIZATION`, recorded by install.sh like disaster recovery, matched by id only; unset,
+  the only organization of a single-organization install). Names under it are reserved for previews. **TLS:** with Cloudflare, `*.<domain>` points at the edge server, which holds one DNS-01 wildcard
+  certificate (`edge.caddy.apply` `wildcard_certificates`, tls mode `wildcard`: no certificate per host, so Let's
+  Encrypt's per-domain limits are untouched); a preview on another server gets a tagged A record and its own
+  HTTP-01 certificate. Without a managed provider the user keeps the wildcard record and previews run on the edge
+  server, each live host getting an HTTP-01 certificate when it is routed. This replaces on-demand TLS: Caddy only
+  ever asks for hosts Falak routed (no `ask` endpoint to secure, nothing issued for random names).
+- **Edge hardening:** Caddy's admin API listens on a unix socket (`/run/falak-edge/admin.sock`, 0600, the edge
+  user's RuntimeDirectory; the agent dials it as root), never a TCP port a local process could reach. DNS provider
+  tokens reach Caddy through a root-only EnvironmentFile (`/etc/falak/caddy/edge.env`) and the config refers to them
+  as `{env.FALAK_DNS_TOKEN_*}`, so neither the admin API nor the persisted config holds them; the edge restarts when
+  they change. **The edge build must be Caddy 2.8+ (socket permissions in the admin address) with the
+  `caddy-dns/cloudflare` module** (FrankenPHP builds with it, or `xcaddy build --with github.com/caddy-dns/cloudflare`).
+- **Preview DNS records** whose deletion fails stay as tombstones, retried every ten minutes until Cloudflare
+  confirms; records of preview sites that no longer exist are deleted (no dangling names for a subdomain takeover).
+- **Hosts** `pr-{number}-{service}` (`{project}` also works); a label another project took gets a short suffix
+  derived from the project.
+- **Isolation:** preview sites always run as their own Linux user and copy only the variable names the project
+  lists (plus `${{ }}` references for its own pull requests); literal secret values never copy.
+- **Forks:** never deployed automatically; a member approves in Falak (the UI sends the reviewed head and is refused
+  when it moved), or comments `/falak preview` from a provider account they connected in Falak (matched by the
+  provider's immutable account id, never a login) with `previews.manage`; a comment older than the current head
+  approves nothing. Every new commit of a fork needs a new approval. Forks run only on the project's **fork
+  server** (hosting nothing but previews, never the preview edge), only as Docker / Compose services under the
+  strict compose policy, share no service with the base, resolve no secret at all, get empty or sanitized
+  databases only and the `fork_preview` limits. Other previews get `preview` limits and only secrets marked
+  available to previews.
+- **Databases:** `empty`, `clone_backup` (newest Falak-held backup of the chosen environment, default the base),
+  `clone_sanitize` (production by default; the SQL or command script runs in the database container as the
+  database's user; a failure deletes the restored database and the preview never deploys). Nothing deploys until
+  every database is ready, and a production copy not sanitized yet is dropped as soon as the preview fails, waits
+  for an approval or closes. Sharing a base database, and cloning a production backup unsanitized, each need the
+  project's acknowledgement. Redis / Valkey start empty. Volumes start empty (shared paths are recreated). Preview
+  databases never get PITR or backup schedules.
+- **Webhooks:** enabling previews pins the base repositories' webhooks (kept whatever push-to-deploy does).
+  Commit statuses (`falak/preview`) everywhere, also for GitHub Apps (no check runs). Comments and statuses are
+  generic (ready, failed, removed); errors, server names and script output stay in Falak.
+- **Cookies:** `__Host-falak_session`, `__Host-XSRF-TOKEN` and `__Host-remember_web` (host-only, Secure, Path=/)
+  whenever APP_URL is https; a plain-HTTP dev install keeps unprefixed names and `falak-ctl doctor` warns.
+  `SESSION_DOMAIN`, `SESSION_PATH`, `SESSION_COOKIE` and `SESSION_SECURE_COOKIE` are gone. Everyone signs in again
+  after the upgrade. **Tenants' previews share the preview domain:** one preview can set cookies for the whole
+  preview domain that another preview reads (cookie tossing). Apps should use `__Host-` cookies themselves (Laravel:
+  `SESSION_COOKIE=__Host-app_session`, `SESSION_SECURE_COOKIE=true`, no `SESSION_DOMAIN`).
+- **Not yet:** volume cloning into previews, a seed command for empty databases (the deploy script migrates), cost
+  estimates, compose public services other than the primary one, and updating webhooks created before v0.10.0
+  (re-save the site's push-to-deploy, or add the pull request events at the provider).
+
 ---
 
 ## Security review points (all steps)

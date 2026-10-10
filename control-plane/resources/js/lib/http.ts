@@ -15,8 +15,25 @@ export class HttpError extends Error {
     }
 }
 
+/**
+ * The CSRF cookie: host-only `__Host-XSRF-TOKEN` (preview environments share the panel's registrable domain), or
+ * `XSRF-TOKEN` on a plain-HTTP dev install (the prefix needs Secure).
+ */
+export function xsrfCookieName(): string {
+    return typeof document !== 'undefined' && /(?:^|;\s*)XSRF-TOKEN=/.test(document.cookie) && !/(?:^|;\s*)__Host-XSRF-TOKEN=/.test(document.cookie)
+        ? 'XSRF-TOKEN'
+        : '__Host-XSRF-TOKEN';
+}
+
 function xsrfToken(): string {
-    return decodeURIComponent(document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/)?.[1] ?? '');
+    const name = xsrfCookieName();
+
+    return decodeURIComponent(
+        document.cookie
+            .split(/;\s*/)
+            .find((part) => part.startsWith(`${name}=`))
+            ?.slice(name.length + 1) ?? '',
+    );
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

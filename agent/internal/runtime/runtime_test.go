@@ -402,7 +402,7 @@ func TestFrankenPHP(t *testing.T) {
 		!strings.Contains(string(unit), "PHPRC=/etc/frankenphp") {
 		t.Fatal(string(unit))
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "etc/falak/caddy/bootstrap.json")); !strings.Contains(string(b), `"localhost:2019"`) {
+	if b, _ := os.ReadFile(filepath.Join(root, "etc/falak/caddy/bootstrap.json")); !strings.Contains(string(b), `"unix//run/falak-edge/admin.sock|0600"`) || !strings.Contains(string(unit), "EnvironmentFile=-/etc/falak/caddy/edge.env") || !strings.Contains(string(unit), "RuntimeDirectory=falak-edge") {
 		t.Fatal(string(b))
 	}
 	for _, w := range []string{"systemctl daemon-reload", "systemctl enable falak-edge.service", "systemctl restart falak-edge.service"} {

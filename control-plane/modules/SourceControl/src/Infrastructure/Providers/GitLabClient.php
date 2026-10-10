@@ -30,6 +30,11 @@ class GitLabClient extends HttpProviderClient
         return (string) ($this->json($connection, '/user')['username'] ?? '');
     }
 
+    public function accountId(Connection $connection): ?string
+    {
+        return (string) ($this->json($connection, '/user')['id'] ?? '') ?: null;
+    }
+
     public function repositories(Connection $connection, ?string $search = null): array
     {
         $query = array_filter(['membership' => 'true', 'simple' => 'true', 'order_by' => 'last_activity_at', 'per_page' => 100, 'search' => $search, 'search_namespaces' => $search ? 'true' : null]);
@@ -158,7 +163,8 @@ class GitLabClient extends HttpProviderClient
             'token' => $secret,
             'push_events' => true,
             'tag_push_events' => false,
-            'merge_requests_events' => false,
+            'merge_requests_events' => true,
+            'note_events' => true,
             'enable_ssl_verification' => true,
         ]);
 
@@ -168,6 +174,33 @@ class GitLabClient extends HttpProviderClient
     public function deleteWebhook(Connection $connection, string $repository, string $hookId): void
     {
         $this->send($connection, 'DELETE', '/projects/'.$this->id($repository).'/hooks/'.rawurlencode($hookId), nullOn404: true);
+    }
+
+    public function commentOnPullRequest(Connection $connection, string $repository, int $number, string $body, ?string $commentId = null): ?string
+    {
+        $notes = '/projects/'.$this->id($repository).'/merge_requests/'.$number.'/notes';
+
+        if ($commentId !== null) {
+            $response = $this->send($connection, 'PUT', $notes.'/'.rawurlencode($commentId), body: ['body' => $body], nullOn404: true);
+
+            return $response === null ? null : (string) $response->json('id');
+        }
+
+        return (string) $this->send($connection, 'POST', $notes, body: ['body' => $body])?->json('id');
+    }
+
+    public function setCommitStatus(Connection $connection, string $repository, string $sha, string $state, string $context, string $description, ?string $url = null): void
+    {
+        $this->send($connection, 'POST', '/projects/'.$this->id($repository).'/statuses/'.rawurlencode($sha), body: array_filter([
+            'state' => match ($state) {
+                'success' => 'success',
+                'failure' => 'failed',
+                default => 'running',
+            },
+            'name' => $context,
+            'description' => mb_substr($description, 0, 255),
+            'target_url' => $url,
+        ], fn ($v) => $v !== null));
     }
 
     public function sshUrl(Connection $connection, string $repository): string

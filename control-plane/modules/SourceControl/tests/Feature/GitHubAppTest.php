@@ -51,8 +51,8 @@ describe('manifest', function () {
             ->and($manifest['setup_url'])->toBe(route('source-control.github-app.setup'))
             ->and($manifest['setup_on_update'])->toBeTrue()
             ->and($manifest['public'])->toBeFalse()
-            ->and($manifest['default_permissions'])->toBe(['contents' => 'read', 'metadata' => 'read'])
-            ->and($manifest['default_events'])->toBe(['push']);
+            ->and($manifest['default_permissions'])->toBe(['contents' => 'read', 'metadata' => 'read', 'pull_requests' => 'write', 'issues' => 'write', 'statuses' => 'write'])
+            ->and($manifest['default_events'])->toBe(['push', 'pull_request', 'issue_comment']);
     });
 
     it('targets a GitHub organization and uses the webhook URL override', function () {

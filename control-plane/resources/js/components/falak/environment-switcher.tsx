@@ -1,7 +1,7 @@
 import { currentProject, projectUrl } from '@/lib/falak';
 import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
-import { Check, Plus } from 'lucide-react';
+import { Check, GitPullRequest, Plus } from 'lucide-react';
 import { MenuContent, MenuLabel, MenuLink, MenuRoot, MenuSeparator, MenuTrigger } from './menu';
 import { SwitcherTrigger } from './switcher-trigger';
 import { Tag } from './tag';
@@ -11,6 +11,19 @@ export function EnvironmentSwitcher() {
     const { falak } = usePage<SharedData>().props;
     const { project, environment } = currentProject(falak);
     if (!project || !environment) return null;
+
+    // Pull request previews are grouped under their own label.
+    const regular = project.environments.filter((env) => !env.is_preview);
+    const previews = project.environments.filter((env) => env.is_preview);
+    const item = (env: (typeof project.environments)[number]) => (
+        <MenuLink key={env.id} href={projectUrl(project, env)}>
+            <span className="flex items-center gap-2">
+                {env.name}
+                {env.is_production && <Tag tone="success">prod</Tag>}
+                {env.id === environment.id && <Check className="text-primary ml-auto size-4" aria-label="Current" />}
+            </span>
+        </MenuLink>
+    );
 
     return (
         <MenuRoot>
@@ -23,16 +36,18 @@ export function EnvironmentSwitcher() {
             </MenuTrigger>
             <MenuContent align="start" className="w-56">
                 <MenuLabel>Environments</MenuLabel>
-                {project.environments.map((env) => (
-                    <MenuLink key={env.id} href={projectUrl(project, env)}>
-                        <span className="flex items-center gap-2">
-                            {env.name}
-                            {env.is_production && <Tag tone="success">prod</Tag>}
-                            {env.id === environment.id && <Check className="text-primary ml-auto size-4" aria-label="Current" />}
-                        </span>
-                    </MenuLink>
-                ))}
+                {regular.map(item)}
+                {previews.length > 0 && (
+                    <>
+                        <MenuSeparator />
+                        <MenuLabel>Previews</MenuLabel>
+                        {previews.map(item)}
+                    </>
+                )}
                 <MenuSeparator />
+                <MenuLink href={`/projects/${project.id}/previews`} icon={<GitPullRequest />}>
+                    All previews
+                </MenuLink>
                 <MenuLink href={`/projects/${project.id}/settings#new-environment`} icon={<Plus />}>
                     New environment
                 </MenuLink>

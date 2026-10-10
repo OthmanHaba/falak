@@ -2113,6 +2113,14 @@ cmd_doctor() {
   info "Containers"
   health_check || problems=$((problems + 1))
 
+  info "Cookies"
+  # The panel's session, CSRF and remember-me cookies are __Host- prefixed only when Secure (APP_URL https): previews
+  # on a sibling host could otherwise plant cookies the panel reads.
+  case "$(env_get APP_URL "https://$domain")" in
+    https://*) ok "panel cookies are __Host- prefixed (host-only, Secure)" ;;
+    *) warn "APP_URL is not https: the panel's cookies are not __Host- prefixed (previews could plant cookies)"; problems=$((problems + 1)) ;;
+  esac
+
   info "Certificates"
   local end issuer
   if end="$(cert_field "$domain" -enddate)"; then

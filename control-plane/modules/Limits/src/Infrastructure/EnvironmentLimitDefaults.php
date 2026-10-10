@@ -9,7 +9,7 @@ use Falak\Projects\Contracts\ServiceKind;
 
 /**
  * Defaults by the environment the site is placed in (Projects). A site in no project counts as production: it only
- * gets the limits it was given.
+ * gets the limits it was given. Previews get smaller ones, a fork's pull request the smallest.
  */
 final class EnvironmentLimitDefaults implements LimitDefaults
 {
@@ -19,8 +19,13 @@ final class EnvironmentLimitDefaults implements LimitDefaults
     {
         $placed = $this->projects->projectOf(ServiceKind::Site, $siteId);
         $environment = $placed !== null ? $this->projects->environment($placed->environmentId) : null;
-        $production = $environment === null || $environment->isProduction;
+        $defaults = match (true) {
+            $environment === null || $environment->isProduction => 'production',
+            $environment->isForkPreview => 'fork_preview',
+            $environment->isPreview => 'preview',
+            default => 'non_production',
+        };
 
-        return ResourceLimits::fromArray((array) config($production ? 'limits.defaults.production' : 'limits.defaults.non_production', []));
+        return ResourceLimits::fromArray((array) config("limits.defaults.{$defaults}", []));
     }
 }

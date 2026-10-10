@@ -104,14 +104,14 @@ afterEach(function () {
  */
 function through(object $test, string $who, string $method, string $uri, array $data = []): Response
 {
-    if ($method !== 'GET' && ! isset($test->jars[$who]['XSRF-TOKEN'])) {
+    if ($method !== 'GET' && ! isset($test->jars[$who]['__Host-XSRF-TOKEN'])) {
         through($test, $who, 'GET', '/login');
     }
 
     $jar = $test->jars[$who] ?? [];
     $server = ['HTTP_ACCEPT' => 'text/html', 'REMOTE_ADDR' => '127.0.0.1'];
-    if (isset($jar['XSRF-TOKEN'])) {
-        $server['HTTP_X_XSRF_TOKEN'] = $jar['XSRF-TOKEN'];
+    if (isset($jar['__Host-XSRF-TOKEN'])) {
+        $server['HTTP_X_XSRF_TOKEN'] = $jar['__Host-XSRF-TOKEN'];
     }
     $request = Request::create($uri, $method, $data, $jar, [], $server);
 
