@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -30,13 +31,44 @@ import (
 
 // Client is a minimal Caddy admin API client.
 type Client struct {
-	Base string // http://127.0.0.1:2019
-	HTTP *http.Client
+	// Base is unix:///run/falak-edge/admin.sock (the admin socket) or an http:// URL (tests).
+	Base string
+	// Fallback is used while the socket does not exist yet: a Caddy started from an older config, before the first
+	// edge.caddy.apply moves its admin API to the socket.
+	Fallback string
+	HTTP     *http.Client
+}
+
+func (c *Client) socket() string {
+	if p, ok := strings.CutPrefix(c.Base, "unix://"); ok {
+		if _, err := os.Stat(p); err == nil || c.Fallback == "" {
+			return p
+		}
+	}
+	return ""
+}
+
+func (c *Client) base() string {
+	if c.socket() != "" {
+		// Caddy accepts Host: localhost on its unix socket admin listener.
+		return "http://localhost"
+	}
+	if strings.HasPrefix(c.Base, "unix://") {
+		return strings.TrimRight(c.Fallback, "/")
+	}
+	return strings.TrimRight(c.Base, "/")
 }
 
 func (c *Client) hc() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
+	}
+	if sock := c.socket(); sock != "" {
+		return &http.Client{Timeout: 60 * time.Second, Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+			},
+		}}
 	}
 	return &http.Client{Timeout: 60 * time.Second}
 }
@@ -46,7 +78,8 @@ func (c *Client) req(ctx context.Context, method, p string, body []byte, headers
 	if body != nil {
 		rd = bytes.NewReader(body)
 	}
-	r, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.Base, "/")+p, rd)
+	base := c.base()
+	r, err := http.NewRequestWithContext(ctx, method, base+p, rd)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +87,7 @@ func (c *Client) req(ctx context.Context, method, p string, body []byte, headers
 		r.Header.Set("Content-Type", "application/json")
 	}
 	// Caddy's admin API enforces origin checks; a matching Origin keeps requests accepted.
-	r.Header.Set("Origin", strings.TrimRight(c.Base, "/"))
+	r.Header.Set("Origin", base)
 	for i := 0; i+1 < len(headers); i += 2 {
 		r.Header.Set(headers[i], headers[i+1])
 	}
@@ -116,6 +149,8 @@ type Options struct {
 	FS     hostfs.FS
 	EtcDir string // /etc/falak (certs/ and caddy/bootstrap.json live here)
 	Logger *slog.Logger
+	// RestartEdge restarts falak-edge.service: its environment (DNS provider tokens, EdgeEnv) is only read at start.
+	RestartEdge func(ctx context.Context) error
 }
 
 // Manager implements edge.* executors.
@@ -137,6 +172,33 @@ func New(o Options) *Manager {
 
 func (m *Manager) certDir() string       { return path.Join(m.o.EtcDir, "certs") }
 func (m *Manager) bootstrapPath() string { return path.Join(m.o.EtcDir, "caddy", "bootstrap.json") }
+
+// EnvPath is the edge service's environment file (falak-edge.service EnvironmentFile): DNS provider tokens.
+func (m *Manager) EnvPath() string { return path.Join(m.o.EtcDir, "caddy", "edge.env") }
+
+// syncEnv writes the tokens the config refers to into the edge's environment file (root only, read by systemd when
+// the service starts) and restarts the edge when they changed, before the config that needs them is loaded.
+func (m *Manager) syncEnv(ctx context.Context, p Payload, s commands.Stream) error {
+	changed, err := m.o.FS.WriteFile(m.EnvPath(), p.Environment(), 0o600)
+	if err != nil || !changed || m.o.RestartEdge == nil {
+		return err
+	}
+	fmt.Fprintln(s.Stdout(), "DNS provider tokens changed: restarting the edge")
+	if err := m.o.RestartEdge(ctx); err != nil {
+		return fmt.Errorf("restart falak-edge: %w", err)
+	}
+	for i := 0; i < 60; i++ {
+		if _, err := m.o.Client.Config(ctx); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return errors.New("the edge did not come back after its restart")
+}
 
 // Register adds edge.caddy.apply and edge.cert.install.
 func (m *Manager) Register(reg *commands.Registry) {
@@ -164,6 +226,9 @@ func (m *Manager) Apply(ctx context.Context, p Payload, s commands.Stream) (any,
 		return nil, err
 	}
 	res := ApplyResult{ConfigSHA256: hostfs.SHA256(want), Routes: countRoutes(cfg)}
+	if err := m.syncEnv(ctx, p, s); err != nil {
+		return nil, err
+	}
 	if cur, err := m.o.Client.Config(ctx); err == nil {
 		if c, err := canonicalBytes(cur); err == nil && bytes.Equal(c, want) {
 			fmt.Fprintf(s.Stdout(), "caddy config unchanged (%s)\n", res.ConfigSHA256[:12])

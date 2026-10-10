@@ -113,8 +113,12 @@ func Build(d Deps) *Components {
 			return slug
 		},
 	})
-	edgeClient := &edge.Client{Base: cfg.CaddyAdmin}
-	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge")})
+	edgeClient := &edge.Client{Base: cfg.CaddyAdmin, Fallback: "http://127.0.0.1:2019"}
+	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge"),
+		RestartEdge: func(ctx context.Context) error {
+			_, err := runner.Check(ctx, d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"restart", "falak-edge.service"}})
+			return err
+		}})
 	// Secrets on servers live on the tmpfs only: sites' env files and containers' secret files.
 	envDir := filepath.Join(cfg.RunDir, "env")
 	links := envlinks.New(filepath.Join(d.FS.P(cfg.StateDir), "env-links.json"))

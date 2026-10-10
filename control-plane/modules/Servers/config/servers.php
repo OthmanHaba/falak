@@ -75,8 +75,8 @@ return [
             'docker.io' => ['label' => "Ubuntu's archive", 'compose' => 'docker-compose-v2', 'buildx' => 'docker-buildx', 'repo' => null],
         ],
 
-        // Ports the edge needs on servers that serve HTTP (Caddy's admin API on 2019 is bound to localhost).
-        'edge_ports' => [80, 443, 2019],
+        // Ports the edge needs on servers that serve HTTP (its admin API is a unix socket, no port).
+        'edge_ports' => [80, 443],
 
         // Web servers that would take the edge's ports.
         'web_servers' => ['nginx' => 'nginx', 'apache2' => 'Apache'],

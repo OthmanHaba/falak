@@ -133,6 +133,11 @@ User=%[1]s
 Group=%[1]s
 Environment=XDG_DATA_HOME=/var/lib/caddy
 Environment=XDG_CONFIG_HOME=/var/lib/caddy/.config
+# DNS provider tokens (root only), referenced from the config as {env.FALAK_DNS_TOKEN_*}.
+EnvironmentFile=-/etc/falak/caddy/edge.env
+# The admin API's unix socket lives here (only the edge user and root can open it).
+RuntimeDirectory=falak-edge
+RuntimeDirectoryMode=0700
 %[3]sExecStart=%[2]s run --environ --config %[4]s
 ExecReload=%[2]s reload --config %[4]s --force
 TimeoutStopSec=5s
@@ -174,7 +179,7 @@ func mergeGroups(fs hostfs.FS, want []string) []string {
 
 // BootstrapConfig is the admin-only Caddy config written when no config exists yet. The edge package
 // overwrites the file with the full applied config on every edge.caddy.apply.
-const BootstrapConfig = `{"admin":{"listen":"localhost:2019"}}` + "\n"
+const BootstrapConfig = `{"admin":{"listen":"unix//run/falak-edge/admin.sock|0600"}}` + "\n"
 
 // EnsureEdgeUnit converges falak-edge.service (unit, service user, bootstrap config, running state).
 // restart forces a restart (e.g. new binary) when the unit itself is unchanged.

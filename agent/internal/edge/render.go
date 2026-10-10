@@ -3,6 +3,8 @@
 package edge
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path"
 	"regexp"
@@ -114,8 +116,59 @@ type Redirect struct {
 	Status int    `json:"status,omitempty"`
 }
 
-// AdminListen is where the admin API listens (never exposed publicly).
-const AdminListen = "localhost:2019"
+// AdminListen is where the admin API listens: a unix socket only the edge user (and root, the agent) can open, in
+// falak-edge.service's RuntimeDirectory. A TCP port on localhost would let any local process (a site, a preview's
+// build) read the config or POST /load. Needs Caddy 2.8+ (socket permissions in the address).
+const AdminListen = "unix//run/falak-edge/admin.sock|0600"
+
+// AdminSocket is the socket path of AdminListen.
+const AdminSocket = "/run/falak-edge/admin.sock"
+
+// TokenPlaceholder is the {env.NAME} placeholder Caddy resolves a DNS provider token from: the value lives in the
+// edge service's environment (EdgeEnv, root-only), never in the JSON config the admin API returns or on disk.
+func TokenPlaceholder(token string) string { return "{env." + TokenEnv(token) + "}" }
+
+// TokenEnv names the environment variable holding a DNS provider token (derived from it, so a rotated token is a new
+// variable).
+func TokenEnv(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "FALAK_DNS_TOKEN_" + strings.ToUpper(hex.EncodeToString(sum[:6]))
+}
+
+// Secrets are the DNS provider tokens the payload's config refers to, by environment variable.
+func (p Payload) Secrets() []string {
+	var out []string
+	for _, s := range p.Sites {
+		if s.TLS != nil && s.TLS.DNS != nil && s.TLS.DNS.APIToken != "" {
+			out = append(out, s.TLS.DNS.APIToken)
+		}
+	}
+	for _, w := range p.WildcardCertificates {
+		if w.DNS.APIToken != "" {
+			out = append(out, w.DNS.APIToken)
+		}
+	}
+	return out
+}
+
+// Environment is the edge service's environment for the payload: one variable per DNS provider token, sorted.
+func (p Payload) Environment() []byte {
+	seen := map[string]string{}
+	for _, t := range p.Secrets() {
+		seen[TokenEnv(t)] = t
+	}
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("# Managed by Falak: DNS provider tokens of the edge (root only)\n")
+	for _, k := range keys {
+		b.WriteString(k + "=" + seen[k] + "\n")
+	}
+	return []byte(b.String())
+}
 
 // RouteID / UpstreamsID are stable @id values addressable through /id/<id>.
 func RouteID(site string) string     { return "falak-site-" + site }
@@ -208,7 +261,7 @@ func Render(p Payload, certDir string) (obj, error) {
 					return nil, fmt.Errorf("site %s: tls.dns provider and api_token are required", s.ID)
 				}
 				iss := acmeIssuer(p)
-				iss["challenges"] = obj{"dns": obj{"provider": obj{"name": s.TLS.DNS.Provider, "api_token": s.TLS.DNS.APIToken}}}
+				iss["challenges"] = obj{"dns": obj{"provider": obj{"name": s.TLS.DNS.Provider, "api_token": TokenPlaceholder(s.TLS.DNS.APIToken)}}}
 				dnsPolicies = append(dnsPolicies, obj{"subjects": toAny(hosts), "issuers": []any{iss}})
 			} else if s.TLS != nil && s.TLS.HTTPChallengeOnly {
 				iss := acmeIssuer(p)
@@ -262,7 +315,7 @@ func Render(p Payload, certDir string) (obj, error) {
 			return nil, fmt.Errorf("wildcard certificate %q: a *.<domain> subject, dns provider and api_token are required", w.Subject)
 		}
 		iss := acmeIssuer(p)
-		iss["challenges"] = obj{"dns": obj{"provider": obj{"name": w.DNS.Provider, "api_token": w.DNS.APIToken}}}
+		iss["challenges"] = obj{"dns": obj{"provider": obj{"name": w.DNS.Provider, "api_token": TokenPlaceholder(w.DNS.APIToken)}}}
 		policies = append(policies, obj{"subjects": []any{w.Subject}, "issuers": []any{iss}})
 		automate = append(automate, w.Subject)
 	}
