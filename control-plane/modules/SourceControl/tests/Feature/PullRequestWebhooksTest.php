@@ -286,6 +286,21 @@ describe('gateway', function () {
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/commit/abcdef123456/statuses/build') && $r['state'] === 'INPROGRESS' && $r['key'] === 'falak-preview' && $r['url'] !== '');
     });
 
+    it('keeps a pinned webhook when push-to-deploy no longer needs it', function () {
+        Http::fake(['*/hooks' => Http::response(['id' => 77], 201), '*/hooks/77' => Http::response([], 204)]);
+        $connection = sc_connection($this->organization->id);
+        $gateway = app(SourceControlGateway::class);
+
+        $gateway->pinWebhook($connection->id, 'acme/shop');
+        $gateway->removeWebhook($connection->id, 'acme/shop');
+        expect(Webhook::query()->where('repository', 'acme/shop')->sole()->pinned)->toBeTrue();
+
+        $gateway->pinWebhook($connection->id, 'acme/shop', false);
+        $gateway->removeWebhook($connection->id, 'acme/shop');
+        expect(Webhook::query()->count())->toBe(0);
+        Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && str_ends_with($r->url(), '/hooks/77'));
+    });
+
     it('maps a provider login to the members who connected that account', function () {
         [$member] = memberOf($this->organization, Role::Developer);
         sc_connection($this->organization->id, attributes: ['account' => 'Grace', 'created_by' => $member->id]);

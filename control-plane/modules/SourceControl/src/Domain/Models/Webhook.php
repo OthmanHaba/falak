@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $provider_hook_id
  * @property string $secret
  * @property bool $installed
+ * @property bool $pinned kept for previews (pull request events) whatever push-to-deploy does
  * @property ?string $install_error
  * @property ?Carbon $last_delivery_at
  * @property-read Connection $connection
@@ -41,6 +42,7 @@ class Webhook extends Model
         return [
             'secret' => Sealed::class,
             'installed' => 'boolean',
+            'pinned' => 'boolean',
             'last_delivery_at' => 'datetime',
         ];
     }

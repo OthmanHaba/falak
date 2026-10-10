@@ -198,6 +198,16 @@ final class FakeSourceControlGateway implements SourceControlGateway
         $this->statuses[] = compact('repository', 'sha', 'state', 'context', 'description', 'url');
     }
 
+    /** @var array<string, bool> "connection|repository" => pinned */
+    public array $pinned = [];
+
+    public function pinWebhook(string $connectionId, string $repository, bool $pinned = true): WebhookData
+    {
+        $this->pinned["{$connectionId}|{$repository}"] = $pinned;
+
+        return $pinned ? $this->ensureWebhook($connectionId, $repository) : new WebhookData('', $connectionId, $repository, '', false);
+    }
+
     public function usersWithAccount(string $organizationId, string $provider, string $login): array
     {
         return $this->accounts[strtolower("{$provider}|{$login}")] ?? [];

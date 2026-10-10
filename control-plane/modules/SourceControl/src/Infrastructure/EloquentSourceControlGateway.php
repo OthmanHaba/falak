@@ -242,7 +242,7 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         $connection = $this->find($connectionId);
         $webhook = Webhook::query()->where('connection_id', $connection->id)->where('repository', $repository)->first();
 
-        if (! $webhook) {
+        if (! $webhook || $webhook->pinned) {
             return;
         }
 
@@ -257,6 +257,15 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         $webhook->delete();
 
         $this->audit->record('source_control.webhook_removed', 'webhook', $webhook->id, ['connection_id' => $connection->id, 'repository' => $repository], $connection->organization_id);
+    }
+
+    public function pinWebhook(string $connectionId, string $repository, bool $pinned = true): WebhookData
+    {
+        $data = $pinned ? $this->ensureWebhook($connectionId, $repository) : null;
+        $webhook = Webhook::query()->where('connection_id', $connectionId)->where('repository', $repository)->first();
+        $webhook?->forceFill(['pinned' => $pinned])->save();
+
+        return $data ?? $webhook?->toData() ?? new WebhookData('', $connectionId, $repository, '', false);
     }
 
     public function cloneUrl(string $connectionId, string $repository): string

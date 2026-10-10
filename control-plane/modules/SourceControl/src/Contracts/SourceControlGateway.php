@@ -63,8 +63,14 @@ interface SourceControlGateway
      */
     public function ensureWebhook(string $connectionId, string $repository): WebhookData;
 
-    /** Remove the push webhook when no longer needed (best-effort at the provider). */
+    /** Remove the push webhook when no longer needed (best-effort at the provider). A pinned webhook stays. */
     public function removeWebhook(string $connectionId, string $repository): void;
+
+    /**
+     * Ensure the repository's webhook and keep it (pinned) while previews need its pull request events, or release it
+     * ($pinned false: removable again once nothing deploys on push from it).
+     */
+    public function pinWebhook(string $connectionId, string $repository, bool $pinned = true): WebhookData;
 
     /**
      * Post Falak's comment on a pull request, or edit it when $commentId is given (posted anew when it was deleted).
