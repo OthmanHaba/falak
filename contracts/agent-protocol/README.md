@@ -237,7 +237,7 @@ owner, sha256 and a copy; secret files' permission fixes record mode, owner and 
 validates (`sshd -t` and `sshd -T`, `apt-config dump`, `fail2ban-client -t`, `dockerd --validate`, `sysctl -p`) and
 restores the backup on failure. `ssh.harden` refuses when no login user has a key, writes every hardened setting
 into `50-falak.conf` and comments out conflicting lines elsewhere (an earlier drop-in such as `50-cloud-init.conf`
-wins otherwise). `security.undo {fix_id, backup_id}` restores the backup exactly (a copy whose checksum does not
+wins otherwise). Container secret files stay 0444 (their 0700 parent and 0555 / 0500 directories are what is checked); the permissions fix opens files component by component without symlinks and skips hard-linked files and owners other than the site's user. `ssh.harden` also needs a user sshd lets in (`sshd -T -C`) with a shell key Falak did not install for its falak user (`managed_keys`), refuses two-factor setups, and restarts sshd after a rollback. `security.undo {fix_id, backup_id, force?}` refuses files changed since the fix unless `force`; it restores the backup exactly (a copy whose checksum does not
 match, or a secret file swapped since, is refused) and reloads what the fix changed; backups older than 7 days are
 pruned. `firewall.apply` and `firewall.close_port:<proto>:<port>` are applied by the control plane (Network owns the
 firewall); the agent refuses them.
