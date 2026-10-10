@@ -116,6 +116,11 @@ printf 'FALAK_DOMAIN=falak.example.com\n' > "$FALAK_DIR/.env"
   SECRETS_DIR="$FALAK_DIR/secrets"
   KEK_FILE="$SECRETS_DIR/kek"
   KEK_PREVIOUS="$SECRETS_DIR/kek.previous"
+  DR_DIR="$FALAK_DIR/dr"
+  DR_FILE="$DR_DIR/dr.env"
+  STATE_DIR="$FALAK_DIR/state"
+  DR_STATE="$STATE_DIR/dr.state"
+  DR_JSON="$STATE_DIR/dr.json"
 }
 ensure_kek --quiet
 current="$(kek_fingerprint "$KEK_FILE")"
@@ -166,7 +171,7 @@ compose() { if [ "${1:-}" = exec ] && [ "${3:-}" = postgres ]; then echo dump; f
 docker() { printf 'x'; }
 keys_check_json() { echo '{"ok":true,"kek_ids":[]}'; }
 openssl() { return 1; }
-printf 'FALAK_BACKUP_PASSPHRASE=pw\n' >> "$FALAK_DIR/.env"
+dr_set FALAK_BACKUP_PASSPHRASE pw
 (cmd_backup --quiet >/dev/null 2>&1) && fail "backup succeeded although encryption failed"
 leftover="$(find "$BACKUP_DIR" -name 'falak-backup-*' 2>/dev/null)"
 [ -z "$leftover" ] || fail "a failed encryption left $leftover"

@@ -94,6 +94,7 @@ x-control-plane: &control-plane
     FALAK_KEK_PROVIDER: ${FALAK_KEK_PROVIDER:-local}
     FALAK_KEK_PATH: /opt/falak/secrets/kek
     FALAK_KEK_PREVIOUS_PATH: /opt/falak/secrets/kek.previous
+    FALAK_DR_STATUS_PATH: /opt/falak/state/dr.json
     FALAK_AGENT_TRUSTED_PROXIES: ${FALAK_EDGE_SUBNET:-10.213.77.0/24}
     TRUSTED_PROXIES: ${FALAK_EDGE_SUBNET:-10.213.77.0/24}
     FALAK_AGENT_WAKE_DRIVER: redis
@@ -135,6 +136,9 @@ x-control-plane: &control-plane
     - app-storage:/app/storage
     # The KEK directory (falak-ctl kek init: dir 0711 root, kek 0400 owned by the container's www-data).
     - ../secrets:/opt/falak/secrets:ro
+    # Disaster recovery status written by falak-ctl (state/dr.json: no secrets; the bucket keys and the DR
+    # passphrase stay in /opt/falak/dr, which no container mounts).
+    - ../state:/opt/falak/state:ro
 
 services:
   postgres:
