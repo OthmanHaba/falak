@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
+use Falak\Kernel\Http\HostCookies;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -21,6 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // The UI theme cookie is read by the root Blade view before first paint (and written by JS): not a secret.
         $middleware->encryptCookies(except: ['appearance']);
+
+        // The CSRF cookie is `__Host-XSRF-TOKEN` (like the session cookie: previews share the panel's registrable domain).
+        $middleware->web(replace: [ValidateCsrfToken::class => HostCookies::class]);
 
         $middleware->web(append: [
             HandleInertiaRequests::class,

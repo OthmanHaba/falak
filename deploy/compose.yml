@@ -66,7 +66,6 @@ x-control-plane: &control-plane
     CACHE_STORE: redis
     QUEUE_CONNECTION: redis
     SESSION_DRIVER: redis
-    SESSION_SECURE_COOKIE: "true"
     BROADCAST_CONNECTION: reverb
     REVERB_APP_ID: ${REVERB_APP_ID:?set REVERB_APP_ID}
     REVERB_APP_KEY: ${REVERB_APP_KEY:?set REVERB_APP_KEY}

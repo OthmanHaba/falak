@@ -15,8 +15,11 @@ export class HttpError extends Error {
     }
 }
 
+/** The CSRF cookie is host-only (`__Host-`): preview environments share the panel's registrable domain. */
+export const XSRF_COOKIE = '__Host-XSRF-TOKEN';
+
 function xsrfToken(): string {
-    return decodeURIComponent(document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/)?.[1] ?? '');
+    return decodeURIComponent(document.cookie.match(/(?:^|;\s*)__Host-XSRF-TOKEN=([^;]+)/)?.[1] ?? '');
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
