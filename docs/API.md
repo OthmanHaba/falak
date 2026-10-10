@@ -554,14 +554,19 @@ fields plus `migrations` (the deploy script, or a compose `falak.deploy.leader_c
 which a rollback doesn't reverse) and `production` (the site's environment). Changes apply from the next deployment.
 
 After a successful deployment (not the site's first, not a rollback, not a function) a window opens for `minutes`.
-Every 30 s the health check runs through the edge on each server (`health_failures` failures in a row trip it), and
-the release's 5xx share in the edge access log is compared with `max(3 × baseline, 5%)` once it has served at least
-20 requests (baseline: the previous release's last hour; no data → 5%). OOM kills and restart loops of the site, its
-compose services, workers and daemons, and (opt-in) a new exception issue in Insights trip it at once. The first
+Every 30 s the health check runs through the edge on each server (`health_failures` failures in a row, at least 25 s
+apart, trip it; skipped while the site's health check is off, and servers without an address are skipped), and the
+release's 5xx share in the edge access log (the control plane's own health checks left out) is compared with
+`max(3 × baseline, 5%)` once it has served at least 20 requests and 5 errors (baseline: the previous release's last
+hour; no data → 5%). OOM kills and restart loops of the site, its compose services, workers and daemons that happen
+after the release went live trip it at once, as does (opt-in) a new exception issue in Insights — Insights doesn't
+record which release raised an issue, so any new one during the window counts; hence off by default. A window only
+opens for the site's live release with nothing queued behind it. The first
 trigger queues a `rollback` deployment to the previous release (`deployments.rolled_back` fires once it is live), or
 with `alert_only` fires `deployments.watch_triggered`. Loop guard: never back to a release that was itself rolled back
 automatically, at most one automatic rollback per site per hour, never while another deployment of the site is
-queued or running; a held-back rollback alerts instead.
+queued or running (checked again under the site's trigger lock); a held-back rollback alerts instead. A rollback that
+only starts after another release went live is cancelled with the reason.
 
 ### `POST /api/v1/sites/{site}/deployments` — `deployments.create`
 Body (all optional): `{"branch": "main", "commit": "<sha>"}`. Without a commit the branch head is resolved
