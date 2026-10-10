@@ -8,6 +8,7 @@ use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Deployments\Contracts\Data\DeploymentSummary;
+use Falak\Deployments\Contracts\DeploymentBadges;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Limits\Contracts\ServiceHealth;
@@ -65,10 +66,14 @@ final class CanvasReadModel
         private readonly DatabaseConnections $connections,
         private readonly ServiceVolumes $volumes,
         private readonly ServiceHealth $health,
+        private readonly DeploymentBadges $deploymentBadges,
     ) {}
 
     /** @var array<string, list<string>> OOM / restart-loop badges by site id, then by database instance id */
     private array $siteBadges = [];
+
+    /** @var array<string, list<string>> "Watching" / "Rolled back" (a live release's watch) by site id */
+    private array $releaseBadges = [];
 
     /** @var array<string, list<string>> */
     private array $instanceBadges = [];
@@ -95,6 +100,7 @@ final class CanvasReadModel
 
         $databases = $this->databases->findMany($databaseIds);
         $this->siteBadges = $this->health->badgesForSites(array_keys($sites));
+        $this->releaseBadges = $this->deploymentBadges->forSites(array_keys($sites));
         $this->instanceBadges = $this->health->badgesForInstances(array_values(array_filter(array_map(fn (DatabaseData $database) => $database->instanceId, array_values($databases)))));
         $deployments = $this->deployments->currentForSites(array_keys($sites));
         $volumes = $this->volumes->forSites(array_keys($sites));
@@ -173,8 +179,9 @@ final class CanvasReadModel
             'subtitle' => $subtitle,
             'servers' => array_map(fn ($target) => $this->server($target->serverId, $target->isLeader(), $servers, $agents), $site->targets),
             // Runtime traits worth seeing on the card (Laravel Octane serves the app behind the edge).
-            // OOM kills and restart loops (Limits) of the site, its compose services, workers and daemons.
-            'badges' => [...($site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : []), ...($this->siteBadges[$site->id] ?? [])],
+            // OOM kills and restart loops (Limits) of the site, its compose services, workers and daemons; a release
+            // being watched after going live, or rolled back by its watch.
+            'badges' => [...($site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : []), ...($this->siteBadges[$site->id] ?? []), ...($this->releaseBadges[$site->id] ?? [])],
             // Its volumes (a classic site's shared directories, a container's mounts); compose services carry their own.
             'volumes' => $compose === null && $site->runtime !== SiteRuntime::Static ? self::siteVolumes($site->id, $volumes) : [],
             'compose' => $compose !== null ? ['template' => $compose['template'], 'collapsed' => $compose['collapsed'], 'services' => $compose['services']] : null,

@@ -187,11 +187,12 @@ undone from the server's Security tab for 7 days.
   "targets": [{"id": "…", "server_id": "…", "server_name": "web-1", "server_ip": "203.0.113.1", "role": "leader", "status": "ready", "status_message": null, "command_id": null}],
   "strategy": "zero-downtime",
   "current_release": {"id": "01k…", "commit": "a1b2…", "branch": "main", "deployment_id": "01k…", "active": true, "…": "see Release"},
+  "release_watch": {"enabled": false, "minutes": 5, "…": "see Watch after deploy"},
   "created_at": "2026-09-26T10:00:00+00:00"
 }}
 ```
-`show` also returns `deploy_script`, `shared_paths`, `laravel`. `strategy` / `current_release` are contributed by
-Deployments through `Sites\Contracts\SiteResourceExtension`.
+`show` also returns `deploy_script`, `shared_paths`, `laravel`. `strategy` / `current_release` / `release_watch` are
+contributed by Deployments through `Sites\Contracts\SiteResourceExtension`.
 
 ### `POST /api/v1/sites` — `sites.create`
 Same body and validation as the web form (`name`, `framework`, `server_ids[]`, optional `leader_server_id`, `runtime`,
@@ -543,11 +544,27 @@ other connection and can be used as `source_connection_id` for sites.
  "trigger": "manual|push|api|hook|rollback", "strategy": "zero-downtime",
  "branch": "main", "commit": "a1b2c3…", "message": "Fix checkout", "author": "Ada",
  "release_id": "01k…", "build_id": "01k…", "rolled_back": false,
+ "rolled_back_reason": null, "rolled_back_at": null, "auto_rollback_of": null, "watch": null,
  "url": "https://falak.example.com/sites/01k…/deployments/01k…", "error": null,
  "waiting_reason": null, "waiting_since": null,
  "created_at": "…", "started_at": "…", "finished_at": "…"}
 ```
 `rolled_back: true` with `status: failed` means servers that had switched were returned to the previous release.
+With `status: succeeded` it means the release went live and its watch rolled it back (`rolled_back_reason` says
+which trigger, with the numbers); `auto_rollback_of` on a `rollback` deployment names the deployment it replaced.
+
+`watch` (null unless the site watched the release, see "Watch after deploy" below):
+```json
+{"status": "watching|passed|rolled_back|alerted|stopped", "on_trigger": "rollback|alert_only",
+ "triggers": {"health": true, "health_failures": 3, "crashes": true, "errors": true, "issues": false},
+ "migrations": true, "started_at": "…", "ends_at": "…", "remaining_s": 212, "checked_at": "…",
+ "checks": {"health": {"ok": true, "failures": 0, "threshold": 3, "message": "GET https://shop.example.com/up via 203.0.113.1 → 200 …"},
+            "errors": {"total": 412, "errors": 3, "rate": 0.0073, "threshold": 0.05, "min_requests": 20}},
+ "baseline": {"total": 5120, "errors": 21, "rate": 0.0041},
+ "trigger": null, "reason": null, "rollback_deployment_id": null, "finished_at": null}
+```
+`alerted`: a trigger fired but the site is set to alert only, or the loop guard held the rollback back (`reason`
+and the alert say why). `stopped`: another deployment of the site started or went live.
 
 `waiting`: the deployment was triggered while some of the site's servers are still being prepared (site user,
 PHP-FPM pool, Bun/Deno runtime). It holds the site's queue, `waiting_reason` says why
@@ -555,6 +572,28 @@ PHP-FPM pool, Bun/Deno runtime). It holds the site's queue, `waiting_reason` say
 own once every preparing server is ready (`started_at` is set then). Servers whose preparation failed are skipped
 with a warning in the output as long as another server is ready; it fails (`error` says why) when the leader's
 preparation fails, when no server can be prepared, or after `FALAK_DEPLOY_WAIT_TIMEOUT_MINUTES` (default 30).
+
+### Watch after deploy — `GET|PUT /api/v1/sites/{site}/release-watch` — `deployments.view` / `deployments.manage`
+Rollback after a release goes live, opt-in per site (suggested for production services). `PUT` takes any of
+`{"enabled": true, "minutes": 5, "health": true, "health_failures": 3, "crashes": true, "errors": true,
+"issues": false, "on_trigger": "rollback|alert_only"}` (`minutes` 1–60, `health_failures` 1–20); both return those
+fields plus `migrations` (the deploy script, or a compose `falak.deploy.leader_command`, runs database migrations,
+which a rollback doesn't reverse) and `production` (the site's environment). Changes apply from the next deployment.
+
+After a successful deployment (not the site's first, not a rollback, not a function) a window opens for `minutes`.
+Every 30 s the health check runs through the edge on each server (`health_failures` failures in a row, at least 25 s
+apart, trip it; skipped while the site's health check is off, and servers without an address are skipped), and the
+release's 5xx share in the edge access log (the control plane's own health checks left out) is compared with
+`max(3 × baseline, 5%)` once it has served at least 20 requests and 5 errors (baseline: the previous release's last
+hour; no data → 5%). OOM kills and restart loops of the site, its compose services, workers and daemons that happen
+after the release went live trip it at once, as does (opt-in) a new exception issue in Insights — Insights doesn't
+record which release raised an issue, so any new one during the window counts; hence off by default. A window only
+opens for the site's live release with nothing queued behind it. The first
+trigger queues a `rollback` deployment to the previous release (`deployments.rolled_back` fires once it is live), or
+with `alert_only` fires `deployments.watch_triggered`. Loop guard: never back to a release that was itself rolled back
+automatically, at most one automatic rollback per site per hour, never while another deployment of the site is
+queued or running (checked again under the site's trigger lock); a held-back rollback alerts instead. A rollback that
+only starts after another release went live is cancelled with the reason.
 
 ### `POST /api/v1/sites/{site}/deployments` — `deployments.create`
 Body (all optional): `{"branch": "main", "commit": "<sha>"}`. Without a commit the branch head is resolved

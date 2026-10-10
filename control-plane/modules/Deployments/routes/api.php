@@ -10,6 +10,8 @@ Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group
     Route::post('sites/{site}/deployments', [DeploymentApiController::class, 'store'])->middleware('throttle:30,1')->name('deployments.store');
     Route::post('sites/{site}/rollback', [DeploymentApiController::class, 'rollback'])->middleware('throttle:30,1')->name('deployments.rollback');
     Route::get('sites/{site}/releases', [DeploymentApiController::class, 'releases'])->name('deployments.releases');
+    Route::get('sites/{site}/release-watch', [DeploymentApiController::class, 'watch'])->name('deployments.watch');
+    Route::put('sites/{site}/release-watch', [DeploymentApiController::class, 'updateWatch'])->middleware('throttle:60,1')->name('deployments.watch.update');
     Route::get('deployments/{deployment}', [DeploymentApiController::class, 'show'])->name('deployments.show');
     Route::get('deployments/{deployment}/output', [DeploymentApiController::class, 'output'])->name('deployments.output');
     Route::post('deployments/{deployment}/cancel', [DeploymentApiController::class, 'cancel'])->middleware('throttle:30,1')->name('deployments.cancel');

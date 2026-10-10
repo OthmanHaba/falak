@@ -45,9 +45,9 @@ final class DeploymentController extends Controller
         $settings = SiteSettings::for($data);
 
         $active = Deployment::query()->where('site_id', $data->id)->whereIn('status', DeploymentStatus::occupying())->latest('number')->first();
-        $queued = Deployment::query()->where('site_id', $data->id)->where('status', DeploymentStatus::Queued)->orderBy('number')->get();
+        $queued = Deployment::query()->where('site_id', $data->id)->where('status', DeploymentStatus::Queued)->orderBy('number')->with('watch')->get();
         $history = Deployment::query()->where('site_id', $data->id)->whereIn('status', [DeploymentStatus::Succeeded, DeploymentStatus::Failed, DeploymentStatus::Cancelled])
-            ->orderByDesc('number')->paginate(20)->withQueryString();
+            ->orderByDesc('number')->with('watch')->paginate(20)->withQueryString();
 
         return [
             'active' => $active ? [...$this->deploymentResource($active), 'targets' => $this->targetsResource($active)] : null,

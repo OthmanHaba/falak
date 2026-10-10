@@ -10,8 +10,10 @@ use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Telemetry\Contracts\AccessLogCounts;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -106,4 +108,26 @@ it('serves the site access log of one release for the deployment panel', functio
 
     config(['telemetry.loki.url' => '']);
     $this->getJson("/telemetry/sites/{$this->site->id}/access-logs/data")->assertOk()->assertJsonPath('configured', false);
+});
+
+it('counts the requests and 5xx answers of one release with Loki metric queries', function () {
+    Http::fake(['loki:3100/loki/api/v1/query*' => function (Request $request) {
+        $errors = str_contains($request['query'], 'http_response_status_code=~"5.."');
+
+        return Http::response(['status' => 'success', 'data' => ['resultType' => 'vector', 'result' => [
+            ['metric' => [], 'value' => [1_790_000_000, $errors ? '7' : '140']],
+        ]]]);
+    }]);
+
+    $counts = app(AccessLogCounts::class)->forRelease($this->organization->id, $this->site->id, '01jre00000000000000000000a', now()->subMinutes(5), now());
+
+    expect($counts->total)->toBe(140)->and($counts->errors)->toBe(7)->and($counts->errorRate())->toBe(0.05);
+    Http::assertSent(fn (Request $r) => str_starts_with($r['query'], 'sum(count_over_time({')
+        && str_contains($r['query'], 'falak_release_id="01JRE00000000000000000000A"') && str_ends_with($r['query'], '[300s]))')
+        // The control plane's own health checks are left out.
+        && str_contains($r['query'], '| user_agent_original!~"Falak-HealthCheck/.*"'));
+
+    // Another organization's site counts nothing (and asks Loki nothing).
+    expect(app(AccessLogCounts::class)->forRelease(strtolower((string) Str::ulid()), $this->site->id, '01jre00000000000000000000a', now()->subMinutes(5), now())->total)->toBe(0);
+    Http::assertSentCount(2);
 });

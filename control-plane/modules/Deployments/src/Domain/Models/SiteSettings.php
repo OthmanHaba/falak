@@ -24,6 +24,14 @@ use Illuminate\Support\Str;
  * @property int $health_retries
  * @property int $health_retry_delay_s
  * @property string $secrets_mode env | files (container sites: secret variables as /run/secrets files)
+ * @property bool $watch_enabled watch the release after it goes live (opt-in) and roll back on a trigger
+ * @property int $watch_minutes
+ * @property bool $watch_health trigger: the health check fails watch_health_failures times in a row
+ * @property int $watch_health_failures
+ * @property bool $watch_crashes trigger: an OOM kill or restart loop of the site
+ * @property bool $watch_errors trigger: the 5xx rate above max(baseline × 3, 5%)
+ * @property bool $watch_issues trigger: a new error issue in Insights
+ * @property string $watch_on_trigger rollback | alert_only
  * @property ?string $hook_token_hash
  * @property ?string $hook_token
  */
@@ -61,6 +69,13 @@ class SiteSettings extends Model
             'health_timeout_s' => 'integer',
             'health_retries' => 'integer',
             'health_retry_delay_s' => 'integer',
+            'watch_enabled' => 'boolean',
+            'watch_minutes' => 'integer',
+            'watch_health' => 'boolean',
+            'watch_health_failures' => 'integer',
+            'watch_crashes' => 'boolean',
+            'watch_errors' => 'boolean',
+            'watch_issues' => 'boolean',
             'hook_token' => Sealed::class,
         ];
     }
@@ -80,6 +95,14 @@ class SiteSettings extends Model
             'health_retries' => (int) ($defaults['health']['retries'] ?? 3),
             'health_retry_delay_s' => (int) ($defaults['health']['retry_delay_s'] ?? 5),
             'secrets_mode' => self::SECRETS_ENV,
+            'watch_enabled' => false,
+            'watch_minutes' => (int) ($defaults['watch']['minutes'] ?? 5),
+            'watch_health' => true,
+            'watch_health_failures' => (int) ($defaults['watch']['health_failures'] ?? 3),
+            'watch_crashes' => true,
+            'watch_errors' => true,
+            'watch_issues' => false,
+            'watch_on_trigger' => ReleaseWatch::ROLLBACK,
         ]);
     }
 
@@ -103,6 +126,25 @@ class SiteSettings extends Model
         $path = $this->health_path ?: $site->healthCheckPath ?: '/';
 
         return str_starts_with($path, '/') ? $path : '/'.$path;
+    }
+
+    /**
+     * The watch settings (settings card, API and the snapshot a watch window starts with).
+     *
+     * @return array{enabled: bool, minutes: int, health: bool, health_failures: int, crashes: bool, errors: bool, issues: bool, on_trigger: string}
+     */
+    public function watch(): array
+    {
+        return [
+            'enabled' => $this->watch_enabled,
+            'minutes' => max(1, min(60, $this->watch_minutes)),
+            'health' => $this->watch_health,
+            'health_failures' => max(1, min(20, $this->watch_health_failures)),
+            'crashes' => $this->watch_crashes,
+            'errors' => $this->watch_errors,
+            'issues' => $this->watch_issues,
+            'on_trigger' => $this->watch_on_trigger === ReleaseWatch::ALERT_ONLY ? ReleaseWatch::ALERT_ONLY : ReleaseWatch::ROLLBACK,
+        ];
     }
 
     /**

@@ -3,6 +3,8 @@
 namespace Falak\Deployments\Http\Controllers;
 
 use Falak\Deployments\Application\Actions\UpdateDeploySettings;
+use Falak\Deployments\Application\Actions\UpdateWatchSettings;
+use Falak\Deployments\Application\Watch\Migrations;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
@@ -10,6 +12,7 @@ use Falak\Identity\Contracts\AuditLog;
 use Falak\Kernel\Http\Controller;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
+use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDeploySettings;
 use Falak\Sites\Contracts\SiteRuntime;
 use Illuminate\Http\JsonResponse;
@@ -57,8 +60,37 @@ final class DeploySettingsController extends Controller
             'branch' => $data->branch,
             'hookUrl' => $manage && $settings->hook_token ? $this->hookUrl($settings->hook_token) : null,
             'hasHook' => $settings->hook_token_hash !== null,
+            'watch' => self::watchResource($data, $settings),
             'can' => ['manage' => $manage],
         ]]);
+    }
+
+    /**
+     * The watch after a release goes live: settings plus what the card says about them (the site runs migrations a
+     * rollback won't reverse; production services are suggested to turn it on).
+     *
+     * @return array<string, mixed>
+     */
+    public static function watchResource(SiteData $site, SiteSettings $settings): array
+    {
+        $projects = app(ProjectDirectory::class);
+        $placed = $projects->projectOf(ServiceKind::Site, $site->id);
+        $environment = $placed !== null ? $projects->environment($placed->environmentId) : null;
+
+        return [
+            ...$settings->watch(),
+            'migrations' => Migrations::forSite($site),
+            // A site in no project counts as production (as for resource limits).
+            'production' => $environment === null || $environment->isProduction,
+        ];
+    }
+
+    public function updateWatch(Request $request, string $site, UpdateWatchSettings $update): RedirectResponse
+    {
+        $data = $this->site($request->user(), $site, DeploymentPermissions::MANAGE);
+        $update($data, $request->validate(UpdateWatchSettings::rules()), (string) $request->user()?->getAuthIdentifier());
+
+        return back();
     }
 
     public function update(Request $request, string $site, UpdateDeploySettings $update): RedirectResponse
