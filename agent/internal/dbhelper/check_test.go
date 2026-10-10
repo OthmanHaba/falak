@@ -58,10 +58,11 @@ func TestQueryPostgresAsATemporaryReadOnlyRole(t *testing.T) {
 	if err := th.Query(context.Background(), "app"); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 3 {
+	// create, the check, then the drop: end its sessions, list the databases (none here), DROP ROLE.
+	if len(calls) != 5 {
 		t.Fatalf("calls %d", len(calls))
 	}
-	create, run, drop := stdins[0], stdins[1], stdins[2]
+	create, run, drop := stdins[0], stdins[1], stdins[4]
 	role := strings.Fields(create)[2]
 	if !strings.HasPrefix(role, `"falak_check_`) || !strings.Contains(create, "NOSUPERUSER") || !strings.Contains(create, "GRANT pg_read_all_data") ||
 		!strings.Contains(create, "statement_timeout = '60s'") || !strings.Contains(create, "default_transaction_read_only = on") {
@@ -142,5 +143,29 @@ func TestTableCountsKeyValue(t *testing.T) {
 	tables := decode(t, th.out.String())["tables"].(map[string]any)
 	if tables["db0"] != float64(12) || tables["db3"] != float64(4) || len(tables) != 2 {
 		t.Errorf("tables %v", tables)
+	}
+}
+
+func TestPostgresRoleDropClearsEveryDatabaseFirst(t *testing.T) {
+	th := newTestHelper(t, Postgres)
+	var sqls, dbs []string
+	th.run.handle = func(c Cmd) (string, error) {
+		sql := th.run.stdins[c.Name]
+		sqls = append(sqls, sql)
+		dbs = append(dbs, c.Args[slices.Index(c.Args, "-d")+1])
+		if strings.Contains(sql, "FROM pg_database") {
+			return "app\npostgres\n", nil
+		}
+		return "", nil
+	}
+	if err := th.pgDropRole(context.Background(), "falak_inspect"); err != nil {
+		t.Fatal(err)
+	}
+	// Sessions ended, databases listed, each cleared in itself (REASSIGN / DROP OWNED act per database), then the role.
+	if len(sqls) != 5 || !strings.Contains(sqls[0], "pg_terminate_backend") ||
+		dbs[2] != "app" || dbs[3] != "postgres" ||
+		!strings.Contains(sqls[2], `REASSIGN OWNED BY "falak_inspect" TO CURRENT_USER;`) || !strings.Contains(sqls[2], `DROP OWNED BY "falak_inspect";`) ||
+		sqls[4] != `DROP ROLE IF EXISTS "falak_inspect";` {
+		t.Fatalf("sql %q dbs %v", sqls, dbs)
 	}
 }
