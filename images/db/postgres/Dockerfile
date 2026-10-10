@@ -8,7 +8,7 @@
 # Physical backups and PITR use pg_basebackup and postgres' own archive/restore commands (falak-db wal-push /
 # wal-fetch), so no wal-g.
 
-ARG GO_IMAGE=golang:1.25-trixie
+ARG GO_IMAGE=golang:1.27-trixie
 ARG BASE_IMAGE=postgres:17-bookworm
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS falak-db

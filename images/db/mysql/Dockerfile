@@ -9,7 +9,7 @@
 # dependencies (perl(DBD::mysql), perl(Digest::MD5)) serve legacy scripts Falak never runs, so they are skipped;
 # the build fails if a shared library of the binaries is missing.
 
-ARG GO_IMAGE=golang:1.25-trixie
+ARG GO_IMAGE=golang:1.27-trixie
 ARG BASE_IMAGE=mysql:8.4
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS falak-db
