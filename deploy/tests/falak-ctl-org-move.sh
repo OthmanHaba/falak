@@ -30,6 +30,6 @@ pass "idempotent"
 
 printf 'FALAK_REPO=acme/falak\nFALAK_IMAGE_PREFIX=registry.acme.dev/falak\n' > "$FALAK_DIR/.env"
 ensure_org_move > /dev/null 2>&1
-[ "$(env_get FALAK_REPO)" = acme/falak ] && [ "$(env_get FALAK_IMAGE_PREFIX)" = registry.acme.dev/falak ] || fail "a fork was rewritten"
+if [ "$(env_get FALAK_REPO)" != acme/falak ] || [ "$(env_get FALAK_IMAGE_PREFIX)" != registry.acme.dev/falak ]; then fail "a fork was rewritten"; fi
 [ -z "$(env_get FALAK_DB_IMAGE_REGISTRY)" ] || fail "an unset key was written"
 pass "forks and unset keys untouched"
