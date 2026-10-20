@@ -33,9 +33,10 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # --- edge-caddy: Falak's Caddy for servers' edges (docs/plans/network/protection.md, path rate limits) -----------
 # Stock Caddy (the apt package servers run) plus caddy-ratelimit (http.handlers.rate_limit) and caddy-dns/cloudflare
 # (DNS-01, already required of edges). Served to agents at /install/edge/caddy-linux-<arch> with its checksum; an
-# agent installs it only when a site on the server gets a rate limit. Versions pinned; bump CADDY_VERSION with the edge.
+# agent installs it when a site gets a rate limit or a DNS-01 certificate. Versions pinned; CADDY_VERSION must be at least
+# the apt Caddy on servers (an older build lacks modules the edge has, and the agent refuses the swap).
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS edge-caddy
-ARG CADDY_VERSION=v2.11.4
+ARG CADDY_VERSION=v2.11.7
 ARG XCADDY_VERSION=v0.4.7
 ARG CADDY_RATELIMIT_VERSION=v0.1.0
 ARG CADDY_DNS_CLOUDFLARE_VERSION=v0.2.4
