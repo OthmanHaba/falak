@@ -13,6 +13,8 @@
 
 ARG PHP_IMAGE=dunglas/frankenphp:1.12.7-php8.4-trixie
 ARG GO_IMAGE=golang:1.25-trixie
+# Caddy needs a newer Go than the agent does (v2.11.7: Go >= 1.26).
+ARG CADDY_GO_IMAGE=golang:1.26-trixie
 
 # --- binaries: falak-agent / falak / falak-builder / falak-relay for linux amd64+arm64 (cross-compiled once) ---
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS binaries
@@ -35,7 +37,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # (DNS-01, already required of edges). Served to agents at /install/edge/caddy-linux-<arch> with its checksum; an
 # agent installs it when a site gets a rate limit or a DNS-01 certificate. Versions pinned; CADDY_VERSION must be at least
 # the apt Caddy on servers (an older build lacks modules the edge has, and the agent refuses the swap).
-FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS edge-caddy
+FROM --platform=$BUILDPLATFORM ${CADDY_GO_IMAGE} AS edge-caddy
 ARG CADDY_VERSION=v2.11.7
 ARG XCADDY_VERSION=v0.4.7
 ARG CADDY_RATELIMIT_VERSION=v0.1.0
